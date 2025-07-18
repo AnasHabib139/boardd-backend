@@ -1,24 +1,28 @@
 const { Types } = require("mongoose");
 
 /**
- * Get tasks calendar view for a specific month (lightweight for calendar strips)
+ * Get tasks for calendar view of a tab (monthly view)
  * @param {string} channelId - Channel ID
  * @param {string} tabId - Tab ID
  * @param {string} userId - Current user ID
- * @param {Date} currentDate - Date in the month to show
+ * @param {Date} currentDate - Date for the month being viewed
  * @returns {Array} Aggregation pipeline
  */
 exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate) => {
   // Calculate start and end of the month
-  const startOfMonth = new Date(
+  const monthStart = new Date(
     currentDate.getFullYear(),
     currentDate.getMonth(),
     1
   );
-  const endOfMonth = new Date(
+  const monthEnd = new Date(
     currentDate.getFullYear(),
     currentDate.getMonth() + 1,
-    0
+    0,
+    23,
+    59,
+    59,
+    999
   );
 
   return [
@@ -42,42 +46,31 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate) => {
           {
             $match: {
               isActive: true,
-              dueDate: { $exists: true, $ne: null },
-              // Filter tasks for the specific month
-              dueDate: {
-                $gte: startOfMonth,
-                $lte: endOfMonth,
-              },
               // User must be assigned to task OR created the task
               $or: [
                 { assignedTo: Types.ObjectId.createFromHexString(userId) },
                 { createdBy: Types.ObjectId.createFromHexString(userId) },
               ],
+              // Tasks due within the current month or overdue
+              $or: [
+                {
+                  dueDate: {
+                    $gte: monthStart,
+                    $lte: monthEnd,
+                  },
+                },
+                {
+                  $and: [
+                    { dueDate: { $lt: monthStart } }, // Overdue tasks
+                    { status: { $ne: "completed" } }, // Not completed
+                  ],
+                },
+              ],
             },
           },
-          // Project minimal task fields for calendar strips
+          // Sort by dueDate
           {
-            $project: {
-              _id: 1,
-              title: 1,
-              status: 1,
-              priority: 1,
-              dueDate: 1,
-              strokeColor: 1,
-              isOverdue: {
-                $cond: {
-                  if: {
-                    $and: [
-                      { $ne: ["$dueDate", null] },
-                      { $lt: ["$dueDate", new Date()] },
-                      { $ne: ["$status", "completed"] },
-                    ],
-                  },
-                  then: true,
-                  else: false,
-                },
-              },
-            },
+            $sort: { dueDate: 1 },
           },
         ],
       },
@@ -88,6 +81,32 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate) => {
       $unwind: {
         path: "$tasks",
         preserveNullAndEmptyArrays: false, // Only projects with tasks
+      },
+    },
+
+    // Replace root with task data
+    {
+      $replaceRoot: {
+        newRoot: "$tasks",
+      },
+    },
+
+    // Add computed fields for calendar
+    {
+      $addFields: {
+        isOverdue: {
+          $cond: {
+            if: {
+              $and: [
+                { $ne: ["$dueDate", null] },
+                { $lt: ["$dueDate", new Date()] },
+                { $ne: ["$status", "completed"] },
+              ],
+            },
+            then: true,
+            else: false,
+          },
+        },
       },
     },
 
@@ -223,31 +242,28 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
     {
       $addFields: {
         progress: {
-          $cond: {
-            if: { $eq: ["$taskStats.total", 0] },
-            then: 0,
-            else: {
+          $cond: [
+            { $eq: ["$taskStats.total", 0] },
+            0,
+            {
               $multiply: [
-                {
-                  $divide: ["$taskStats.completed", "$taskStats.total"],
-                },
+                { $divide: ["$taskStats.completed", "$taskStats.total"] },
                 100,
               ],
             },
-          },
+          ],
         },
+        taskCount: "$taskStats.total",
       },
     },
 
-    // Unwind creator array
+    // Unwind arrays to get single objects
     {
       $unwind: {
         path: "$creator",
         preserveNullAndEmptyArrays: true,
       },
     },
-
-    // Unwind company array
     {
       $unwind: {
         path: "$company",
@@ -255,22 +271,25 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
       },
     },
 
-    // Project minimal fields for overview
+    // Project final overview structure
     {
       $project: {
         _id: 1,
         name: 1,
-        priority: 1,
-        color: 1,
+        description: 1,
+        status: 1,
         startDate: 1,
         endDate: 1,
+        priority: 1,
+        color: 1,
         createdAt: 1,
+        updatedAt: 1,
         creator: 1,
+        taskCount: 1,
         progress: {
           $round: ["$progress", 1], // Round to 1 decimal place
         },
-        taskCount: "$taskStats.total",
-        // Context path for projects: company/project
+        // Context path for overview
         contextPath: {
           $concat: [
             { $ifNull: ["$company.name", "Unknown Company"] },
@@ -278,50 +297,21 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
             "$name",
           ],
         },
-        // Project status indicators
-        isOverdue: {
-          $cond: {
-            if: {
-              $and: [
-                { $ne: ["$endDate", null] },
-                { $lt: ["$endDate", new Date()] },
-                { $ne: ["$status", "completed"] },
-              ],
-            },
-            then: true,
-            else: false,
-          },
-        },
-        daysUntilDue: {
-          $cond: {
-            if: { $ne: ["$endDate", null] },
-            then: {
-              $ceil: {
-                $divide: [
-                  { $subtract: ["$endDate", new Date()] },
-                  1000 * 60 * 60 * 24, // Convert milliseconds to days
-                ],
-              },
-            },
-            else: null,
-          },
-        },
       },
     },
 
-    // Sort projects by priority and due date
+    // Sort projects by priority and creation date
     {
       $sort: {
         priority: -1, // high, medium, low
-        endDate: 1, // earliest first
-        createdAt: -1, // newest first if no due date
+        createdAt: -1, // newest first
       },
     },
   ];
 };
 
 /**
- * Get projects of a tab with tasks grouped by status (detailed data)
+ * Get detailed projects of a tab with tasks
  * @param {string} channelId - Channel ID
  * @param {string} tabId - Tab ID
  * @returns {Array} Aggregation pipeline
@@ -334,6 +324,24 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
         channelId: Types.ObjectId.createFromHexString(channelId),
         tabId: Types.ObjectId.createFromHexString(tabId),
         status: "active", // Only active projects
+      },
+    },
+
+    // Lookup company details for context path
+    {
+      $lookup: {
+        from: "companies",
+        localField: "companyId",
+        foreignField: "_id",
+        as: "company",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+            },
+          },
+        ],
       },
     },
 
@@ -350,24 +358,6 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
               _id: 1,
               name: 1,
               email: 1,
-            },
-          },
-        ],
-      },
-    },
-
-    // Lookup company details for context path
-    {
-      $lookup: {
-        from: "companies",
-        localField: "companyId",
-        foreignField: "_id",
-        as: "company",
-        pipeline: [
-          {
-            $project: {
-              _id: 1,
-              name: 1,
             },
           },
         ],
@@ -513,103 +503,25 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
       },
     },
 
-    // Group tasks by status and add context paths
+    // Separate tasks by status for better organization
     {
       $addFields: {
         todoTasks: {
-          $map: {
-            input: {
-              $filter: {
-                input: "$allTasks",
-                cond: { $eq: ["$$this.status", "todo"] },
-              },
-            },
-            as: "task",
-            in: {
-              $mergeObjects: [
-                "$$task",
-                {
-                  contextPath: {
-                    $concat: [
-                      {
-                        $ifNull: [
-                          { $arrayElemAt: ["$company.name", 0] },
-                          "Unknown Company",
-                        ],
-                      },
-                      "/",
-                      "$name",
-                      "/",
-                      "$$task.title",
-                    ],
-                  },
-                },
-              ],
-            },
+          $filter: {
+            input: "$allTasks",
+            cond: { $eq: ["$$this.status", "todo"] },
           },
         },
         inProgressTasks: {
-          $map: {
-            input: {
-              $filter: {
-                input: "$allTasks",
-                cond: { $eq: ["$$this.status", "in_progress"] },
-              },
-            },
-            as: "task",
-            in: {
-              $mergeObjects: [
-                "$$task",
-                {
-                  contextPath: {
-                    $concat: [
-                      {
-                        $ifNull: [
-                          { $arrayElemAt: ["$company.name", 0] },
-                          "Unknown Company",
-                        ],
-                      },
-                      "/",
-                      "$name",
-                      "/",
-                      "$$task.title",
-                    ],
-                  },
-                },
-              ],
-            },
+          $filter: {
+            input: "$allTasks",
+            cond: { $eq: ["$$this.status", "in_progress"] },
           },
         },
         completedTasks: {
-          $map: {
-            input: {
-              $filter: {
-                input: "$allTasks",
-                cond: { $eq: ["$$this.status", "completed"] },
-              },
-            },
-            as: "task",
-            in: {
-              $mergeObjects: [
-                "$$task",
-                {
-                  contextPath: {
-                    $concat: [
-                      {
-                        $ifNull: [
-                          { $arrayElemAt: ["$company.name", 0] },
-                          "Unknown Company",
-                        ],
-                      },
-                      "/",
-                      "$name",
-                      "/",
-                      "$$task.title",
-                    ],
-                  },
-                },
-              ],
-            },
+          $filter: {
+            input: "$allTasks",
+            cond: { $eq: ["$$this.status", "completed"] },
           },
         },
       },
@@ -638,22 +550,25 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
             },
           },
         },
+      },
+    },
+
+    // Calculate progress percentage
+    {
+      $addFields: {
         progress: {
-          $cond: {
-            if: { $eq: [{ $size: "$allTasks" }, 0] },
-            then: 0,
-            else: {
+          $cond: [
+            { $eq: ["$taskStats.total", 0] },
+            0,
+            {
               $multiply: [
                 {
-                  $divide: [
-                    { $size: "$completedTasks" },
-                    { $size: "$allTasks" },
-                  ],
+                  $divide: ["$taskStats.completed", "$taskStats.total"],
                 },
                 100,
               ],
             },
-          },
+          ],
         },
       },
     },
@@ -752,308 +667,6 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
         priority: -1, // high, medium, low
         endDate: 1, // earliest first
         createdAt: -1, // newest first if no due date
-      },
-    },
-  ];
-};
-
-/**
- * Get tasks for board view grouped by status with pagination
- * @param {string} channelId - Channel ID
- * @param {string} tabId - Tab ID
- * @param {string} userId - Current user ID
- * @param {number} page - Page number for pagination
- * @param {number} limit - Limit per category (default 5)
- * @returns {Array} Aggregation pipeline
- */
-exports.getTasksBoardQuery = (
-  channelId,
-  tabId,
-  userId,
-  page = 1,
-  limit = 5
-) => {
-  const skip = (page - 1) * limit;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  return [
-    // Match projects by channelId and tabId
-    {
-      $match: {
-        channelId: Types.ObjectId.createFromHexString(channelId),
-        tabId: Types.ObjectId.createFromHexString(tabId),
-        status: "active", // Only active projects
-      },
-    },
-
-    // Lookup tasks for these projects
-    {
-      $lookup: {
-        from: "tasks",
-        localField: "_id",
-        foreignField: "projectId",
-        as: "tasks",
-        pipeline: [
-          {
-            $match: {
-              isActive: true,
-              // User must be assigned to task OR created the task
-              $or: [
-                { assignedTo: Types.ObjectId.createFromHexString(userId) },
-                { createdBy: Types.ObjectId.createFromHexString(userId) },
-              ],
-            },
-          },
-          // Lookup task creator details
-          {
-            $lookup: {
-              from: "users",
-              localField: "createdBy",
-              foreignField: "_id",
-              as: "createdByUser",
-              pipeline: [
-                {
-                  $project: {
-                    _id: 1,
-                    name: 1,
-                    email: 1,
-                  },
-                },
-              ],
-            },
-          },
-          {
-            $unwind: {
-              path: "$createdByUser",
-              preserveNullAndEmptyArrays: true,
-            },
-          },
-          // Project task fields with computed properties
-          {
-            $project: {
-              _id: 1,
-              title: 1,
-              description: 1,
-              status: 1,
-              priority: 1,
-              strokeColor: 1, // Add strokeColor
-              projectId: 1, // Add projectId
-              createdBy: "$createdByUser", // Use the unwound user object
-              dueDate: 1, // Keep for today/overdue logic
-              // Computed fields for categorization
-              isOverdue: {
-                $cond: {
-                  if: {
-                    $and: [
-                      { $ne: ["$dueDate", null] },
-                      { $lt: ["$dueDate", new Date()] },
-                      { $ne: ["$status", "completed"] },
-                    ],
-                  },
-                  then: true,
-                  else: false,
-                },
-              },
-              isDueToday: {
-                $cond: {
-                  if: {
-                    $and: [
-                      { $ne: ["$dueDate", null] },
-                      { $gte: ["$dueDate", today] },
-                      { $lt: ["$dueDate", tomorrow] },
-                    ],
-                  },
-                  then: true,
-                  else: false,
-                },
-              },
-            },
-          },
-        ],
-      },
-    },
-
-    // Unwind tasks to work with individual tasks
-    {
-      $unwind: {
-        path: "$tasks",
-        preserveNullAndEmptyArrays: false, // Only projects with tasks
-      },
-    },
-
-    // Replace root with task data
-    {
-      $replaceRoot: {
-        newRoot: "$tasks",
-      },
-    },
-
-    // Group tasks by category
-    {
-      $group: {
-        _id: null,
-        allTasks: { $push: "$$ROOT" },
-        // Tasks for Today (due today or overdue but not completed)
-        tasksForToday: {
-          $push: {
-            $cond: {
-              if: {
-                $or: [
-                  { $eq: ["$isDueToday", true] },
-                  {
-                    $and: [
-                      { $eq: ["$isOverdue", true] },
-                      { $ne: ["$status", "completed"] },
-                    ],
-                  },
-                ],
-              },
-              then: "$$ROOT",
-              else: "$$REMOVE",
-            },
-          },
-        },
-        // In Progress Tasks
-        inProgressTasks: {
-          $push: {
-            $cond: {
-              if: { $eq: ["$status", "in_progress"] },
-              then: "$$ROOT",
-              else: "$$REMOVE",
-            },
-          },
-        },
-        // Completed Tasks
-        completedTasks: {
-          $push: {
-            $cond: {
-              if: { $eq: ["$status", "completed"] },
-              then: "$$ROOT",
-              else: "$$REMOVE",
-            },
-          },
-        },
-      },
-    },
-
-    // Apply pagination and sorting to each category
-    {
-      $project: {
-        // Tasks for Today with pagination
-        tasksForToday: {
-          $let: {
-            vars: {
-              sortedTasks: {
-                $sortArray: {
-                  input: "$tasksForToday",
-                  sortBy: {
-                    isOverdue: -1, // Overdue first
-                    priority: -1, // High priority first
-                    dueDate: 1, // Earliest due date first
-                  },
-                },
-              },
-            },
-            in: {
-              tasks: {
-                $map: {
-                  input: { $slice: ["$$sortedTasks", skip, limit] },
-                  as: "task",
-                  in: {
-                    _id: "$$task._id",
-                    title: "$$task.title",
-                    description: "$$task.description",
-                    status: "$$task.status",
-                    priority: "$$task.priority",
-                    strokeColor: "$$task.strokeColor",
-                    projectId: "$$task.projectId",
-                    createdBy: "$$task.createdBy",
-                  },
-                },
-              },
-              totalCount: { $size: "$$sortedTasks" },
-              hasMore: { $gt: [{ $size: "$$sortedTasks" }, skip + limit] },
-            },
-          },
-        },
-        // In Progress Tasks with pagination
-        inProgressTasks: {
-          $let: {
-            vars: {
-              sortedTasks: {
-                $sortArray: {
-                  input: "$inProgressTasks",
-                  sortBy: {
-                    priority: -1, // High priority first
-                    dueDate: 1, // Earliest due date first
-                  },
-                },
-              },
-            },
-            in: {
-              tasks: {
-                $map: {
-                  input: { $slice: ["$$sortedTasks", skip, limit] },
-                  as: "task",
-                  in: {
-                    _id: "$$task._id",
-                    title: "$$task.title",
-                    description: "$$task.description",
-                    status: "$$task.status",
-                    priority: "$$task.priority",
-                    strokeColor: "$$task.strokeColor",
-                    projectId: "$$task.projectId",
-                    createdBy: "$$task.createdBy",
-                  },
-                },
-              },
-              totalCount: { $size: "$$sortedTasks" },
-              hasMore: { $gt: [{ $size: "$$sortedTasks" }, skip + limit] },
-            },
-          },
-        },
-        // Completed Tasks with pagination
-        completedTasks: {
-          $let: {
-            vars: {
-              sortedTasks: {
-                $sortArray: {
-                  input: "$completedTasks",
-                  sortBy: {
-                    priority: -1, // High priority first
-                  },
-                },
-              },
-            },
-            in: {
-              tasks: {
-                $map: {
-                  input: { $slice: ["$$sortedTasks", skip, limit] },
-                  as: "task",
-                  in: {
-                    _id: "$$task._id",
-                    title: "$$task.title",
-                    description: "$$task.description",
-                    status: "$$task.status",
-                    priority: "$$task.priority",
-                    strokeColor: "$$task.strokeColor",
-                    projectId: "$$task.projectId",
-                    createdBy: "$$task.createdBy",
-                  },
-                },
-              },
-              totalCount: { $size: "$$sortedTasks" },
-              hasMore: { $gt: [{ $size: "$$sortedTasks" }, skip + limit] },
-            },
-          },
-        },
-        // Overall stats
-        totalTasks: { $size: "$allTasks" },
-        currentPage: { $literal: page },
-        limit: { $literal: limit },
       },
     },
   ];

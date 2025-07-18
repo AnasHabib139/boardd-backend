@@ -16,7 +16,6 @@ const ProjectApi = require("./projectAPi");
 const UploadApi = require("./uploadApi");
 const ClientApi = require("./clientApi");
 const FormApi = require("./formApi");
-const CardApi = require("./cardApi");
 // all API routing files import here like above
 
 class API {
@@ -41,7 +40,6 @@ class API {
     this.routeGroups.push(new UploadApi());
     this.routeGroups.push(new ClientApi());
     this.routeGroups.push(new FormApi());
-    this.routeGroups.push(new CardApi());
     // all routes register here like above
   }
 

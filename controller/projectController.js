@@ -2,6 +2,8 @@ const { findChannel } = require("../models/channelModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { createProject, getAllProjects } = require("../models/projectModel");
 const { findUser } = require("../models/userModel");
+const { findCompany } = require("../models/companyModel");
+const ProjectModel = require("../models/projectModel");
 const { parseBody, generateResponse, formatDate } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { emitTaskEvent } = require("../utils/socket");
@@ -9,7 +11,6 @@ const {
   getProjectsOfTabQuery,
   getProjectsOverviewQuery,
   getTasksCalendarQuery,
-  getTasksBoardQuery,
 } = require("./queries/projectQueries");
 
 // Helper function to parse date strings
@@ -131,7 +132,7 @@ exports.CreateProject = async (req, res, next) => {
   }
 };
 
-// Get projects of a tab with conditional view (overview or detailed list)
+// Get projects of a tab with conditional view (overview, list, or calendar)
 exports.getProjectsOfTab = async (req, res, next) => {
   try {
     const { channelId, tabId } = req.params;
@@ -157,7 +158,7 @@ exports.getProjectsOfTab = async (req, res, next) => {
     }
 
     // Fetch company details for context
-    const company = await require("../models/companyModel").findCompany({
+    const company = await findCompany({
       _id: channel.companyId,
     });
 
@@ -200,20 +201,6 @@ exports.getProjectsOfTab = async (req, res, next) => {
         channel,
         tab,
         user,
-      });
-    }
-
-    // Handle board view separately
-    if (view === "board") {
-      return handleBoardView(req, res, next, {
-        channelId,
-        tabId,
-        userId,
-        channel,
-        tab,
-        user,
-        page: parseInt(page) || 1,
-        limit: parseInt(limit) || 10,
       });
     }
 
@@ -339,7 +326,6 @@ const handleCalendarView = async (req, res, next, params) => {
     const query = getTasksCalendarQuery(channelId, tabId, userId, currentDate);
 
     // Execute query without pagination to get all tasks for the month
-    const ProjectModel = require("../models/projectModel");
     const tasks = await ProjectModel.getAllProjectsWithoutPagination(query);
 
     // Calculate month boundaries for context
@@ -377,118 +363,6 @@ const handleCalendarView = async (req, res, next, params) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to fetch calendar data",
-    });
-  }
-};
-
-// Helper function to handle board view
-const handleBoardView = async (req, res, next, params) => {
-  try {
-    const { channelId, tabId, userId, channel, tab, user, page, limit } =
-      params;
-
-    // Get board query for tasks grouped by status
-    const query = getTasksBoardQuery(channelId, tabId, userId, page, limit);
-
-    // Execute query without pagination wrapper (pagination is handled in query)
-    const ProjectModel = require("../models/projectModel");
-    const result = await ProjectModel.getAllProjectsWithoutPagination(query);
-
-    // Get custom cards for this tab
-    const { findManyCards } = require("../models/cardModel");
-    const customCards = await findManyCards({
-      channelId,
-      tabId,
-      isActive: true,
-    })
-      .populate("createdBy", "_id name email")
-      .sort({ cardOrder: 1 });
-
-    // Extract the result (should be single document with grouped tasks)
-    const boardData = result[0] || {
-      tasksForToday: { tasks: [], totalCount: 0, hasMore: false },
-      inProgressTasks: { tasks: [], totalCount: 0, hasMore: false },
-      completedTasks: { tasks: [], totalCount: 0, hasMore: false },
-      totalTasks: 0,
-      currentPage: page,
-      limit: limit,
-    };
-
-    // Prepare default categories
-    const defaultCategories = [
-      {
-        key: "tasksForToday",
-        title: "Tasks for Today",
-        description: "Tasks due today or overdue",
-        tasks: boardData.tasksForToday.tasks,
-        totalCount: boardData.tasksForToday.totalCount,
-        hasMore: boardData.tasksForToday.hasMore,
-        type: "default",
-        isEditable: false,
-      },
-      {
-        key: "inProgressTasks",
-        title: "In Progress Tasks",
-        description: "Tasks currently being worked on",
-        tasks: boardData.inProgressTasks.tasks,
-        totalCount: boardData.inProgressTasks.totalCount,
-        hasMore: boardData.inProgressTasks.hasMore,
-        type: "default",
-        isEditable: false,
-      },
-      {
-        key: "completedTasks",
-        title: "Completed Tasks",
-        description: "Tasks that have been completed",
-        tasks: boardData.completedTasks.tasks,
-        totalCount: boardData.completedTasks.totalCount,
-        hasMore: boardData.completedTasks.hasMore,
-        type: "default",
-        isEditable: false,
-      },
-    ];
-
-    // Prepare custom cards
-    const customCardCategories = customCards.map((card) => ({
-      key: `card_${card._id}`,
-      cardId: card._id,
-      title: card.name,
-      description: card.description,
-      color: card.color,
-      tasks: [], // Will be empty initially (tasks are dragged here)
-      totalCount: card.tasks.length,
-      hasMore: false,
-      type: "custom",
-      isEditable: true,
-      createdBy: card.createdBy,
-      createdAt: card.createdAt,
-      updatedAt: card.updatedAt,
-    }));
-
-    // Combine all categories
-    const allCategories = [...defaultCategories, ...customCardCategories];
-
-    // Prepare board response
-    const responseData = {
-      view: "board",
-      currentPage: boardData.currentPage,
-      limit: boardData.limit,
-      totalTasks: boardData.totalTasks,
-      totalCards: customCards.length,
-      categories: allCategories,
-    };
-
-    return generateResponse(
-      responseData,
-      `Board view with ${customCards.length} custom cards fetched successfully (Page ${page})`,
-      res,
-      STATUS_CODES.SUCCESS
-    );
-  } catch (error) {
-    console.error("Error in handleBoardView:", error);
-    return next({
-      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
-      message: error?.message ?? "Failed to fetch board data",
     });
   }
 };

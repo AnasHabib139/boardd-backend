@@ -45,11 +45,6 @@ const validateFieldValue = (field, value) => {
       return (
         value === null || value instanceof Date || typeof value === "string"
       );
-    case "title":
-    case "description":
-      return typeof value === "string";
-    case "tags":
-      return Array.isArray(value);
     default:
       return true;
   }
