@@ -63,6 +63,14 @@ const taskSchema = new Schema({
   attachments: [{ type: String }],
   customFields: [customFieldSchema], // Add custom fields array
   checklist: { type: [checklistItemSchema], default: [] },
+
+  // Order indexes for drag and drop within project categories
+  orderIndex: {
+    todo: { type: Number, default: 1000 },
+    in_progress: { type: Number, default: 1000 },
+    completed: { type: Number, default: 1000 },
+  },
+
   version: { type: Number, default: 0 }, // For optimistic locking and conflict resolution
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
@@ -99,4 +107,73 @@ exports.getAllTasks = async ({ query, page, limit, responseKey = "data" }) => {
     limit,
   });
   return { [responseKey]: data, pagination };
+};
+
+// Utility functions for drag and drop ordering
+
+// Calculate next order index for a status in a project
+exports.getNextOrderIndex = async (projectId, status) => {
+  const lastTask = await TaskModel.findOne({
+    projectId,
+    status,
+    isActive: true,
+  }).sort({ [`orderIndex.${status}`]: -1 });
+
+  if (!lastTask || !lastTask.orderIndex || !lastTask.orderIndex[status]) {
+    return 1000; // Default starting order
+  }
+
+  return lastTask.orderIndex[status] + 1000; // Add gap for future insertions
+};
+
+// Calculate order index for inserting between two tasks
+exports.calculateOrderIndex = (previousOrderIndex, nextOrderIndex) => {
+  if (!previousOrderIndex && !nextOrderIndex) {
+    return 1000; // Default order
+  }
+
+  if (!previousOrderIndex) {
+    return Math.max(nextOrderIndex / 2, 1); // Insert before first
+  }
+
+  if (!nextOrderIndex) {
+    return previousOrderIndex + 1000; // Insert after last
+  }
+
+  return (previousOrderIndex + nextOrderIndex) / 2; // Insert between
+};
+
+// Update task order index for a specific status
+exports.updateTaskOrderIndex = async (taskId, status, newOrderIndex) => {
+  const updateField = `orderIndex.${status}`;
+  return TaskModel.findByIdAndUpdate(
+    taskId,
+    {
+      $set: { [updateField]: newOrderIndex },
+      updatedAt: new Date(),
+    },
+    { new: true }
+  );
+};
+
+// Move task to different project and status with new order
+exports.moveTaskToProject = async (
+  taskId,
+  newProjectId,
+  newStatus,
+  newOrderIndex
+) => {
+  const updateField = `orderIndex.${newStatus}`;
+  return TaskModel.findByIdAndUpdate(
+    taskId,
+    {
+      $set: {
+        projectId: newProjectId,
+        status: newStatus,
+        [updateField]: newOrderIndex,
+        updatedAt: new Date(),
+      },
+    },
+    { new: true }
+  );
 };

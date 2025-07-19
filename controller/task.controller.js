@@ -9,7 +9,12 @@ const {
 } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const { findProject } = require("../models/projectModel");
-const { createTask, findTask, updateTask } = require("../models/taskModel");
+const {
+  createTask,
+  findTask,
+  updateTask,
+  getNextOrderIndex,
+} = require("../models/taskModel");
 const { createActivity } = require("../models/activityModel");
 const { createNotification } = require("../models/notificationModel");
 const { findChannelTab } = require("../models/channelTabsModel");
@@ -111,13 +116,24 @@ exports.createTask = async (req, res, next) => {
       });
     }
 
+    // Calculate orderIndex for the task's status
+    const taskStatus = status || TASK_STATUS.TODO;
+    const orderIndex = await getNextOrderIndex(projectId, taskStatus);
+
+    // Prepare orderIndex object for all statuses
+    const orderIndexes = {
+      todo: taskStatus === "todo" ? orderIndex : 1000,
+      in_progress: taskStatus === "in_progress" ? orderIndex : 1000,
+      completed: taskStatus === "completed" ? orderIndex : 1000,
+    };
+
     // Create task with all fields, using defaults for missing ones
     const task = await createTask({
       title: title || "",
       description: description || "",
       projectId,
       assignedTo: assignedTo || [],
-      status: status || TASK_STATUS.TODO,
+      status: taskStatus,
       priority: priority || TASK_PRIORITY.MEDIUM,
       dueDate: parseDate(dueDate) || null,
       tags: tags || [],
@@ -126,6 +142,7 @@ exports.createTask = async (req, res, next) => {
       attachments: attachments || [],
       customFields: customFields || [],
       checklist: checklist || [],
+      orderIndex: orderIndexes,
       createdBy: userId,
     });
 

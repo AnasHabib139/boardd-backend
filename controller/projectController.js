@@ -133,6 +133,7 @@ exports.CreateProject = async (req, res, next) => {
 };
 
 // Get projects of a tab with conditional view (overview, list, or calendar)
+// List view provides ordered tasks for frontend board display
 exports.getProjectsOfTab = async (req, res, next) => {
   try {
     const { channelId, tabId } = req.params;
@@ -221,8 +222,37 @@ exports.getProjectsOfTab = async (req, res, next) => {
       query,
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 10,
-      responseKey,
+      responseKey: "projects",
     });
+
+    // Sort tasks by orderIndex within each status category (with fallbacks for missing orderIndex)
+    if (result.projects) {
+      result.projects = result.projects.map((project) => {
+        // Helper function to sort tasks with orderIndex fallback
+        const sortTasksByOrderIndex = (tasks, status) => {
+          return tasks.sort((a, b) => {
+            const aOrder =
+              a.orderIndex?.[status] || new Date(a.createdAt).getTime();
+            const bOrder =
+              b.orderIndex?.[status] || new Date(b.createdAt).getTime();
+            return aOrder - bOrder;
+          });
+        };
+
+        return {
+          ...project,
+          todoTasks: sortTasksByOrderIndex(project.todoTasks || [], "todo"),
+          inProgressTasks: sortTasksByOrderIndex(
+            project.inProgressTasks || [],
+            "in_progress"
+          ),
+          completedTasks: sortTasksByOrderIndex(
+            project.completedTasks || [],
+            "completed"
+          ),
+        };
+      });
+    }
 
     // Prepare response data based on view
     let responseData;

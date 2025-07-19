@@ -456,25 +456,41 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
               preserveNullAndEmptyArrays: true,
             },
           },
-          // Project task fields
+          // Project task fields - OPTIMIZED FOR LIST VIEW
           {
             $project: {
               _id: 1,
               title: 1,
               description: 1,
+              projectId: "$projectId", // Already set by foreignField
               status: 1,
               priority: 1,
               dueDate: 1,
-              tags: 1,
               strokeColor: 1,
-              type: 1,
-              attachments: 1,
-              customFields: 1,
+              isActive: 1,
+              orderIndex: 1,
+              version: { $ifNull: ["$version", 0] },
               createdAt: 1,
               updatedAt: 1,
-              assignees: 1,
-              taskCreator: 1,
-              // Add computed fields
+              // Assigned users - only essential details
+              assignees: {
+                $map: {
+                  input: "$assignees",
+                  as: "assignee",
+                  in: {
+                    _id: "$$assignee._id",
+                    name: "$$assignee.name",
+                    email: "$$assignee.email",
+                  },
+                },
+              },
+              // Task creator - only essential details
+              createdBy: {
+                _id: "$taskCreator._id",
+                name: "$taskCreator.name",
+                email: "$taskCreator.email",
+              },
+              // Computed fields for UI
               isOverdue: {
                 $cond: {
                   if: {
@@ -488,15 +504,12 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
                   else: false,
                 },
               },
-              assigneeCount: { $size: "$assignees" },
             },
           },
-          // Sort tasks by priority and due date
+          // Sort tasks by their status-specific orderIndex (handled in controller)
           {
             $sort: {
-              priority: -1, // high, medium, low
-              dueDate: 1, // earliest first
-              createdAt: -1, // newest first if no due date
+              createdAt: -1, // Fallback sort by creation date
             },
           },
         ],

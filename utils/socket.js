@@ -1,7 +1,12 @@
 "use strict";
 const socketIO = require("socket.io");
 const { createActivity } = require("../models/activityModel");
-const { updateTask, findTask } = require("../models/taskModel");
+const {
+  updateTask,
+  findTask,
+  updateTaskOrderIndex,
+  moveTaskToProject,
+} = require("../models/taskModel");
 const { updateSubtask } = require("../models/subtaskModel");
 const { findProject } = require("../models/projectModel");
 const { findChannelTab } = require("../models/channelTabsModel");
@@ -322,6 +327,481 @@ const processTaskUpdate = async (socket, data) => {
   }
 };
 
+// Process task reorder within same project (change status and/or position)
+const processTaskReorder = async (socket, data) => {
+  const { taskId, newStatus, newOrderIndex, userId } = data;
+
+  try {
+    // Validate input
+    if (!taskId || !newStatus || userId === undefined) {
+      socket.emit("task-reorder-response", {
+        success: false,
+        error: "Missing required fields: taskId, newStatus, userId",
+        taskId,
+      });
+      return;
+    }
+
+    // Validate status
+    if (!Object.values(TASK_STATUS).includes(newStatus)) {
+      socket.emit("task-reorder-response", {
+        success: false,
+        error: "Invalid status value",
+        taskId,
+      });
+      return;
+    }
+
+    // Check for conflicts
+    const updateKey = `${taskId}-reorder`;
+    if (pendingUpdates.has(updateKey)) {
+      socket.emit("task-reorder-response", {
+        success: false,
+        error: "Another reorder is in progress for this task",
+        taskId,
+        conflict: true,
+      });
+      return;
+    }
+
+    // Mark as pending
+    pendingUpdates.set(updateKey, { userId, timestamp: Date.now() });
+
+    // Find and validate task
+    const task = await findTask({ _id: taskId });
+    if (!task) {
+      socket.emit("task-reorder-response", {
+        success: false,
+        error: "Task not found",
+        taskId,
+      });
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
+    // Get context for permissions and activity
+    const [project, user] = await Promise.all([
+      findProject({ _id: task.projectId }),
+      findUser({ _id: userId }),
+    ]);
+
+    if (!project || !user) {
+      socket.emit("task-reorder-response", {
+        success: false,
+        error: "Project or user not found",
+        taskId,
+      });
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
+    const [tab, channel] = await Promise.all([
+      findChannelTab({ _id: project.tabId }),
+      findChannel({ _id: project.channelId }),
+    ]);
+
+    if (!tab || !channel) {
+      socket.emit("task-reorder-response", {
+        success: false,
+        error: "Tab or channel not found",
+        taskId,
+      });
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
+    // Check permissions
+    const canReorder =
+      tab.members.includes(userId) ||
+      channel.members.includes(userId) ||
+      task.assignedTo.includes(userId) ||
+      task.createdBy.toString() === userId;
+
+    if (!canReorder) {
+      socket.emit("task-reorder-response", {
+        success: false,
+        error: "Permission denied",
+        taskId,
+      });
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
+    // Calculate order index if not provided (append to end)
+    let calculatedOrderIndex = newOrderIndex;
+    if (!calculatedOrderIndex) {
+      // Get next available order index for this status
+      const { getNextOrderIndex } = require("../models/taskModel");
+      calculatedOrderIndex = await getNextOrderIndex(task.projectId, newStatus);
+    }
+
+    const previousStatus = task.status;
+    const contextPath = `${channel.channelName} / ${tab.tabName}`;
+    const userName = user.name || user.email;
+
+    // Update task status and order index
+    const updatedTask = await updateTaskOrderIndex(
+      taskId,
+      newStatus,
+      calculatedOrderIndex
+    );
+
+    // If status changed, also update the task status
+    if (newStatus !== previousStatus) {
+      await updateTask({ _id: taskId }, { status: newStatus }, { new: true });
+    }
+
+    // Create activity for the reorder
+    const activityMessage = {
+      forCreator:
+        newStatus !== previousStatus
+          ? `You moved "${task.title}" to ${newStatus}`
+          : `You reordered "${task.title}"`,
+      forOthers:
+        newStatus !== previousStatus
+          ? `${userName} moved "${task.title}" to ${newStatus}`
+          : `${userName} reordered "${task.title}"`,
+    };
+
+    const activity = await createActivity({
+      projectId: task.projectId,
+      taskId: task._id,
+      userId,
+      actionType:
+        newStatus !== previousStatus
+          ? ACTION_TYPE.UPDATE_TASK
+          : ACTION_TYPE.UPDATE_TASK,
+      field: newStatus !== previousStatus ? "status" : "orderIndex",
+      previousValue:
+        newStatus !== previousStatus
+          ? previousStatus
+          : task.orderIndex?.[previousStatus],
+      newValue: newStatus !== previousStatus ? newStatus : calculatedOrderIndex,
+      message: activityMessage,
+      timestamp: new Date(),
+    });
+
+    // Emit success response
+    const responseData = {
+      success: true,
+      taskId,
+      newStatus,
+      previousStatus,
+      orderIndex: calculatedOrderIndex,
+      task: {
+        _id: task._id,
+        title: task.title,
+        status: newStatus,
+        priority: task.priority,
+        strokeColor: task.strokeColor,
+      },
+      activity: {
+        _id: activity._id,
+        message: activityMessage,
+        timestamp: activity.timestamp,
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+        },
+      },
+    };
+
+    // Emit to all users in the tab
+    io.to(`tab:${project.tabId}`).emit("task-reorder-response", responseData);
+
+    // Emit tab activity
+    io.to(`tab:${project.tabId}`).emit("tab-activity", {
+      type: "TASK_REORDERED",
+      task: responseData.task,
+      newStatus,
+      previousStatus,
+      orderIndex: calculatedOrderIndex,
+      movedBy: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+      notification:
+        newStatus !== previousStatus
+          ? `${userName} moved "${task.title}" to ${newStatus}`
+          : `${userName} reordered "${task.title}"`,
+      timestamp: new Date(),
+    });
+  } catch (error) {
+    console.error(`Error processing task reorder for ${taskId}:`, error);
+    socket.emit("task-reorder-response", {
+      success: false,
+      error: error.message,
+      taskId,
+    });
+  } finally {
+    const updateKey = `${taskId}-reorder`;
+    pendingUpdates.delete(updateKey);
+  }
+};
+
+// Process task move between projects
+const processTaskMove = async (socket, data) => {
+  const { taskId, newProjectId, newStatus, newOrderIndex, userId } = data;
+
+  try {
+    // Validate input
+    if (!taskId || !newProjectId || !newStatus || userId === undefined) {
+      socket.emit("task-move-response", {
+        success: false,
+        error:
+          "Missing required fields: taskId, newProjectId, newStatus, userId",
+        taskId,
+      });
+      return;
+    }
+
+    // Validate status
+    if (!Object.values(TASK_STATUS).includes(newStatus)) {
+      socket.emit("task-move-response", {
+        success: false,
+        error: "Invalid status value",
+        taskId,
+      });
+      return;
+    }
+
+    // Check for conflicts
+    const updateKey = `${taskId}-move`;
+    if (pendingUpdates.has(updateKey)) {
+      socket.emit("task-move-response", {
+        success: false,
+        error: "Another move is in progress for this task",
+        taskId,
+        conflict: true,
+      });
+      return;
+    }
+
+    // Mark as pending
+    pendingUpdates.set(updateKey, { userId, timestamp: Date.now() });
+
+    // Find and validate task and projects
+    const [task, newProject] = await Promise.all([
+      findTask({ _id: taskId }),
+      findProject({ _id: newProjectId }),
+    ]);
+
+    if (!task) {
+      socket.emit("task-move-response", {
+        success: false,
+        error: "Task not found",
+        taskId,
+      });
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
+    if (!newProject) {
+      socket.emit("task-move-response", {
+        success: false,
+        error: "Target project not found",
+        taskId,
+      });
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
+    // Get old project
+    const oldProject = await findProject({ _id: task.projectId });
+
+    // Get user and context
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      socket.emit("task-move-response", {
+        success: false,
+        error: "User not found",
+        taskId,
+      });
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
+    // Get tabs and channels for both projects
+    const [oldTab, newTab, oldChannel, newChannel] = await Promise.all([
+      findChannelTab({ _id: oldProject.tabId }),
+      findChannelTab({ _id: newProject.tabId }),
+      findChannel({ _id: oldProject.channelId }),
+      findChannel({ _id: newProject.channelId }),
+    ]);
+
+    // Check permissions for both projects
+    const canMoveFrom =
+      oldTab.members.includes(userId) ||
+      oldChannel.members.includes(userId) ||
+      task.assignedTo.includes(userId) ||
+      task.createdBy.toString() === userId;
+
+    const canMoveTo =
+      newTab.members.includes(userId) || newChannel.members.includes(userId);
+
+    if (!canMoveFrom || !canMoveTo) {
+      socket.emit("task-move-response", {
+        success: false,
+        error: "Permission denied for source or target project",
+        taskId,
+      });
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
+    // Calculate order index if not provided (append to end)
+    let calculatedOrderIndex = newOrderIndex;
+    if (!calculatedOrderIndex) {
+      // Get next available order index for this project and status
+      const { getNextOrderIndex } = require("../models/taskModel");
+      calculatedOrderIndex = await getNextOrderIndex(newProjectId, newStatus);
+    }
+
+    const previousStatus = task.status;
+    const previousProjectId = task.projectId;
+    const userName = user.name || user.email;
+
+    // Move task to new project with new status and order
+    const updatedTask = await moveTaskToProject(
+      taskId,
+      newProjectId,
+      newStatus,
+      calculatedOrderIndex
+    );
+
+    // Create activity for the move
+    const activityMessage = {
+      forCreator: `You moved "${task.title}" from "${oldProject.name}" to "${newProject.name}" (${newStatus})`,
+      forOthers: `${userName} moved "${task.title}" from "${oldProject.name}" to "${newProject.name}" (${newStatus})`,
+    };
+
+    const activity = await createActivity({
+      projectId: newProjectId, // Activity belongs to new project
+      taskId: task._id,
+      userId,
+      actionType: ACTION_TYPE.UPDATE_TASK,
+      field: "projectId",
+      previousValue: previousProjectId,
+      newValue: newProjectId,
+      message: activityMessage,
+      timestamp: new Date(),
+    });
+
+    // Prepare response data
+    const responseData = {
+      success: true,
+      taskId,
+      newProjectId,
+      previousProjectId,
+      newStatus,
+      previousStatus,
+      orderIndex: calculatedOrderIndex,
+      task: {
+        _id: task._id,
+        title: task.title,
+        status: newStatus,
+        priority: task.priority,
+        strokeColor: task.strokeColor,
+        projectId: newProjectId,
+      },
+      sourceProject: {
+        _id: oldProject._id,
+        name: oldProject.name,
+      },
+      targetProject: {
+        _id: newProject._id,
+        name: newProject.name,
+      },
+      activity: {
+        _id: activity._id,
+        message: activityMessage,
+        timestamp: activity.timestamp,
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+        },
+      },
+    };
+
+    // Emit to both old and new tabs (check if same tab to avoid duplicates)
+    const isSameTab =
+      oldProject.tabId.toString() === newProject.tabId.toString();
+
+    if (isSameTab) {
+      // Same tab - emit once with consolidated message
+      io.to(`tab:${oldProject.tabId}`).emit("task-move-response", {
+        ...responseData,
+        direction: "internal", // Task moved within same tab
+      });
+
+      io.to(`tab:${oldProject.tabId}`).emit("tab-activity", {
+        type: "TASK_MOVED_WITHIN_TAB",
+        task: responseData.task,
+        sourceProject: responseData.sourceProject,
+        targetProject: responseData.targetProject,
+        movedBy: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+        },
+        notification: `${userName} moved "${task.title}" from "${oldProject.name}" to "${newProject.name}"`,
+        timestamp: new Date(),
+      });
+    } else {
+      // Different tabs - emit to both tabs
+      io.to(`tab:${oldProject.tabId}`).emit("task-move-response", {
+        ...responseData,
+        direction: "source", // Task removed from this tab
+      });
+
+      io.to(`tab:${newProject.tabId}`).emit("task-move-response", {
+        ...responseData,
+        direction: "target", // Task added to this tab
+      });
+
+      // Emit tab activities to both tabs
+      io.to(`tab:${oldProject.tabId}`).emit("tab-activity", {
+        type: "TASK_MOVED_OUT",
+        task: responseData.task,
+        targetProject: responseData.targetProject,
+        movedBy: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+        },
+        notification: `${userName} moved "${task.title}" to "${newProject.name}"`,
+        timestamp: new Date(),
+      });
+
+      io.to(`tab:${newProject.tabId}`).emit("tab-activity", {
+        type: "TASK_MOVED_IN",
+        task: responseData.task,
+        sourceProject: responseData.sourceProject,
+        movedBy: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+        },
+        notification: `${userName} moved "${task.title}" from "${oldProject.name}"`,
+        timestamp: new Date(),
+      });
+    }
+  } catch (error) {
+    console.error(`Error processing task move for ${taskId}:`, error);
+    socket.emit("task-move-response", {
+      success: false,
+      error: error.message,
+      taskId,
+    });
+  } finally {
+    const updateKey = `${taskId}-move`;
+    pendingUpdates.delete(updateKey);
+  }
+};
+
 // Initialize socket.io
 exports.initSocket = (server) => {
   const allowedOrigins = [
@@ -410,6 +890,16 @@ exports.initSocket = (server) => {
         isEditing,
         socketId: socket.id,
       });
+    });
+
+    // Handle task drag and drop within same project
+    socket.on("task-reorder", async (data) => {
+      await processTaskReorder(socket, data);
+    });
+
+    // Handle task drag and drop between projects
+    socket.on("task-move", async (data) => {
+      await processTaskMove(socket, data);
     });
 
     socket.on("disconnect", () => {
