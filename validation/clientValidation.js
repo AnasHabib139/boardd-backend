@@ -64,16 +64,10 @@ const projectSchema = Joi.object({
 });
 
 // Attachment validation schema (URL or file path)
-const attachmentSchema = Joi.string()
-  .trim()
-  .min(1)
-  .max(500)
-  .required()
-  .messages({
-    "string.min": "Attachment must not be empty",
-    "string.max": "Attachment path cannot exceed 500 characters",
-    "string.empty": "Attachment is required",
-  });
+const attachmentSchema = Joi.string().trim().uri().required().messages({
+  "string.uri": "Attachment must be a valid URL or file path",
+  "string.empty": "Attachment is required",
+});
 
 // Main validation schema for createOrUpdateClient
 const createOrUpdateClientSchema = Joi.object({
@@ -86,38 +80,11 @@ const createOrUpdateClientSchema = Joi.object({
       "string.empty": "Tab ID is required",
     }),
 
-  // Array of personal details objects
-  personalDetails: Joi.array()
-    .items(personalDetailsSchema)
-    .min(1)
-    .max(50)
-    .optional()
-    .messages({
-      "array.min": "At least one personal detail is required when provided",
-      "array.max": "Cannot exceed 50 personal details",
-    }),
+  personalDetails: personalDetailsSchema.optional(),
 
-  // Array of attachment strings
-  attachments: Joi.array()
-    .items(attachmentSchema)
-    .min(1)
-    .max(100)
-    .optional()
-    .messages({
-      "array.min": "At least one attachment is required when provided",
-      "array.max": "Cannot exceed 100 attachments",
-    }),
+  attachments: attachmentSchema.optional(),
 
-  // Array of project objects
-  projects: Joi.array()
-    .items(projectSchema)
-    .min(1)
-    .max(20)
-    .optional()
-    .messages({
-      "array.min": "At least one project is required when provided",
-      "array.max": "Cannot exceed 20 projects",
-    }),
+  projects: projectSchema.optional(),
 })
   .or("personalDetails", "attachments", "projects")
   .messages({

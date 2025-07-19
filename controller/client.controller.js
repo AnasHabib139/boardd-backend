@@ -22,28 +22,6 @@ exports.createOrUpdateClient = async (req, res, next) => {
       });
     }
 
-    // Validate arrays if provided
-    if (personalDetails && !Array.isArray(personalDetails)) {
-      return next({
-        statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "personalDetails must be an array",
-      });
-    }
-
-    if (attachments && !Array.isArray(attachments)) {
-      return next({
-        statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "attachments must be an array",
-      });
-    }
-
-    if (projects && !Array.isArray(projects)) {
-      return next({
-        statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "projects must be an array",
-      });
-    }
-
     // Find and validate tab
     const tab = await findChannelTab({ _id: tabId });
     if (!tab) {
@@ -66,65 +44,55 @@ exports.createOrUpdateClient = async (req, res, next) => {
     const existingClient = await findClient({ tabId });
 
     if (existingClient) {
-      // Update existing client by appending new data to arrays
-      const updateOperations = {
-        $set: { updatedAt: new Date() },
-      };
+      // Update existing client by adding new data
+      const updateOperations = {};
 
-      // Append new personalDetails to existing array
-      if (personalDetails && personalDetails.length > 0) {
+      if (personalDetails) {
         updateOperations.$push = {
           ...updateOperations.$push,
-          personalDetails: { $each: personalDetails },
+          personalDetails: personalDetails,
         };
       }
 
-      // Append new attachments to existing array
-      if (attachments && attachments.length > 0) {
+      if (attachments) {
         updateOperations.$push = {
           ...updateOperations.$push,
-          attachments: { $each: attachments },
+          attachments: attachments,
         };
       }
 
-      // Append new projects to existing array
-      if (projects && projects.length > 0) {
+      if (projects) {
         updateOperations.$push = {
           ...updateOperations.$push,
-          projects: { $each: projects },
+          projects: projects,
         };
       }
+
+      // Add updated timestamp
+      updateOperations.$set = { updatedAt: new Date() };
 
       const updatedClient = await updateClient({ tabId }, updateOperations);
 
       return generateResponse(
         updatedClient,
-        `Client updated successfully. Added ${
-          personalDetails?.length || 0
-        } personal details, ${attachments?.length || 0} attachments, and ${
-          projects?.length || 0
-        } projects.`,
+        "Client updated successfully",
         res,
         STATUS_CODES.SUCCESS
       );
     } else {
-      // Create new client with provided arrays
+      // Create new client
       const newClientData = {
         tabId,
-        personalDetails: personalDetails || [],
-        attachments: attachments || [],
-        projects: projects || [],
+        personalDetails: personalDetails ? [personalDetails] : [],
+        attachments: attachments ? [attachments] : [],
+        projects: projects ? [projects] : [],
       };
 
       const newClient = await createClient(newClientData);
 
       return generateResponse(
         newClient,
-        `Client created successfully with ${
-          personalDetails?.length || 0
-        } personal details, ${attachments?.length || 0} attachments, and ${
-          projects?.length || 0
-        } projects.`,
+        "Client created successfully",
         res,
         STATUS_CODES.CREATED
       );
