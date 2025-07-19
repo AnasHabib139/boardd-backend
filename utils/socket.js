@@ -808,6 +808,7 @@ exports.initSocket = (server) => {
     "http://localhost:3000", // Local development
     "http://localhost:3001", // Alternative local port
     "https://boarddd-frontend.vercel.app", // Production Vercel frontend
+    "https://boarddd-frontend-murex.vercel.app/", // Production Vercel frontend
     "https://boarddd.ddns.net", // Production backend domain
     "https://www.boarddd.ddns.net", // Production with www
     // Add your frontend domain here
