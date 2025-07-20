@@ -120,3 +120,107 @@ exports.validateCreateOrUpdateClient = (req, res, next) => {
 
   next();
 };
+
+// Update client data validation schema
+const updateClientDataSchema = Joi.object({
+  type: Joi.string().valid("personalDetails", "projects").required().messages({
+    "any.only": "Type must be either 'personalDetails' or 'projects'",
+    "any.required": "Type is required",
+  }),
+
+  id: Joi.string()
+    .trim()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "ID must be a valid MongoDB ObjectId",
+      "any.required": "ID is required",
+    }),
+
+  data: Joi.when("type", {
+    is: "personalDetails",
+    then: personalDetailsSchema.required(),
+    otherwise: Joi.when("type", {
+      is: "projects",
+      then: projectSchema.required(),
+      otherwise: Joi.forbidden(),
+    }),
+  }).messages({
+    "any.required": "Data is required",
+  }),
+});
+
+// Delete client data validation schema
+const deleteClientDataSchema = Joi.object({
+  type: Joi.string()
+    .valid("personalDetails", "projects", "attachments")
+    .required()
+    .messages({
+      "any.only":
+        "Type must be 'personalDetails', 'projects', or 'attachments'",
+      "any.required": "Type is required",
+    }),
+
+  id: Joi.alternatives().conditional("type", {
+    is: "attachments",
+    then: Joi.string().trim().min(1).max(500).required().messages({
+      "string.min": "Attachment ID cannot be empty",
+      "string.max": "Attachment ID cannot exceed 500 characters",
+      "any.required": "Attachment ID is required",
+    }),
+    otherwise: Joi.string()
+      .trim()
+      .pattern(/^[0-9a-fA-F]{24}$/)
+      .required()
+      .messages({
+        "string.pattern.base": "ID must be a valid MongoDB ObjectId",
+        "any.required": "ID is required",
+      }),
+  }),
+});
+
+// Validation middleware for update client data
+exports.validateUpdateClientData = (req, res, next) => {
+  const { error } = updateClientDataSchema.validate(req.body, {
+    abortEarly: false,
+    stripUnknown: true,
+  });
+
+  if (error) {
+    const errorMessages = error.details.map((detail) => ({
+      field: detail.path.join("."),
+      message: detail.message,
+    }));
+
+    return res.status(STATUS_CODES.BAD_REQUEST).json({
+      success: false,
+      message: "Validation failed",
+      errors: errorMessages,
+    });
+  }
+
+  next();
+};
+
+// Validation middleware for delete client data
+exports.validateDeleteClientData = (req, res, next) => {
+  const { error } = deleteClientDataSchema.validate(req.body, {
+    abortEarly: false,
+    stripUnknown: true,
+  });
+
+  if (error) {
+    const errorMessages = error.details.map((detail) => ({
+      field: detail.path.join("."),
+      message: detail.message,
+    }));
+
+    return res.status(STATUS_CODES.BAD_REQUEST).json({
+      success: false,
+      message: "Validation failed",
+      errors: errorMessages,
+    });
+  }
+
+  next();
+};

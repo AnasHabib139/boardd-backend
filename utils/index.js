@@ -364,3 +364,40 @@ exports.generateNextOrder = (fields) => {
   const maxOrder = Math.max(...fields.map((field) => field.order || 0));
   return maxOrder + 1;
 };
+
+// Helper function to delete file from disk
+exports.deleteFileFromDisk = (filePath) => {
+  try {
+    // Remove the leading slash if present and construct absolute path
+    const relativePath = filePath.startsWith("/")
+      ? filePath.slice(1)
+      : filePath;
+    const absolutePath = path.join(process.cwd(), relativePath);
+
+    // Verify the path is within uploadFiles directory for security
+    const uploadFilesDir = path.join(process.cwd(), "uploadFiles");
+    if (!absolutePath.startsWith(uploadFilesDir)) {
+      console.error(
+        `Security violation: Attempted to delete file outside uploadFiles directory: ${filePath}`
+      );
+      return {
+        success: false,
+        error: "Invalid file path - Security violation",
+      };
+    }
+
+    // Check if file exists
+    if (!fs.existsSync(absolutePath)) {
+      console.warn(`File not found for deletion: ${filePath}`);
+      return { success: false, error: "File not found" };
+    }
+
+    // Delete the file
+    fs.unlinkSync(absolutePath);
+    console.log(`Successfully deleted file: ${filePath}`);
+    return { success: true };
+  } catch (error) {
+    console.error(`Error deleting file ${filePath}:`, error.message);
+    return { success: false, error: error.message };
+  }
+};

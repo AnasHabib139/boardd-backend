@@ -139,9 +139,12 @@ exports.getContributionsQuery = (channelId, startDate, endDate) => {
           { actionType: ACTION_TYPE.CREATE_CLIENT },
           { actionType: ACTION_TYPE.ADD_CLIENT_PERSONAL_DETAILS },
           { actionType: ACTION_TYPE.UPDATE_CLIENT_PERSONAL_DETAILS },
+          { actionType: ACTION_TYPE.DELETE_CLIENT_PERSONAL_DETAILS },
           { actionType: ACTION_TYPE.ADD_CLIENT_ATTACHMENT },
+          { actionType: ACTION_TYPE.DELETE_CLIENT_ATTACHMENT },
           { actionType: ACTION_TYPE.ADD_CLIENT_PROJECT },
           { actionType: ACTION_TYPE.UPDATE_CLIENT_PROJECT },
+          { actionType: ACTION_TYPE.DELETE_CLIENT_PROJECT },
         ],
       },
     },
@@ -169,9 +172,22 @@ exports.getContributionsQuery = (channelId, startDate, endDate) => {
                         ACTION_TYPE.UPDATE_CLIENT_PERSONAL_DETAILS,
                       ],
                     },
+                    {
+                      $eq: [
+                        "$actionType",
+                        ACTION_TYPE.DELETE_CLIENT_PERSONAL_DETAILS,
+                      ],
+                    },
                     { $eq: ["$actionType", ACTION_TYPE.ADD_CLIENT_ATTACHMENT] },
+                    {
+                      $eq: [
+                        "$actionType",
+                        ACTION_TYPE.DELETE_CLIENT_ATTACHMENT,
+                      ],
+                    },
                     { $eq: ["$actionType", ACTION_TYPE.ADD_CLIENT_PROJECT] },
                     { $eq: ["$actionType", ACTION_TYPE.UPDATE_CLIENT_PROJECT] },
+                    { $eq: ["$actionType", ACTION_TYPE.DELETE_CLIENT_PROJECT] },
                   ],
                 },
                 then: CONTRIBUTION_CATEGORIES.CLIENT_PROGRESS,
@@ -444,9 +460,12 @@ exports.getActivitiesQuery = (channelId, startDate, endDate) => {
           { actionType: ACTION_TYPE.CREATE_CLIENT },
           { actionType: ACTION_TYPE.ADD_CLIENT_PERSONAL_DETAILS },
           { actionType: ACTION_TYPE.UPDATE_CLIENT_PERSONAL_DETAILS },
+          { actionType: ACTION_TYPE.DELETE_CLIENT_PERSONAL_DETAILS },
           { actionType: ACTION_TYPE.ADD_CLIENT_ATTACHMENT },
+          { actionType: ACTION_TYPE.DELETE_CLIENT_ATTACHMENT },
           { actionType: ACTION_TYPE.ADD_CLIENT_PROJECT },
           { actionType: ACTION_TYPE.UPDATE_CLIENT_PROJECT },
+          { actionType: ACTION_TYPE.DELETE_CLIENT_PROJECT },
         ],
       },
     },
@@ -501,9 +520,22 @@ exports.getActivitiesQuery = (channelId, startDate, endDate) => {
                         ACTION_TYPE.UPDATE_CLIENT_PERSONAL_DETAILS,
                       ],
                     },
+                    {
+                      $eq: [
+                        "$actionType",
+                        ACTION_TYPE.DELETE_CLIENT_PERSONAL_DETAILS,
+                      ],
+                    },
                     { $eq: ["$actionType", ACTION_TYPE.ADD_CLIENT_ATTACHMENT] },
+                    {
+                      $eq: [
+                        "$actionType",
+                        ACTION_TYPE.DELETE_CLIENT_ATTACHMENT,
+                      ],
+                    },
                     { $eq: ["$actionType", ACTION_TYPE.ADD_CLIENT_PROJECT] },
                     { $eq: ["$actionType", ACTION_TYPE.UPDATE_CLIENT_PROJECT] },
+                    { $eq: ["$actionType", ACTION_TYPE.DELETE_CLIENT_PROJECT] },
                   ],
                 },
                 then: "client_activity",
@@ -594,9 +626,27 @@ exports.getActivitiesQuery = (channelId, startDate, endDate) => {
                   },
                   {
                     case: {
+                      $eq: [
+                        "$actionType",
+                        ACTION_TYPE.DELETE_CLIENT_PERSONAL_DETAILS,
+                      ],
+                    },
+                    then: "Deleted client personal details",
+                  },
+                  {
+                    case: {
                       $eq: ["$actionType", ACTION_TYPE.ADD_CLIENT_ATTACHMENT],
                     },
                     then: "Uploaded client attachment",
+                  },
+                  {
+                    case: {
+                      $eq: [
+                        "$actionType",
+                        ACTION_TYPE.DELETE_CLIENT_ATTACHMENT,
+                      ],
+                    },
+                    then: "Removed client attachment",
                   },
                   {
                     case: {
@@ -609,6 +659,12 @@ exports.getActivitiesQuery = (channelId, startDate, endDate) => {
                       $eq: ["$actionType", ACTION_TYPE.UPDATE_CLIENT_PROJECT],
                     },
                     then: "Updated client project",
+                  },
+                  {
+                    case: {
+                      $eq: ["$actionType", ACTION_TYPE.DELETE_CLIENT_PROJECT],
+                    },
+                    then: "Deleted client project",
                   },
                 ],
                 default: "Made an update",
