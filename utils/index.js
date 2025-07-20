@@ -322,6 +322,165 @@ exports.generateActivityMessage = (field, userName, data) => {
         };
       }
 
+    case "type":
+      if (isCreation || previousValue === null || previousValue === undefined) {
+        return {
+          forCreator: `You set the type of "${taskTitle}" to ${newValue}`,
+          forOthers: `${userName} set the type of "${taskTitle}" to ${newValue}`,
+        };
+      }
+      return {
+        forCreator: `You changed the type of "${taskTitle}" from ${previousValue} to ${newValue}`,
+        forOthers: `${userName} changed the type of "${taskTitle}" from ${previousValue} to ${newValue}`,
+      };
+
+    case "attachments":
+      if (isCreation || !previousValue || previousValue.length === 0) {
+        const count = Array.isArray(newValue) ? newValue.length : 1;
+        return {
+          forCreator: `You added ${count} attachment${
+            count > 1 ? "s" : ""
+          } to "${taskTitle}"`,
+          forOthers: `${userName} added ${count} attachment${
+            count > 1 ? "s" : ""
+          } to "${taskTitle}"`,
+        };
+      }
+
+      const addedAttachments = newValue.filter(
+        (attachment) => !previousValue.includes(attachment)
+      );
+      const removedAttachments = previousValue.filter(
+        (attachment) => !newValue.includes(attachment)
+      );
+
+      if (addedAttachments.length > 0 && removedAttachments.length > 0) {
+        return {
+          forCreator: `You updated attachments for "${taskTitle}"`,
+          forOthers: `${userName} updated attachments for "${taskTitle}"`,
+        };
+      } else if (addedAttachments.length > 0) {
+        const count = addedAttachments.length;
+        return {
+          forCreator: `You added ${count} attachment${
+            count > 1 ? "s" : ""
+          } to "${taskTitle}"`,
+          forOthers: `${userName} added ${count} attachment${
+            count > 1 ? "s" : ""
+          } to "${taskTitle}"`,
+        };
+      } else if (removedAttachments.length > 0) {
+        const count = removedAttachments.length;
+        return {
+          forCreator: `You removed ${count} attachment${
+            count > 1 ? "s" : ""
+          } from "${taskTitle}"`,
+          forOthers: `${userName} removed ${count} attachment${
+            count > 1 ? "s" : ""
+          } from "${taskTitle}"`,
+        };
+      }
+      return {
+        forCreator: `You updated attachments for "${taskTitle}"`,
+        forOthers: `${userName} updated attachments for "${taskTitle}"`,
+      };
+
+    case "checklist":
+      if (isCreation || !previousValue || previousValue.length === 0) {
+        const count = Array.isArray(newValue) ? newValue.length : 1;
+        return {
+          forCreator: `You added ${count} checklist item${
+            count > 1 ? "s" : ""
+          } to "${taskTitle}"`,
+          forOthers: `${userName} added ${count} checklist item${
+            count > 1 ? "s" : ""
+          } to "${taskTitle}"`,
+        };
+      }
+
+      // Check for completed items
+      const newCompletedCount = newValue.filter(
+        (item) => item.isCompleted
+      ).length;
+      const oldCompletedCount = previousValue.filter(
+        (item) => item.isCompleted
+      ).length;
+
+      if (newCompletedCount !== oldCompletedCount) {
+        if (newCompletedCount > oldCompletedCount) {
+          const completedCount = newCompletedCount - oldCompletedCount;
+          return {
+            forCreator: `You completed ${completedCount} checklist item${
+              completedCount > 1 ? "s" : ""
+            } in "${taskTitle}"`,
+            forOthers: `${userName} completed ${completedCount} checklist item${
+              completedCount > 1 ? "s" : ""
+            } in "${taskTitle}"`,
+          };
+        } else {
+          const uncompletedCount = oldCompletedCount - newCompletedCount;
+          return {
+            forCreator: `You unchecked ${uncompletedCount} checklist item${
+              uncompletedCount > 1 ? "s" : ""
+            } in "${taskTitle}"`,
+            forOthers: `${userName} unchecked ${uncompletedCount} checklist item${
+              uncompletedCount > 1 ? "s" : ""
+            } in "${taskTitle}"`,
+          };
+        }
+      }
+
+      // Check for added/removed items
+      const itemCountChange = newValue.length - previousValue.length;
+      if (itemCountChange > 0) {
+        return {
+          forCreator: `You added ${itemCountChange} checklist item${
+            itemCountChange > 1 ? "s" : ""
+          } to "${taskTitle}"`,
+          forOthers: `${userName} added ${itemCountChange} checklist item${
+            itemCountChange > 1 ? "s" : ""
+          } to "${taskTitle}"`,
+        };
+      } else if (itemCountChange < 0) {
+        const removedCount = Math.abs(itemCountChange);
+        return {
+          forCreator: `You removed ${removedCount} checklist item${
+            removedCount > 1 ? "s" : ""
+          } from "${taskTitle}"`,
+          forOthers: `${userName} removed ${removedCount} checklist item${
+            removedCount > 1 ? "s" : ""
+          } from "${taskTitle}"`,
+        };
+      }
+
+      return {
+        forCreator: `You updated the checklist for "${taskTitle}"`,
+        forOthers: `${userName} updated the checklist for "${taskTitle}"`,
+      };
+
+    case "title":
+      return {
+        forCreator: `You renamed the task to "${newValue}"`,
+        forOthers: `${userName} renamed the task to "${newValue}"`,
+      };
+
+    case "customFields":
+      if (isCreation || !previousValue || previousValue.length === 0) {
+        const count = Array.isArray(newValue) ? newValue.length : 1;
+        return {
+          forCreator: `You added ${count} custom field${
+            count > 1 ? "s" : ""
+          } to "${taskTitle}"`,
+          forOthers: `${userName} added ${count} custom field${
+            count > 1 ? "s" : ""
+          } to "${taskTitle}"`,
+        };
+      }
+      return {
+        forCreator: `You updated custom fields for "${taskTitle}"`,
+        forOthers: `${userName} updated custom fields for "${taskTitle}"`,
+      };
+
     default:
       if (isCreation || previousValue === null || previousValue === undefined) {
         return {

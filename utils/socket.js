@@ -13,7 +13,7 @@ const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
 const { findUser } = require("../models/userModel");
 const { createNotification } = require("../models/notificationModel");
-const { generateActivityMessage } = require("../utils");
+const { generateActivityMessage, deleteFileFromDisk } = require("../utils");
 const { ACTION_TYPE, TASK_STATUS, TASK_PRIORITY } = require("./constants");
 
 let io;
@@ -49,6 +49,42 @@ const validateFieldValue = (field, value) => {
     case "dueDate":
       return (
         value === null || value instanceof Date || typeof value === "string"
+      );
+    case "type":
+      return typeof value === "string";
+    case "attachments":
+      return (
+        Array.isArray(value) && value.every((item) => typeof item === "string")
+      );
+    case "checklist":
+      return (
+        Array.isArray(value) &&
+        value.every(
+          (item) =>
+            typeof item === "object" &&
+            typeof item.name === "string" &&
+            typeof item.isCompleted === "boolean" &&
+            (item.order === undefined || typeof item.order === "number")
+        )
+      );
+    case "tags":
+      return (
+        Array.isArray(value) && value.every((item) => typeof item === "string")
+      );
+    case "title":
+    case "description":
+    case "strokeColor":
+      return typeof value === "string";
+    case "customFields":
+      return (
+        Array.isArray(value) &&
+        value.every(
+          (item) =>
+            typeof item === "object" &&
+            typeof item.name === "string" &&
+            typeof item.type === "string" &&
+            item.value !== undefined
+        )
       );
     default:
       return true;
@@ -181,6 +217,23 @@ const processTaskUpdate = async (socket, data) => {
     const previousValue = task[field];
     const contextPath = `${channel.channelName} / ${tab.tabName}`;
     const userName = user.name || user.email;
+
+    // Handle attachment deletions before updating
+    if (field === "attachments") {
+      const removedAttachments = previousValue.filter(
+        (attachment) => !value.includes(attachment)
+      );
+
+      // Delete removed attachments from disk
+      for (const attachmentPath of removedAttachments) {
+        const deleteResult = deleteFileFromDisk(attachmentPath);
+        if (!deleteResult.success) {
+          console.warn(
+            `Failed to delete attachment file: ${deleteResult.error}. Continuing with database update.`
+          );
+        }
+      }
+    }
 
     // Parse value if needed
     let processedValue = value;
@@ -982,6 +1035,21 @@ const generateTabNotificationMessage = (type, payload) => {
           break;
         case "tags":
           updateMessage = `updated tags`;
+          break;
+        case "type":
+          updateMessage = `changed type to "${newValue}"`;
+          break;
+        case "attachments":
+          updateMessage = `updated attachments`;
+          break;
+        case "checklist":
+          updateMessage = `updated checklist`;
+          break;
+        case "customFields":
+          updateMessage = `updated custom fields`;
+          break;
+        case "strokeColor":
+          updateMessage = `changed task color`;
           break;
         default:
           updateMessage = `updated ${field}`;
