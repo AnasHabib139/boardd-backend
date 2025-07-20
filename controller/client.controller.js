@@ -6,19 +6,26 @@ const {
 const { parseBody, generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { findChannelTab } = require("../models/channelTabsModel");
+const { findUser } = require("../models/userModel");
+const {
+  createClientCreationActivity,
+  createPersonalDetailsActivity,
+  createAttachmentActivity,
+  createProjectActivity,
+} = require("./helpers/clients/client.helper");
 
 exports.createOrUpdateClient = async (req, res, next) => {
   try {
-    const { tabId, personalDetails, attachments, projects } = parseBody(
+    const { tabId, personalDetails, attachment, projects } = parseBody(
       req.body
     );
 
     // Validate that at least one optional field is provided
-    if (!personalDetails && !attachments && !projects) {
+    if (!personalDetails && !attachment && !projects) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
         message:
-          "At least one field (personalDetails, attachments, or projects) is required",
+          "At least one field (personalDetails, attachment, or projects) is required",
       });
     }
 
@@ -40,8 +47,22 @@ exports.createOrUpdateClient = async (req, res, next) => {
       });
     }
 
+    // Get user info for activity messages
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    const userName = user.name || user.email;
+
     // Check if client already exists for this tab
     const existingClient = await findClient({ tabId });
+
+    let client;
+    let activities = [];
 
     if (existingClient) {
       // Update existing client by adding new data
@@ -52,13 +73,34 @@ exports.createOrUpdateClient = async (req, res, next) => {
           ...updateOperations.$push,
           personalDetails: personalDetails,
         };
+
+        // Create activity for personal details update
+        const personalDetailsActivity = await createPersonalDetailsActivity({
+          tabId,
+          userId,
+          userName,
+          client: existingClient,
+          personalDetails,
+          isUpdate: true,
+        });
+        activities.push(personalDetailsActivity);
       }
 
-      if (attachments) {
+      if (attachment) {
         updateOperations.$push = {
           ...updateOperations.$push,
-          attachments: attachments,
+          attachments: attachment, // Push single attachment to array
         };
+
+        // Create activity for attachment upload
+        const attachmentActivity = await createAttachmentActivity({
+          tabId,
+          userId,
+          userName,
+          client: existingClient,
+          attachments: attachment, // Pass single attachment
+        });
+        activities.push(attachmentActivity);
       }
 
       if (projects) {
@@ -66,15 +108,26 @@ exports.createOrUpdateClient = async (req, res, next) => {
           ...updateOperations.$push,
           projects: projects,
         };
+
+        // Create activity for project addition/update
+        const projectActivity = await createProjectActivity({
+          tabId,
+          userId,
+          userName,
+          client: existingClient,
+          projects,
+          isUpdate: true,
+        });
+        activities.push(projectActivity);
       }
 
       // Add updated timestamp
       updateOperations.$set = { updatedAt: new Date() };
 
-      const updatedClient = await updateClient({ tabId }, updateOperations);
+      client = await updateClient({ tabId }, updateOperations);
 
       return generateResponse(
-        updatedClient,
+        { client, activities },
         "Client updated successfully",
         res,
         STATUS_CODES.SUCCESS
@@ -84,14 +137,59 @@ exports.createOrUpdateClient = async (req, res, next) => {
       const newClientData = {
         tabId,
         personalDetails: personalDetails ? [personalDetails] : [],
-        attachments: attachments ? [attachments] : [],
+        attachments: attachment ? [attachment] : [], // Create array with single attachment
         projects: projects ? [projects] : [],
       };
 
-      const newClient = await createClient(newClientData);
+      client = await createClient(newClientData);
+
+      // Create client creation activity
+      const clientCreationActivity = await createClientCreationActivity({
+        tabId,
+        userId,
+        userName,
+        client,
+      });
+      activities.push(clientCreationActivity);
+
+      // Create activities for initial data
+      if (personalDetails) {
+        const personalDetailsActivity = await createPersonalDetailsActivity({
+          tabId,
+          userId,
+          userName,
+          client,
+          personalDetails,
+          isUpdate: false,
+        });
+        activities.push(personalDetailsActivity);
+      }
+
+      if (attachment) {
+        const attachmentActivity = await createAttachmentActivity({
+          tabId,
+          userId,
+          userName,
+          client,
+          attachments: attachment, // Pass single attachment
+        });
+        activities.push(attachmentActivity);
+      }
+
+      if (projects) {
+        const projectActivity = await createProjectActivity({
+          tabId,
+          userId,
+          userName,
+          client,
+          projects,
+          isUpdate: false,
+        });
+        activities.push(projectActivity);
+      }
 
       return generateResponse(
-        newClient,
+        { client, activities },
         "Client created successfully",
         res,
         STATUS_CODES.CREATED

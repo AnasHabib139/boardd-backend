@@ -8,9 +8,13 @@ const { ACTION_TYPE } = require("../utils/constants");
 
 const activitySchema = new Schema({
   // Context references
-  projectId: { type: Types.ObjectId, ref: "Project", required: true },
+  projectId: { type: Types.ObjectId, ref: "Project" }, // Made optional for client activities
   taskId: { type: Types.ObjectId, ref: "Task" },
   subtaskId: { type: Types.ObjectId, ref: "Subtask" },
+
+  // Client context references
+  tabId: { type: Types.ObjectId, ref: "ChannelTab" }, // For client activities
+  clientId: { type: Types.ObjectId, ref: "Client" }, // For client activities
 
   // Activity metadata
   userId: { type: Types.ObjectId, ref: "User", required: true },
@@ -33,6 +37,15 @@ const activitySchema = new Schema({
 
   // Timestamp
   timestamp: { type: Date, default: Date.now },
+});
+
+// Add validation to ensure either projectId or tabId is provided
+activitySchema.pre("validate", function (next) {
+  if (!this.projectId && !this.tabId) {
+    next(new Error("Either projectId or tabId must be provided"));
+  } else {
+    next();
+  }
 });
 
 // register pagination plugin to activity model

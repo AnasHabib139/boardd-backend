@@ -115,6 +115,15 @@ exports.ACTION_TYPE = Object.freeze({
   ADD_CUSTOM_FIELD: "ADD_CUSTOM_FIELD",
   UPDATE_CUSTOM_FIELD: "UPDATE_CUSTOM_FIELD",
   DELETE_CUSTOM_FIELD: "DELETE_CUSTOM_FIELD",
+  CREATE_PROJECT: "CREATE_PROJECT",
+
+  // Client action types
+  CREATE_CLIENT: "CREATE_CLIENT",
+  ADD_CLIENT_PERSONAL_DETAILS: "ADD_CLIENT_PERSONAL_DETAILS",
+  UPDATE_CLIENT_PERSONAL_DETAILS: "UPDATE_CLIENT_PERSONAL_DETAILS",
+  ADD_CLIENT_ATTACHMENT: "ADD_CLIENT_ATTACHMENT",
+  ADD_CLIENT_PROJECT: "ADD_CLIENT_PROJECT",
+  UPDATE_CLIENT_PROJECT: "UPDATE_CLIENT_PROJECT",
 });
 
 // Task status constants
@@ -158,3 +167,49 @@ exports.FORM_SHARING = Object.freeze({
   PUBLIC: "public",
   LINK_ONLY: "link_only",
 });
+
+// Work Progress Contribution Constants
+exports.CONTRIBUTION_LEVELS = {
+  NONE: { level: 0, min: 0, max: 0, name: "none" },
+  LIGHT: { level: 1, min: 1, max: 2, name: "light" },
+  MEDIUM: { level: 2, min: 3, max: 5, name: "medium" },
+  HIGH: { level: 3, min: 6, max: 10, name: "high" },
+  INTENSE: { level: 4, min: 11, max: Infinity, name: "intense" },
+};
+
+exports.CONTRIBUTION_TYPES = {
+  // Client Progress Activities
+  CLIENT_PERSONAL_DETAILS_ADDED: "CLIENT_PERSONAL_DETAILS_ADDED",
+  CLIENT_PERSONAL_DETAILS_UPDATED: "CLIENT_PERSONAL_DETAILS_UPDATED",
+  CLIENT_ATTACHMENT_UPLOADED: "CLIENT_ATTACHMENT_UPLOADED",
+  CLIENT_PROJECT_ADDED: "CLIENT_PROJECT_ADDED",
+  CLIENT_PROJECT_UPDATED: "CLIENT_PROJECT_UPDATED",
+  CLIENT_CREATED: "CLIENT_CREATED",
+
+  // Company Progress Activities
+  TASK_COMPLETED: "TASK_COMPLETED",
+  TASK_CREATED: "TASK_CREATED",
+  TASK_ASSIGNED: "TASK_ASSIGNED",
+  PROJECT_CREATED: "PROJECT_CREATED",
+  PROJECT_MILESTONE_REACHED: "PROJECT_MILESTONE_REACHED",
+};
+
+exports.CONTRIBUTION_CATEGORIES = {
+  CLIENT_PROGRESS: "client_progress",
+  COMPANY_PROGRESS: "company_progress",
+};
+
+exports.CONTRIBUTION_DURATIONS = {
+  CURRENT_MONTH: {
+    key: "current_month",
+    months: 0,
+    days: 30,
+    name: "Current Month",
+  },
+  SIX_MONTHS: {
+    key: "6months",
+    months: 6,
+    days: 180,
+    name: "6 Months",
+  },
+};

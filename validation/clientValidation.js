@@ -63,11 +63,17 @@ const projectSchema = Joi.object({
   }),
 });
 
-// Attachment validation schema (URL or file path)
-const attachmentSchema = Joi.string().trim().uri().required().messages({
-  "string.uri": "Attachment must be a valid URL or file path",
-  "string.empty": "Attachment is required",
-});
+// Attachment validation schema (URL or file path) - single attachment
+const attachmentSchema = Joi.string()
+  .trim()
+  .min(1)
+  .max(500)
+  .required()
+  .messages({
+    "string.min": "Attachment cannot be empty",
+    "string.max": "Attachment path cannot exceed 500 characters",
+    "string.empty": "Attachment is required",
+  });
 
 // Main validation schema for createOrUpdateClient
 const createOrUpdateClientSchema = Joi.object({
@@ -82,14 +88,14 @@ const createOrUpdateClientSchema = Joi.object({
 
   personalDetails: personalDetailsSchema.optional(),
 
-  attachments: attachmentSchema.optional(),
+  attachment: attachmentSchema.optional(), // Changed from attachments to attachment
 
   projects: projectSchema.optional(),
 })
-  .or("personalDetails", "attachments", "projects")
+  .or("personalDetails", "attachment", "projects") // Updated reference
   .messages({
     "object.missing":
-      "At least one field (personalDetails, attachments, or projects) is required",
+      "At least one field (personalDetails, attachment, or projects) is required",
   });
 
 // Validation middleware

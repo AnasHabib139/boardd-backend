@@ -59,8 +59,10 @@ const createUserAndResponse = async (userData, req, res, successMessage) => {
       password: hashedPassword,
     });
 
-    // Fetch clean user object without password for response
-    const cleanUser = await findUser({ _id: user._id });
+    // Fetch clean user object without password and refresh tokens for response
+    const cleanUser = await findUser({ _id: user._id }).select(
+      "-refreshTokens"
+    );
 
     // Generate both tokens and store refresh token
     const { accessToken, refreshToken } = await createAndStoreRefreshToken(
@@ -253,8 +255,10 @@ exports.handleRegularLogin = async (
       });
     }
 
-    // Fetch clean user object without password for response
-    const cleanUser = await findUser({ _id: user._id });
+    // Fetch clean user object without password and refresh tokens for response
+    const cleanUser = await findUser({ _id: user._id }).select(
+      "-refreshTokens"
+    );
 
     // Generate both tokens and store refresh token
     const { accessToken, refreshToken } = await createAndStoreRefreshToken(

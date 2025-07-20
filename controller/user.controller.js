@@ -91,8 +91,10 @@ exports.signup = async (req, res, next) => {
     // Update user with company
     user = await updateUser({ _id: user._id }, { companyId: company._id });
 
-    // Fetch clean user object without password for response
-    const cleanUser = await findUser({ _id: user._id });
+    // Fetch clean user object without password and refresh tokens for response
+    const cleanUser = await findUser({ _id: user._id }).select(
+      "-refreshTokens"
+    );
 
     // Generate both tokens
     const accessToken = generateToken(cleanUser);
