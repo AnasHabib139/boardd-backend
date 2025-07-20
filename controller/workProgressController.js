@@ -27,9 +27,34 @@ const calculateDateRange = (duration) => {
       startDate = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
       startDate.setHours(0, 0, 0, 0);
       break;
+    case CONTRIBUTION_DURATIONS.THREE_MONTHS.key:
+      startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - 3);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case CONTRIBUTION_DURATIONS.FOUR_MONTHS.key:
+      startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - 4);
+      startDate.setHours(0, 0, 0, 0);
+      break;
     case CONTRIBUTION_DURATIONS.SIX_MONTHS.key:
       startDate = new Date();
       startDate.setMonth(startDate.getMonth() - 6);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case CONTRIBUTION_DURATIONS.EIGHT_MONTHS.key:
+      startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - 8);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case CONTRIBUTION_DURATIONS.NINE_MONTHS.key:
+      startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - 9);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case CONTRIBUTION_DURATIONS.TWELVE_MONTHS.key:
+      startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - 12);
       startDate.setHours(0, 0, 0, 0);
       break;
     default:

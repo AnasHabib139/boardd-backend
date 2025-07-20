@@ -209,10 +209,40 @@ exports.CONTRIBUTION_DURATIONS = {
     days: 30,
     name: "Current Month",
   },
+  THREE_MONTHS: {
+    key: "3months",
+    months: 3,
+    days: 90,
+    name: "3 Months",
+  },
+  FOUR_MONTHS: {
+    key: "4months",
+    months: 4,
+    days: 120,
+    name: "4 Months",
+  },
   SIX_MONTHS: {
     key: "6months",
     months: 6,
     days: 180,
     name: "6 Months",
+  },
+  EIGHT_MONTHS: {
+    key: "8months",
+    months: 8,
+    days: 240,
+    name: "8 Months",
+  },
+  NINE_MONTHS: {
+    key: "9months",
+    months: 9,
+    days: 270,
+    name: "9 Months",
+  },
+  TWELVE_MONTHS: {
+    key: "12months",
+    months: 12,
+    days: 365,
+    name: "12 Months",
   },
 };

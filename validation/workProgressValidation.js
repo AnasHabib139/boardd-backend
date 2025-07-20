@@ -8,7 +8,15 @@ exports.validateGetContributions = (req, res, next) => {
 
   const querySchema = Joi.object({
     duration: Joi.string()
-      .valid("current_month", "6months")
+      .valid(
+        "current_month",
+        "3months",
+        "4months",
+        "6months",
+        "8months",
+        "9months",
+        "12months"
+      )
       .default("current_month"),
   });
 
@@ -41,7 +49,15 @@ exports.validateGetActivities = (req, res, next) => {
 
   const querySchema = Joi.object({
     duration: Joi.string()
-      .valid("current_month", "6months")
+      .valid(
+        "current_month",
+        "3months",
+        "4months",
+        "6months",
+        "8months",
+        "9months",
+        "12months"
+      )
       .default("current_month"),
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(20),
