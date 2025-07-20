@@ -3,7 +3,7 @@
 const { parseBody, generateResponse } = require("../utils");
 const { STATUS_CODES, ACTION_TYPE } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
-const { findTask } = require("../models/taskModel");
+const { findTask, updateTask } = require("../models/taskModel");
 const { findProject } = require("../models/projectModel");
 const {
   createSubtask,
@@ -11,7 +11,7 @@ const {
   updateSubtask,
   deleteSubtask,
 } = require("../models/subtaskModel");
-const { emitTaskEvent } = require("../utils/socket");
+const { emitTaskEvent, getIO } = require("../utils/socket");
 const { createActivity } = require("../models/activityModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
@@ -81,6 +81,16 @@ exports.createSubtask = async (req, res, next) => {
 
     // Create subtask
     const subtask = await createSubtask(subtaskData);
+
+    // Update task version to prevent conflicts with socket updates
+    const updatedTask = await updateTask(
+      { _id: taskId },
+      {
+        $inc: { version: 1 },
+        updatedAt: new Date(),
+      },
+      { new: true }
+    );
 
     const contextPath = `${channel.channelName} / ${tab.tabName}`;
     const userName = creator.name || creator.email;
@@ -154,17 +164,24 @@ exports.createSubtask = async (req, res, next) => {
 
     // Emit socket events
     try {
-      // Emit task update event
-      emitTaskEvent({
+      // Emit task-update-response to task room (for backward compatibility)
+      const io = getIO();
+
+      io.to(`task:${taskId}`).emit("task-update-response", {
+        success: true,
         taskId,
-        tabId: project.tabId,
-        type: "SUBTASK_CREATED",
-        payload: {
-          subtask,
-          activity,
-          context: {
-            projectId: task.projectId,
-            taskId,
+        field: "subtasks", // Indicate this is a subtask change
+        previousValue: null, // No previous subtask
+        newValue: subtask,
+        version: updatedTask.version,
+        activity: {
+          _id: activity._id,
+          message: createSubtaskMessage,
+          timestamp: activity.timestamp,
+          user: {
+            _id: creator._id,
+            name: creator.name,
+            email: creator.email,
           },
         },
       });
@@ -258,38 +275,57 @@ exports.updateSubtask = async (req, res, next) => {
       updateFields
     );
 
-    // Create activities for changes
-    const activities = await Promise.all(
-      Object.entries(updateFields)
-        .map(([field, value]) => {
-          if (field !== "updatedAt") {
-            return createActivity({
-              projectId: subtask.projectId,
-              taskId: subtask.taskId,
-              subtaskId: subtask._id,
-              userId,
-              actionType: ACTION_TYPE.UPDATE_SUBTASK,
-              field,
-              previousValue: previousValues[field],
-              newValue: value,
-              message: `Updated ${field} from ${previousValues[field]} to ${value}`,
-              timestamp: new Date(),
-            });
-          }
-        })
-        .filter(Boolean)
+    // Update parent task version to prevent conflicts with socket updates
+    const updatedTask = await updateTask(
+      { _id: subtask.taskId },
+      {
+        $inc: { version: 1 },
+        updatedAt: new Date(),
+      },
+      { new: true }
     );
+
+    // Get user info for socket emission
+    const user = await findUser({ _id: userId });
+
+    // Create one general activity for the entire update
+    const userName = user?.name || "Someone";
+    const activityMessage = {
+      forCreator: `You updated subtask "${updatedSubtask.title}"`,
+      forOthers: `${userName} updated subtask "${updatedSubtask.title}"`,
+    };
+
+    const activity = await createActivity({
+      projectId: subtask.projectId,
+      taskId: subtask.taskId,
+      subtaskId: subtask._id,
+      userId,
+      actionType: ACTION_TYPE.UPDATE_SUBTASK,
+      timestamp: new Date(),
+      message: activityMessage,
+    });
 
     // Emit socket event using standardized approach
     try {
-      emitTaskEvent({
+      // Emit task-update-response to task room (for backward compatibility)
+      const io = getIO();
+
+      io.to(`task:${subtask.taskId}`).emit("task-update-response", {
+        success: true,
         taskId: subtask.taskId,
-        tabId: project.tabId,
-        type: "SUBTASK_UPDATED",
-        payload: {
-          subtask: updatedSubtask,
-          activities,
-          changes: updateFields,
+        field: "subtasks", // Indicate this is a subtask change
+        previousValue: previousValues, // Previous subtask state
+        newValue: updatedSubtask,
+        version: updatedTask.version,
+        activity: {
+          _id: activity._id,
+          message: activity.message,
+          timestamp: activity.timestamp,
+          user: {
+            _id: userId,
+            name: user?.name || "Unknown",
+            email: user?.email || "unknown@example.com",
+          },
         },
       });
     } catch (error) {
@@ -338,7 +374,16 @@ exports.deleteSubtask = async (req, res, next) => {
       });
     }
 
+    // Get user info for socket emission
+    const user = await findUser({ _id: userId });
+
     // Create activity record
+    const userName = user?.name || "Someone";
+    const deleteActivityMessage = {
+      forCreator: `You deleted subtask "${subtask.title}"`,
+      forOthers: `${userName} deleted subtask "${subtask.title}"`,
+    };
+
     const activity = await createActivity({
       projectId: subtask.projectId,
       taskId: subtask.taskId,
@@ -346,21 +391,43 @@ exports.deleteSubtask = async (req, res, next) => {
       userId,
       actionType: ACTION_TYPE.DELETE_SUBTASK,
       timestamp: new Date(),
-      message: `Subtask "${subtask.title}" in task "${subtask.task.title}" has been deleted`,
+      message: deleteActivityMessage,
     });
 
     // Delete subtask
     await deleteSubtask({ _id: subtaskId });
 
+    // Update parent task version to prevent conflicts with socket updates
+    const updatedTask = await updateTask(
+      { _id: subtask.taskId },
+      {
+        $inc: { version: 1 },
+        updatedAt: new Date(),
+      },
+      { new: true }
+    );
+
     // Emit socket event using standardized approach
     try {
-      emitTaskEvent({
+      // Emit task-update-response to task room (for backward compatibility)
+      const io = getIO();
+
+      io.to(`task:${subtask.taskId}`).emit("task-update-response", {
+        success: true,
         taskId: subtask.taskId,
-        tabId: project.tabId,
-        type: "SUBTASK_DELETED",
-        payload: {
-          subtaskId,
-          activity,
+        field: "subtasks", // Indicate this is a subtask change
+        previousValue: subtask, // The deleted subtask
+        newValue: null, // No new value since it's deleted
+        version: updatedTask.version,
+        activity: {
+          _id: activity._id,
+          message: activity.message,
+          timestamp: activity.timestamp,
+          user: {
+            _id: userId,
+            name: user?.name || "Unknown",
+            email: user?.email || "unknown@example.com",
+          },
         },
       });
     } catch (error) {
