@@ -24,6 +24,7 @@ const { emitUserNotification, emitTaskEvent } = require("../utils/socket");
 const {
   createTaskActivitiesAndNotifications,
   handlePriorityActivity,
+  handleStatusActivity,
   handleDueDateActivity,
   handleAssignmentActivitiesAndNotifications,
   prepareTaskEventPayload,
@@ -68,6 +69,7 @@ exports.createTask = async (req, res, next) => {
       title,
       description,
       projectId,
+      channelId,
       assignedTo,
       status,
       priority,
@@ -81,30 +83,77 @@ exports.createTask = async (req, res, next) => {
       subtasks,
     } = parseBody(req.body);
 
-    // Check if project exists and get context
-    const project = await findProject({ _id: projectId });
-    if (!project) {
+    const userId = req?.user?.id;
+    let project = null;
+    let tab = null;
+    let channel = null;
+
+    // Validate that either projectId or channelId is provided
+    if (!projectId && !channelId) {
       return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Project not found",
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Either projectId or channelId must be provided",
       });
     }
 
-    // Check if user is a member of the tab
-    const userId = req?.user?.id;
-    const tab = await findChannelTab({ _id: project.tabId });
-    if (!tab) {
+    if (projectId && channelId) {
       return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Tab not found",
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Cannot provide both projectId and channelId",
       });
     }
-    const isMember = tab?.members?.includes(userId);
-    if (!isMember) {
-      return next({
-        statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You are not a member of this tab",
-      });
+
+    if (projectId) {
+      // Existing flow for project-based tasks
+      project = await findProject({ _id: projectId });
+      if (!project) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Project not found",
+        });
+      }
+
+      // Check if user is a member of the tab
+      tab = await findChannelTab({ _id: project.tabId });
+      if (!tab) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Tab not found",
+        });
+      }
+      const isMember = tab?.members?.includes(userId);
+      if (!isMember) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You are not a member of this tab",
+        });
+      }
+
+      // Find channel
+      channel = await findChannel({ _id: project.channelId });
+      if (!channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Channel not found",
+        });
+      }
+    } else {
+      // New flow for channel-based tasks without project
+      channel = await findChannel({ _id: channelId });
+      if (!channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Channel not found",
+        });
+      }
+
+      // Check if user is a member of the channel
+      if (!channel.members.includes(userId)) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You are not a member of this channel",
+        });
+      }
     }
 
     // Get creator's info
@@ -118,7 +167,7 @@ exports.createTask = async (req, res, next) => {
 
     // Calculate orderIndex for the task's status
     const taskStatus = status || TASK_STATUS.TODO;
-    const orderIndex = await getNextOrderIndex(projectId, taskStatus);
+    const orderIndex = await getNextOrderIndex(projectId, channelId, taskStatus);
 
     // Prepare orderIndex object for all statuses
     const orderIndexes = {
@@ -131,7 +180,8 @@ exports.createTask = async (req, res, next) => {
     const task = await createTask({
       title: title || "",
       description: description || "",
-      projectId,
+      projectId: projectId || null,
+      channelId: channelId || null,
       assignedTo: assignedTo || [],
       status: taskStatus,
       priority: priority || TASK_PRIORITY.MEDIUM,
@@ -146,16 +196,9 @@ exports.createTask = async (req, res, next) => {
       createdBy: userId,
     });
 
-    // Find channel
-    const channel = await findChannel({ _id: project.channelId });
-    if (!channel) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Channel not found",
-      });
-    }
-
-    const contextPath = `${channel.channelName} / ${tab.tabName}`;
+    const contextPath = projectId 
+      ? `${channel.channelName} / ${tab.tabName}`
+      : `${channel.channelName} / Open`;
     const userName = creator.name || creator.email;
 
     // Initialize activities and notifications arrays
@@ -165,7 +208,7 @@ exports.createTask = async (req, res, next) => {
     // 1. Handle task creation activities and notifications
     const taskCreationResult = await createTaskActivitiesAndNotifications({
       task,
-      projectId,
+      projectId: projectId || null,
       userId,
       userName,
       channel,
@@ -174,39 +217,53 @@ exports.createTask = async (req, res, next) => {
     });
     notifications = [...notifications, ...taskCreationResult.notifications];
 
-    // 2. Handle priority setting activity
+    // 2. Handle status setting activity
+    const statusActivity = await handleStatusActivity({
+      status: taskStatus,
+      userName,
+      task,
+      projectId: projectId || null,
+      channelId: channelId || null,
+      userId,
+    });
+    activities.push(statusActivity);
+
+    // 3. Handle priority setting activity
     if (priority) {
       console.log("priority", priority);
       const priorityActivity = await handlePriorityActivity({
         priority,
         userName,
         task,
-        projectId,
+        projectId: projectId || null,
+        channelId: channelId || null,
         userId,
       });
       activities.push(priorityActivity);
     }
 
-    // 3. Handle due date setting activity
+    // 4. Handle due date setting activity
     if (dueDate) {
       const dueDateActivity = await handleDueDateActivity({
         dueDate,
         userName,
         task,
-        projectId,
+        projectId: projectId || null,
+        channelId: channelId || null,
         userId,
       });
       activities.push(dueDateActivity);
     }
 
-    // 4. Handle assignment activities and notifications
+    // 5. Handle assignment activities and notifications
     if (assignedTo && assignedTo.length > 0) {
       const assignmentResult = await handleAssignmentActivitiesAndNotifications(
         {
           assignedTo,
           userName,
           task,
-          projectId,
+          projectId: projectId || null,
+          channelId: channelId || null,
           userId,
           channel,
           tab,
@@ -217,73 +274,79 @@ exports.createTask = async (req, res, next) => {
       notifications = [...notifications, ...assignmentResult.notifications];
     }
 
-    // 5. Handle description setting activity
+    // 6. Handle description setting activity
     if (description && description.trim() !== "") {
       const descriptionActivity = await handleDescriptionActivity({
         description,
         userName,
         task,
-        projectId,
+        projectId: projectId || null,
+        channelId: channelId || null,
         userId,
       });
       activities.push(descriptionActivity);
     }
 
-    // 6. Handle tags setting activity
+    // 7. Handle tags setting activity
     if (tags && tags.length > 0) {
       const tagsActivity = await handleTagsActivity({
         tags,
         userName,
         task,
-        projectId,
+        projectId: projectId || null,
+        channelId: channelId || null,
         userId,
       });
       activities.push(tagsActivity);
     }
 
-    // 7. Handle stroke color setting activity
+    // 8. Handle stroke color setting activity
     if (strokeColor && strokeColor !== "#6C63FF") {
       const strokeColorActivity = await handleStrokeColorActivity({
         strokeColor,
         userName,
         task,
-        projectId,
+        projectId: projectId || null,
+        channelId: channelId || null,
         userId,
       });
       activities.push(strokeColorActivity);
     }
 
-    // 8. Handle attachments setting activity
+    // 9. Handle attachments setting activity
     if (attachments && attachments.length > 0) {
       const attachmentsActivity = await handleAttachmentsActivity({
         attachments,
         userName,
         task,
-        projectId,
+        projectId: projectId || null,
+        channelId: channelId || null,
         userId,
       });
       activities.push(attachmentsActivity);
     }
 
-    // 9. Handle custom fields setting activity
+    // 10. Handle custom fields setting activity
     if (customFields && customFields.length > 0) {
       const customFieldsActivity = await handleCustomFieldsActivity({
         customFields,
         userName,
         task,
-        projectId,
+        projectId: projectId || null,
+        channelId: channelId || null,
         userId,
       });
       activities.push(customFieldsActivity);
     }
 
-    // 10. Handle checklist setting activity
+    // 11. Handle checklist setting activity
     if (checklist && checklist.length > 0) {
       const checklistActivity = await handleChecklistActivity({
         checklist,
         userName,
         task,
-        projectId,
+        projectId: projectId || null,
+        channelId: channelId || null,
         userId,
       });
       activities.push(checklistActivity);
@@ -296,7 +359,7 @@ exports.createTask = async (req, res, next) => {
         const subtask = await require("../models/subtaskModel").createSubtask({
           title: subtaskData.title,
           taskId: task._id,
-          projectId: projectId,
+          projectId: projectId || null,
           createdBy: userId,
           assignedTo: subtaskData.assignedTo || [],
         });
@@ -306,25 +369,33 @@ exports.createTask = async (req, res, next) => {
           forCreator: `You created subtask "${subtask.title}" for task "${task.title}"`,
           forOthers: `${userName} created subtask "${subtask.title}" for task "${task.title}"`,
         };
-        const activity = await createActivity({
-          projectId: projectId,
+        const activityData = {
           taskId: task._id,
           subtaskId: subtask._id,
           userId,
           actionType: ACTION_TYPE.CREATE_SUBTASK,
           timestamp: new Date(),
           message: createSubtaskMessage,
-        });
+        };
+
+        if (projectId) {
+          activityData.projectId = projectId;
+        } else {
+          activityData.channelId = channelId;
+        }
+
+        const activity = await createActivity(activityData);
         activities.push(activity);
 
-        // Notifications for tab members
-        for (const memberId of tab.members) {
+        // Notifications for tab members (or channel members for non-project tasks)
+        const membersToNotify = tab ? tab.members : channel.members;
+        for (const memberId of membersToNotify) {
           await createNotification({
             userId: memberId,
             type: "CHANNEL",
-            projectId: projectId,
+            projectId: projectId || null,
             channelId: channel._id,
-            tabId: tab._id,
+            tabId: tab?._id || null,
             taskId: task._id,
             createdBy: userId,
             title: "New Subtask Created",
@@ -342,9 +413,9 @@ exports.createTask = async (req, res, next) => {
               await createNotification({
                 userId: assigneeId,
                 type: "MENTION",
-                projectId: projectId,
+                projectId: projectId || null,
                 channelId: channel._id,
-                tabId: tab._id,
+                tabId: tab?._id || null,
                 taskId: task._id,
                 createdBy: userId,
                 title: "Subtask Assignment",
@@ -385,9 +456,9 @@ exports.createTask = async (req, res, next) => {
               taskId: task._id,
               context: {
                 channelId: channel._id,
-                tabId: tab._id,
-                projectId: project._id,
-                projectName: project.name,
+                tabId: tab?._id || null,
+                projectId: project?._id || null,
+                projectName: project?.name || null,
                 contextPath,
               },
             });
@@ -545,8 +616,7 @@ exports.batchUpdateTask = async (req, res, next) => {
       });
 
       // Create activity
-      const activity = await createActivity({
-        projectId: task.projectId,
+      const activityData = {
         taskId: task._id,
         userId,
         actionType: ACTION_TYPE.UPDATE_TASK,
@@ -555,7 +625,15 @@ exports.batchUpdateTask = async (req, res, next) => {
         newValue: value,
         message,
         timestamp: new Date(),
-      });
+      };
+
+      if (task.projectId) {
+        activityData.projectId = task.projectId;
+      } else {
+        activityData.channelId = task.channelId;
+      }
+
+      const activity = await createActivity(activityData);
       activities.push(activity);
 
       // Create notifications based on field type

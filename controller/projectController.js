@@ -11,6 +11,7 @@ const {
   getProjectsOfTabQuery,
   getProjectsOverviewQuery,
   getTasksCalendarQuery,
+  getOpenTasksQuery,
 } = require("./queries/projectQueries");
 
 // Helper function to parse date strings
@@ -225,6 +226,26 @@ exports.getProjectsOfTab = async (req, res, next) => {
       responseKey: "projects",
     });
 
+    // For list view, also fetch open tasks (tasks without project)
+    let openTasks = [];
+    if (view !== "overview") {
+      const { getAllTasks } = require("../models/taskModel");
+      const openTasksQuery = getOpenTasksQuery(channelId);
+      
+      try {
+        const openTasksResult = await getAllTasks({
+          query: openTasksQuery,
+          page: 1,
+          limit: 1000, // Get all open tasks
+          responseKey: "openTasks",
+        });
+        openTasks = openTasksResult.openTasks || [];
+      } catch (error) {
+        console.error("Error fetching open tasks:", error);
+        openTasks = [];
+      }
+    }
+
     // Sort tasks by orderIndex within each status category (with fallbacks for missing orderIndex)
     if (result.projects) {
       result.projects = result.projects.map((project) => {
@@ -292,9 +313,92 @@ exports.getProjectsOfTab = async (req, res, next) => {
         },
       };
     } else {
+      // Process open tasks by status for better organization
+      const processOpenTasks = (tasks) => {
+        const sortTasksByOrderIndex = (tasks, status) => {
+          return tasks.sort((a, b) => {
+            const aOrder = a.orderIndex?.[status] || new Date(a.createdAt).getTime();
+            const bOrder = b.orderIndex?.[status] || new Date(b.createdAt).getTime();
+            return aOrder - bOrder;
+          });
+        };
+
+        const todoTasks = sortTasksByOrderIndex(
+          tasks.filter(t => t.status === "todo"),
+          "todo"
+        );
+        const inProgressTasks = sortTasksByOrderIndex(
+          tasks.filter(t => t.status === "in_progress"),
+          "in_progress"
+        );
+        const completedTasks = sortTasksByOrderIndex(
+          tasks.filter(t => t.status === "completed"),
+          "completed"
+        );
+
+        return {
+          todoTasks,
+          inProgressTasks,
+          completedTasks,
+          taskStats: {
+            total: tasks.length,
+            todo: todoTasks.length,
+            inProgress: inProgressTasks.length,
+            completed: completedTasks.length,
+            overdue: tasks.filter(t => t.isOverdue).length,
+          },
+          progress: tasks.length > 0 
+            ? Math.round((completedTasks.length / tasks.length) * 100 * 10) / 10
+            : 0,
+        };
+      };
+
+      // Create Open category if there are open tasks
+      let openProject = null;
+      if (openTasks.length > 0) {
+        const processedOpenTasks = processOpenTasks(openTasks);
+        openProject = {
+          _id: "open",
+          name: "Open",
+          description: "Tasks without specific project",
+          status: "active",
+          startDate: null,
+          endDate: null,
+          priority: "medium",
+          color: "#808080",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          creator: null,
+          channel: {
+            _id: channel._id,
+            channelName: channel.channelName,
+          },
+          tab: null,
+          todoTasks: processedOpenTasks.todoTasks,
+          inProgressTasks: processedOpenTasks.inProgressTasks,
+          completedTasks: processedOpenTasks.completedTasks,
+          taskStats: processedOpenTasks.taskStats,
+          progress: processedOpenTasks.progress,
+          contextPath: `${channel.channelName} / Open`,
+          isOverdue: false,
+          daysUntilDue: null,
+        };
+      }
+
+      // Include open project in the projects list
+      const allProjects = openProject 
+        ? [openProject, ...result.projects]
+        : result.projects;
+
+      // Calculate totals including open tasks
+      const totalOpenTasks = openTasks.length;
+      const completedOpenTasks = openTasks.filter(t => t.status === "completed").length;
+      const overdueOpenTasks = openTasks.filter(t => t.isOverdue).length;
+
       // Detailed list response - full data with tasks
       responseData = {
         ...result,
+        projects: allProjects,
         view: "list",
         context: {
           channel: {
@@ -311,22 +415,22 @@ exports.getProjectsOfTab = async (req, res, next) => {
           },
         },
         summary: {
-          totalProjects: result.pagination.totalDocs,
+          totalProjects: result.pagination.totalDocs + (openProject ? 1 : 0),
           projectsWithTasks: result.projects.filter(
             (p) => p.taskStats.total > 0
-          ).length,
+          ).length + (openProject && openProject.taskStats.total > 0 ? 1 : 0),
           totalTasks: result.projects.reduce(
             (sum, p) => sum + p.taskStats.total,
             0
-          ),
+          ) + totalOpenTasks,
           completedTasks: result.projects.reduce(
             (sum, p) => sum + p.taskStats.completed,
             0
-          ),
+          ) + completedOpenTasks,
           overdueTasks: result.projects.reduce(
             (sum, p) => sum + p.taskStats.overdue,
             0
-          ),
+          ) + overdueOpenTasks,
         },
       };
     }

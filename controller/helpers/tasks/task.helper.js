@@ -24,26 +24,35 @@ exports.createTaskActivitiesAndNotifications = async ({
     forOthers: `${userName} created task "${task.title}"`,
   };
 
-  activities.push(
-    await createActivity({
-      projectId,
-      taskId: task._id,
-      userId,
-      actionType: ACTION_TYPE.CREATE_TASK,
-      timestamp: new Date(),
-      message: createTaskMessage,
-    })
-  );
+  // Create activity with proper context (projectId, tabId, or channelId)
+  const activityData = {
+    taskId: task._id,
+    userId,
+    actionType: ACTION_TYPE.CREATE_TASK,
+    timestamp: new Date(),
+    message: createTaskMessage,
+  };
 
-  // Task creation notification for all tab members
-  for (const memberId of tab.members) {
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else if (tab) {
+    activityData.tabId = tab._id;
+  } else {
+    activityData.channelId = channel._id;
+  }
+
+  activities.push(await createActivity(activityData));
+
+  // Task creation notification for all relevant members
+  const membersToNotify = tab ? tab.members : channel.members;
+  for (const memberId of membersToNotify) {
     notifications.push(
       createNotification({
         userId: memberId,
         type: "CHANNEL",
-        projectId,
+        projectId: projectId || null,
         channelId: channel._id,
-        tabId: tab._id,
+        tabId: tab?._id || null,
         taskId: task._id,
         createdBy: userId,
         title: "New Task Created",
@@ -67,6 +76,7 @@ exports.handlePriorityActivity = async ({
   userName,
   task,
   projectId,
+  channelId,
   userId,
 }) => {
   const priorityMessage = generateActivityMessage("priority", userName, {
@@ -76,8 +86,7 @@ exports.handlePriorityActivity = async ({
     isCreation: true,
   });
 
-  return createActivity({
-    projectId,
+  const activityData = {
     taskId: task._id,
     userId,
     actionType: ACTION_TYPE.CHANGE_PRIORITY,
@@ -85,7 +94,52 @@ exports.handlePriorityActivity = async ({
     newValue: priority,
     timestamp: new Date(),
     message: priorityMessage,
+  };
+
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else {
+    activityData.channelId = channelId;
+  }
+
+  return createActivity(activityData);
+};
+
+/**
+ * Handle status setting activity
+ */
+exports.handleStatusActivity = async ({
+  status,
+  userName,
+  task,
+  projectId,
+  channelId,
+  userId,
+}) => {
+  const statusMessage = generateActivityMessage("status", userName, {
+    previousValue: null,
+    newValue: status,
+    taskTitle: task.title,
+    isCreation: true,
   });
+
+  const activityData = {
+    taskId: task._id,
+    userId,
+    actionType: ACTION_TYPE.CHANGE_STATUS,
+    field: "status",
+    newValue: status,
+    timestamp: new Date(),
+    message: statusMessage,
+  };
+
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else {
+    activityData.channelId = channelId;
+  }
+
+  return createActivity(activityData);
 };
 
 /**
@@ -96,6 +150,7 @@ exports.handleDueDateActivity = async ({
   userName,
   task,
   projectId,
+  channelId,
   userId,
 }) => {
   const dueDateMessage = generateActivityMessage("dueDate", userName, {
@@ -105,8 +160,7 @@ exports.handleDueDateActivity = async ({
     isCreation: true,
   });
 
-  return createActivity({
-    projectId,
+  const activityData = {
     taskId: task._id,
     userId,
     actionType: ACTION_TYPE.CHANGE_DUE_DATE,
@@ -114,7 +168,15 @@ exports.handleDueDateActivity = async ({
     newValue: dueDate,
     timestamp: new Date(),
     message: dueDateMessage,
-  });
+  };
+
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else {
+    activityData.channelId = channelId;
+  }
+
+  return createActivity(activityData);
 };
 
 /**
@@ -125,6 +187,7 @@ exports.handleAssignmentActivitiesAndNotifications = async ({
   userName,
   task,
   projectId,
+  channelId,
   userId,
   channel,
   tab,
@@ -145,18 +208,23 @@ exports.handleAssignmentActivitiesAndNotifications = async ({
     taskTitle: task.title,
   });
 
-  activities.push(
-    await createActivity({
-      projectId,
-      taskId: task._id,
-      userId,
-      actionType: ACTION_TYPE.ASSIGN_USER,
-      field: "assignedTo",
-      newValue: assignedTo,
-      timestamp: new Date(),
-      message: assignmentMessage,
-    })
-  );
+  const activityData = {
+    taskId: task._id,
+    userId,
+    actionType: ACTION_TYPE.ASSIGN_USER,
+    field: "assignedTo",
+    newValue: assignedTo,
+    timestamp: new Date(),
+    message: assignmentMessage,
+  };
+
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else {
+    activityData.channelId = channelId;
+  }
+
+  activities.push(await createActivity(activityData));
 
   // Create notifications for assigned users
   for (const assigneeId of assignedTo) {
@@ -164,9 +232,9 @@ exports.handleAssignmentActivitiesAndNotifications = async ({
       createNotification({
         userId: assigneeId,
         type: "MENTION",
-        projectId,
+        projectId: projectId || null,
         channelId: channel._id,
-        tabId: tab._id,
+        tabId: tab?._id || null,
         taskId: task._id,
         createdBy: userId,
         title: "Task Assignment",
@@ -195,16 +263,16 @@ exports.prepareTaskEventPayload = ({
   contextPath,
 }) => ({
   taskId: task._id,
-  tabId: project.tabId,
+  tabId: tab?._id || null,
   type: "TASK_CREATED",
   payload: {
     task,
     activities,
     context: {
       channelId: channel._id,
-      tabId: tab._id,
-      projectId: project._id,
-      projectName: project.name,
+      tabId: tab?._id || null,
+      projectId: project?._id || null,
+      projectName: project?.name || null,
       contextPath,
     },
     updatedBy: {
@@ -223,6 +291,7 @@ exports.handleDescriptionActivity = async ({
   userName,
   task,
   projectId,
+  channelId,
   userId,
 }) => {
   const descriptionMessage = generateActivityMessage("description", userName, {
@@ -232,8 +301,7 @@ exports.handleDescriptionActivity = async ({
     isCreation: true,
   });
 
-  return createActivity({
-    projectId,
+  const activityData = {
     taskId: task._id,
     userId,
     actionType: ACTION_TYPE.UPDATE_TASK,
@@ -241,7 +309,15 @@ exports.handleDescriptionActivity = async ({
     newValue: description,
     timestamp: new Date(),
     message: descriptionMessage,
-  });
+  };
+
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else {
+    activityData.channelId = channelId;
+  }
+
+  return createActivity(activityData);
 };
 
 /**
@@ -252,6 +328,7 @@ exports.handleTagsActivity = async ({
   userName,
   task,
   projectId,
+  channelId,
   userId,
 }) => {
   const tagsMessage = generateActivityMessage("tags", userName, {
@@ -261,8 +338,7 @@ exports.handleTagsActivity = async ({
     isCreation: true,
   });
 
-  return createActivity({
-    projectId,
+  const activityData = {
     taskId: task._id,
     userId,
     actionType: ACTION_TYPE.UPDATE_TASK,
@@ -270,7 +346,15 @@ exports.handleTagsActivity = async ({
     newValue: tags,
     timestamp: new Date(),
     message: tagsMessage,
-  });
+  };
+
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else {
+    activityData.channelId = channelId;
+  }
+
+  return createActivity(activityData);
 };
 
 /**
@@ -281,6 +365,7 @@ exports.handleStrokeColorActivity = async ({
   userName,
   task,
   projectId,
+  channelId,
   userId,
 }) => {
   const strokeColorMessage = generateActivityMessage("strokeColor", userName, {
@@ -290,8 +375,7 @@ exports.handleStrokeColorActivity = async ({
     isCreation: true,
   });
 
-  return createActivity({
-    projectId,
+  const activityData = {
     taskId: task._id,
     userId,
     actionType: ACTION_TYPE.UPDATE_TASK,
@@ -299,7 +383,15 @@ exports.handleStrokeColorActivity = async ({
     newValue: strokeColor,
     timestamp: new Date(),
     message: strokeColorMessage,
-  });
+  };
+
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else {
+    activityData.channelId = channelId;
+  }
+
+  return createActivity(activityData);
 };
 
 /**
@@ -310,6 +402,7 @@ exports.handleAttachmentsActivity = async ({
   userName,
   task,
   projectId,
+  channelId,
   userId,
 }) => {
   const attachmentsMessage = generateActivityMessage("attachments", userName, {
@@ -319,8 +412,7 @@ exports.handleAttachmentsActivity = async ({
     isCreation: true,
   });
 
-  return createActivity({
-    projectId,
+  const activityData = {
     taskId: task._id,
     userId,
     actionType: ACTION_TYPE.UPDATE_TASK,
@@ -328,7 +420,15 @@ exports.handleAttachmentsActivity = async ({
     newValue: attachments,
     timestamp: new Date(),
     message: attachmentsMessage,
-  });
+  };
+
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else {
+    activityData.channelId = channelId;
+  }
+
+  return createActivity(activityData);
 };
 
 /**
@@ -339,6 +439,7 @@ exports.handleCustomFieldsActivity = async ({
   userName,
   task,
   projectId,
+  channelId,
   userId,
 }) => {
   const customFieldsMessage = generateActivityMessage(
@@ -352,8 +453,7 @@ exports.handleCustomFieldsActivity = async ({
     }
   );
 
-  return createActivity({
-    projectId,
+  const activityData = {
     taskId: task._id,
     userId,
     actionType: ACTION_TYPE.UPDATE_TASK,
@@ -361,7 +461,15 @@ exports.handleCustomFieldsActivity = async ({
     newValue: customFields,
     timestamp: new Date(),
     message: customFieldsMessage,
-  });
+  };
+
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else {
+    activityData.channelId = channelId;
+  }
+
+  return createActivity(activityData);
 };
 
 /**
@@ -372,6 +480,7 @@ exports.handleChecklistActivity = async ({
   userName,
   task,
   projectId,
+  channelId,
   userId,
 }) => {
   const checklistMessage = generateActivityMessage("checklist", userName, {
@@ -381,8 +490,7 @@ exports.handleChecklistActivity = async ({
     isCreation: true,
   });
 
-  return createActivity({
-    projectId,
+  const activityData = {
     taskId: task._id,
     userId,
     actionType: ACTION_TYPE.UPDATE_TASK,
@@ -390,5 +498,13 @@ exports.handleChecklistActivity = async ({
     newValue: checklist,
     timestamp: new Date(),
     message: checklistMessage,
-  });
+  };
+
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else {
+    activityData.channelId = channelId;
+  }
+
+  return createActivity(activityData);
 };

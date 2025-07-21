@@ -42,7 +42,8 @@ const checklistItemSchema = new Schema(
 const taskSchema = new Schema({
   title: { type: String, required: true },
   description: { type: String, default: "" },
-  projectId: { type: Types.ObjectId, ref: "Project", required: true },
+  projectId: { type: Types.ObjectId, ref: "Project", required: false },
+  channelId: { type: Types.ObjectId, ref: "Channel", required: false },
   createdBy: { type: Types.ObjectId, ref: "User", required: true },
   assignedTo: [{ type: Types.ObjectId, ref: "User" }],
   status: {
@@ -111,13 +112,13 @@ exports.getAllTasks = async ({ query, page, limit, responseKey = "data" }) => {
 
 // Utility functions for drag and drop ordering
 
-// Calculate next order index for a status in a project
-exports.getNextOrderIndex = async (projectId, status) => {
-  const lastTask = await TaskModel.findOne({
-    projectId,
-    status,
-    isActive: true,
-  }).sort({ [`orderIndex.${status}`]: -1 });
+// Calculate next order index for a status in a project or channel
+exports.getNextOrderIndex = async (projectId, channelId, status) => {
+  const query = projectId 
+    ? { projectId, status, isActive: true }
+    : { channelId, projectId: null, status, isActive: true };
+
+  const lastTask = await TaskModel.findOne(query).sort({ [`orderIndex.${status}`]: -1 });
 
   if (!lastTask || !lastTask.orderIndex || !lastTask.orderIndex[status]) {
     return 1000; // Default starting order
@@ -169,6 +170,30 @@ exports.moveTaskToProject = async (
     {
       $set: {
         projectId: newProjectId,
+        channelId: null, // Remove channelId when moving to project
+        status: newStatus,
+        [updateField]: newOrderIndex,
+        updatedAt: new Date(),
+      },
+    },
+    { new: true }
+  );
+};
+
+// Move task to channel (Open) with status and new order
+exports.moveTaskToChannel = async (
+  taskId,
+  newChannelId,
+  newStatus,
+  newOrderIndex
+) => {
+  const updateField = `orderIndex.${newStatus}`;
+  return TaskModel.findByIdAndUpdate(
+    taskId,
+    {
+      $set: {
+        channelId: newChannelId,
+        projectId: null, // Remove projectId when moving to Open
         status: newStatus,
         [updateField]: newOrderIndex,
         updatedAt: new Date(),

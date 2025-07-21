@@ -66,8 +66,12 @@ const createTaskValidation = Joi.object({
     "string.max": "Task description cannot exceed 1000 characters",
   }),
 
-  projectId: helpers.objectIdValidation.required().messages({
-    "any.required": "Project ID is required",
+  projectId: helpers.objectIdValidation.optional().messages({
+    "string.pattern.name": "Project ID must be a valid ObjectId",
+  }),
+
+  channelId: helpers.objectIdValidation.optional().messages({
+    "string.pattern.name": "Channel ID must be a valid ObjectId",
   }),
 
   assignedTo: Joi.array()
@@ -175,6 +179,26 @@ const createTaskValidation = Joi.object({
     .messages({
       "array.base": "Subtasks must be an array",
     }),
+}).custom((value, helpers) => {
+  // Custom validation to ensure either projectId or channelId is provided, but not both
+  const { projectId, channelId } = value;
+  
+  if (!projectId && !channelId) {
+    return helpers.error('custom.eitherRequired', {
+      message: 'Either projectId or channelId must be provided'
+    });
+  }
+  
+  if (projectId && channelId) {
+    return helpers.error('custom.mutuallyExclusive', {
+      message: 'Cannot provide both projectId and channelId'
+    });
+  }
+  
+  return value;
+}).messages({
+  'custom.eitherRequired': 'Either projectId or channelId must be provided',
+  'custom.mutuallyExclusive': 'Cannot provide both projectId and channelId'
 });
 
 // Batch update task validation schema

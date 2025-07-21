@@ -15,6 +15,7 @@ const activitySchema = new Schema({
   // Client context references
   tabId: { type: Types.ObjectId, ref: "ChannelTab" }, // For client activities
   clientId: { type: Types.ObjectId, ref: "Client" }, // For client activities
+  channelId: { type: Types.ObjectId, ref: "Channel" }, // For channel-based tasks without project
 
   // Activity metadata
   userId: { type: Types.ObjectId, ref: "User", required: true },
@@ -39,10 +40,10 @@ const activitySchema = new Schema({
   timestamp: { type: Date, default: Date.now },
 });
 
-// Add validation to ensure either projectId or tabId is provided
+// Add validation to ensure either projectId, tabId, or channelId is provided
 activitySchema.pre("validate", function (next) {
-  if (!this.projectId && !this.tabId) {
-    next(new Error("Either projectId or tabId must be provided"));
+  if (!this.projectId && !this.tabId && !this.channelId) {
+    next(new Error("Either projectId, tabId, or channelId must be provided"));
   } else {
     next();
   }

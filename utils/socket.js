@@ -6,6 +6,7 @@ const {
   findTask,
   updateTaskOrderIndex,
   moveTaskToProject,
+  moveTaskToChannel,
 } = require("../models/taskModel");
 const { updateSubtask } = require("../models/subtaskModel");
 const { findProject } = require("../models/projectModel");
@@ -163,16 +164,12 @@ const processTaskUpdate = async (socket, data) => {
       return;
     }
 
-    // Get context (reusing batch update pattern)
-    const [project, user] = await Promise.all([
-      findProject({ _id: task.projectId }),
-      findUser({ _id: userId }),
-    ]);
-
-    if (!project || !user) {
+    // Get context - handle both project-based and channel-based tasks
+    const user = await findUser({ _id: userId });
+    if (!user) {
       socket.emit("task-update-response", {
         success: false,
-        error: "Project or user not found",
+        error: "User not found",
         taskId,
         field,
       });
@@ -180,15 +177,56 @@ const processTaskUpdate = async (socket, data) => {
       return;
     }
 
-    const [tab, channel] = await Promise.all([
-      findChannelTab({ _id: project.tabId }),
-      findChannel({ _id: project.channelId }),
-    ]);
+    let project = null;
+    let tab = null;
+    let channel = null;
 
-    if (!tab || !channel) {
+    if (task.projectId) {
+      // Project-based task
+      project = await findProject({ _id: task.projectId });
+      if (!project) {
+        socket.emit("task-update-response", {
+          success: false,
+          error: "Project not found",
+          taskId,
+          field,
+        });
+        pendingUpdates.delete(updateKey);
+        return;
+      }
+
+      [tab, channel] = await Promise.all([
+        findChannelTab({ _id: project.tabId }),
+        findChannel({ _id: project.channelId }),
+      ]);
+
+      if (!tab || !channel) {
+        socket.emit("task-update-response", {
+          success: false,
+          error: "Tab or channel not found",
+          taskId,
+          field,
+        });
+        pendingUpdates.delete(updateKey);
+        return;
+      }
+    } else if (task.channelId) {
+      // Channel-based task (Open task)
+      channel = await findChannel({ _id: task.channelId });
+      if (!channel) {
+        socket.emit("task-update-response", {
+          success: false,
+          error: "Channel not found",
+          taskId,
+          field,
+        });
+        pendingUpdates.delete(updateKey);
+        return;
+      }
+    } else {
       socket.emit("task-update-response", {
         success: false,
-        error: "Tab or channel not found",
+        error: "Task has no project or channel association",
         taskId,
         field,
       });
@@ -198,7 +236,7 @@ const processTaskUpdate = async (socket, data) => {
 
     // Check permissions
     const canUpdate =
-      tab.members.includes(userId) ||
+      (tab && tab.members.includes(userId)) ||
       channel.members.includes(userId) ||
       task.assignedTo.includes(userId) ||
       task.createdBy.toString() === userId;
@@ -215,7 +253,7 @@ const processTaskUpdate = async (socket, data) => {
     }
 
     const previousValue = task[field];
-    const contextPath = `${channel.channelName} / ${tab.tabName}`;
+    const contextPath = project ? `${channel.channelName} / ${tab.tabName}` : `${channel.channelName} / Open`;
     const userName = user.name || user.email;
 
     // Handle attachment deletions before updating
@@ -260,8 +298,7 @@ const processTaskUpdate = async (socket, data) => {
       isCreation: false,
     });
 
-    const activity = await createActivity({
-      projectId: task.projectId,
+    const activityData = {
       taskId: task._id,
       userId,
       actionType: ACTION_TYPE.UPDATE_TASK,
@@ -270,7 +307,15 @@ const processTaskUpdate = async (socket, data) => {
       newValue: processedValue,
       message: activityMessage,
       timestamp: new Date(),
-    });
+    };
+
+    if (task.projectId) {
+      activityData.projectId = task.projectId;
+    } else {
+      activityData.channelId = task.channelId;
+    }
+
+    const activity = await createActivity(activityData);
 
     // Handle notifications
     const notifications = [];
@@ -285,9 +330,9 @@ const processTaskUpdate = async (socket, data) => {
             createNotification({
               userId: assigneeId,
               type: "MENTION",
-              projectId: task.projectId,
-              channelId: project.channelId,
-              tabId: project.tabId,
+              projectId: task.projectId || null,
+              channelId: channel._id,
+              tabId: project?.tabId || null,
               taskId: task._id,
               createdBy: userId,
               title: "Task Assignment",
@@ -334,7 +379,9 @@ const processTaskUpdate = async (socket, data) => {
       activities: [activity],
     });
 
-    io.to(`tab:${project.tabId}`).emit("tab-activity", {
+    // Emit to appropriate room based on task type
+    const roomId = project ? `tab:${project.tabId}` : `channel:${channel._id}`;
+    io.to(roomId).emit("tab-activity", {
       type: "TASK_UPDATED",
       task: updatedTask,
       activities: [activity],
@@ -357,10 +404,10 @@ const processTaskUpdate = async (socket, data) => {
         message: notification.message,
         taskId: task._id,
         context: {
-          channelId: project.channelId,
-          tabId: project.tabId,
-          projectId: project._id,
-          projectName: project.name,
+          channelId: channel._id,
+          tabId: project?.tabId || null,
+          projectId: project?._id || null,
+          projectName: project?.name || null,
           contextPath,
         },
       });
@@ -433,30 +480,64 @@ const processTaskReorder = async (socket, data) => {
     }
 
     // Get context for permissions and activity
-    const [project, user] = await Promise.all([
-      findProject({ _id: task.projectId }),
-      findUser({ _id: userId }),
-    ]);
-
-    if (!project || !user) {
+    const user = await findUser({ _id: userId });
+    if (!user) {
       socket.emit("task-reorder-response", {
         success: false,
-        error: "Project or user not found",
+        error: "User not found",
         taskId,
       });
       pendingUpdates.delete(updateKey);
       return;
     }
 
-    const [tab, channel] = await Promise.all([
-      findChannelTab({ _id: project.tabId }),
-      findChannel({ _id: project.channelId }),
-    ]);
+    let project = null;
+    let tab = null;
+    let channel = null;
 
-    if (!tab || !channel) {
+    if (task.projectId) {
+      // Project-based task
+      project = await findProject({ _id: task.projectId });
+      if (!project) {
+        socket.emit("task-reorder-response", {
+          success: false,
+          error: "Project not found",
+          taskId,
+        });
+        pendingUpdates.delete(updateKey);
+        return;
+      }
+
+      [tab, channel] = await Promise.all([
+        findChannelTab({ _id: project.tabId }),
+        findChannel({ _id: project.channelId }),
+      ]);
+
+      if (!tab || !channel) {
+        socket.emit("task-reorder-response", {
+          success: false,
+          error: "Tab or channel not found",
+          taskId,
+        });
+        pendingUpdates.delete(updateKey);
+        return;
+      }
+    } else if (task.channelId) {
+      // Channel-based task (Open task)
+      channel = await findChannel({ _id: task.channelId });
+      if (!channel) {
+        socket.emit("task-reorder-response", {
+          success: false,
+          error: "Channel not found",
+          taskId,
+        });
+        pendingUpdates.delete(updateKey);
+        return;
+      }
+    } else {
       socket.emit("task-reorder-response", {
         success: false,
-        error: "Tab or channel not found",
+        error: "Task has no project or channel association",
         taskId,
       });
       pendingUpdates.delete(updateKey);
@@ -465,7 +546,7 @@ const processTaskReorder = async (socket, data) => {
 
     // Check permissions
     const canReorder =
-      tab.members.includes(userId) ||
+      (tab && tab.members.includes(userId)) ||
       channel.members.includes(userId) ||
       task.assignedTo.includes(userId) ||
       task.createdBy.toString() === userId;
@@ -485,11 +566,11 @@ const processTaskReorder = async (socket, data) => {
     if (!calculatedOrderIndex) {
       // Get next available order index for this status
       const { getNextOrderIndex } = require("../models/taskModel");
-      calculatedOrderIndex = await getNextOrderIndex(task.projectId, newStatus);
+      calculatedOrderIndex = await getNextOrderIndex(task.projectId, task.channelId, newStatus);
     }
 
     const previousStatus = task.status;
-    const contextPath = `${channel.channelName} / ${tab.tabName}`;
+    const contextPath = project ? `${channel.channelName} / ${tab.tabName}` : `${channel.channelName} / Open`;
     const userName = user.name || user.email;
 
     // Update task status and order index
@@ -516,8 +597,7 @@ const processTaskReorder = async (socket, data) => {
           : `${userName} reordered "${task.title}"`,
     };
 
-    const activity = await createActivity({
-      projectId: task.projectId,
+    const activityData = {
       taskId: task._id,
       userId,
       actionType:
@@ -532,7 +612,15 @@ const processTaskReorder = async (socket, data) => {
       newValue: newStatus !== previousStatus ? newStatus : calculatedOrderIndex,
       message: activityMessage,
       timestamp: new Date(),
-    });
+    };
+
+    if (task.projectId) {
+      activityData.projectId = task.projectId;
+    } else {
+      activityData.channelId = task.channelId;
+    }
+
+    const activity = await createActivity(activityData);
 
     // Emit success response
     const responseData = {
@@ -560,11 +648,12 @@ const processTaskReorder = async (socket, data) => {
       },
     };
 
-    // Emit to all users in the tab
-    io.to(`tab:${project.tabId}`).emit("task-reorder-response", responseData);
+    // Emit to appropriate room based on task type
+    const roomId = project ? `tab:${project.tabId}` : `channel:${channel._id}`;
+    io.to(roomId).emit("task-reorder-response", responseData);
 
     // Emit tab activity
-    io.to(`tab:${project.tabId}`).emit("tab-activity", {
+    io.to(roomId).emit("tab-activity", {
       type: "TASK_REORDERED",
       task: responseData.task,
       newStatus,
@@ -594,17 +683,27 @@ const processTaskReorder = async (socket, data) => {
   }
 };
 
-// Process task move between projects
+// Process task move between projects or to/from Open
 const processTaskMove = async (socket, data) => {
-  const { taskId, newProjectId, newStatus, newOrderIndex, userId } = data;
+  const { taskId, newProjectId, newChannelId, newStatus, newOrderIndex, userId } = data;
 
   try {
-    // Validate input
-    if (!taskId || !newProjectId || !newStatus || userId === undefined) {
+    // Validate input - either newProjectId or newChannelId must be provided
+    if (!taskId || (!newProjectId && !newChannelId) || !newStatus || userId === undefined) {
       socket.emit("task-move-response", {
         success: false,
         error:
-          "Missing required fields: taskId, newProjectId, newStatus, userId",
+          "Missing required fields: taskId, (newProjectId OR newChannelId), newStatus, userId",
+        taskId,
+      });
+      return;
+    }
+
+    // Validate that both newProjectId and newChannelId are not provided
+    if (newProjectId && newChannelId) {
+      socket.emit("task-move-response", {
+        success: false,
+        error: "Cannot provide both newProjectId and newChannelId",
         taskId,
       });
       return;
@@ -635,12 +734,8 @@ const processTaskMove = async (socket, data) => {
     // Mark as pending
     pendingUpdates.set(updateKey, { userId, timestamp: Date.now() });
 
-    // Find and validate task and projects
-    const [task, newProject] = await Promise.all([
-      findTask({ _id: taskId }),
-      findProject({ _id: newProjectId }),
-    ]);
-
+    // Find and validate task
+    const task = await findTask({ _id: taskId });
     if (!task) {
       socket.emit("task-move-response", {
         success: false,
@@ -651,18 +746,43 @@ const processTaskMove = async (socket, data) => {
       return;
     }
 
-    if (!newProject) {
-      socket.emit("task-move-response", {
-        success: false,
-        error: "Target project not found",
-        taskId,
-      });
-      pendingUpdates.delete(updateKey);
-      return;
+    // Find destination (project or channel)
+    let newProject = null;
+    let newChannel = null;
+
+    if (newProjectId) {
+      newProject = await findProject({ _id: newProjectId });
+      if (!newProject) {
+        socket.emit("task-move-response", {
+          success: false,
+          error: "Target project not found",
+          taskId,
+        });
+        pendingUpdates.delete(updateKey);
+        return;
+      }
+    } else {
+      newChannel = await findChannel({ _id: newChannelId });
+      if (!newChannel) {
+        socket.emit("task-move-response", {
+          success: false,
+          error: "Target channel not found",
+          taskId,
+        });
+        pendingUpdates.delete(updateKey);
+        return;
+      }
     }
 
-    // Get old project
-    const oldProject = await findProject({ _id: task.projectId });
+    // Get old project/channel context
+    let oldProject = null;
+    let oldChannel = null;
+
+    if (task.projectId) {
+      oldProject = await findProject({ _id: task.projectId });
+    } else if (task.channelId) {
+      oldChannel = await findChannel({ _id: task.channelId });
+    }
 
     // Get user and context
     const user = await findUser({ _id: userId });
@@ -676,28 +796,36 @@ const processTaskMove = async (socket, data) => {
       return;
     }
 
-    // Get tabs and channels for both projects
-    const [oldTab, newTab, oldChannel, newChannel] = await Promise.all([
-      findChannelTab({ _id: oldProject.tabId }),
-      findChannelTab({ _id: newProject.tabId }),
-      findChannel({ _id: oldProject.channelId }),
-      findChannel({ _id: newProject.channelId }),
-    ]);
+    // Get tabs and channels for context
+    let oldTab = null;
+    let newTab = null;
+    const sourceChannel = oldChannel || (oldProject ? await findChannel({ _id: oldProject.channelId }) : null);
+    const targetChannel = newChannel || (newProject ? await findChannel({ _id: newProject.channelId }) : null);
 
-    // Check permissions for both projects
+    if (oldProject) {
+      oldTab = await findChannelTab({ _id: oldProject.tabId });
+    }
+    
+    if (newProject) {
+      newTab = await findChannelTab({ _id: newProject.tabId });
+    }
+
+    // Check permissions for source
     const canMoveFrom =
-      oldTab.members.includes(userId) ||
-      oldChannel.members.includes(userId) ||
+      (oldTab && oldTab.members.includes(userId)) ||
+      (sourceChannel && sourceChannel.members.includes(userId)) ||
       task.assignedTo.includes(userId) ||
       task.createdBy.toString() === userId;
 
+    // Check permissions for target
     const canMoveTo =
-      newTab.members.includes(userId) || newChannel.members.includes(userId);
+      (newTab && newTab.members.includes(userId)) ||
+      (targetChannel && targetChannel.members.includes(userId));
 
     if (!canMoveFrom || !canMoveTo) {
       socket.emit("task-move-response", {
         success: false,
-        error: "Permission denied for source or target project",
+        error: "Permission denied for source or target location",
         taskId,
       });
       pendingUpdates.delete(updateKey);
@@ -707,47 +835,72 @@ const processTaskMove = async (socket, data) => {
     // Calculate order index if not provided (append to end)
     let calculatedOrderIndex = newOrderIndex;
     if (!calculatedOrderIndex) {
-      // Get next available order index for this project and status
+      // Get next available order index for target location and status
       const { getNextOrderIndex } = require("../models/taskModel");
-      calculatedOrderIndex = await getNextOrderIndex(newProjectId, newStatus);
+      calculatedOrderIndex = await getNextOrderIndex(newProjectId, newChannelId, newStatus);
     }
 
     const previousStatus = task.status;
     const previousProjectId = task.projectId;
+    const previousChannelId = task.channelId;
     const userName = user.name || user.email;
 
-    // Move task to new project with new status and order
-    const updatedTask = await moveTaskToProject(
-      taskId,
-      newProjectId,
-      newStatus,
-      calculatedOrderIndex
-    );
+    // Move task based on destination type
+    let updatedTask;
+    if (newProjectId) {
+      // Moving to project
+      updatedTask = await moveTaskToProject(
+        taskId,
+        newProjectId,
+        newStatus,
+        calculatedOrderIndex
+      );
+    } else {
+      // Moving to channel (Open)
+      updatedTask = await moveTaskToChannel(
+        taskId,
+        newChannelId,
+        newStatus,
+        calculatedOrderIndex
+      );
+    }
 
     // Create activity for the move
+    const sourceName = oldProject ? oldProject.name : "Open";
+    const targetName = newProject ? newProject.name : "Open";
+    
     const activityMessage = {
-      forCreator: `You moved "${task.title}" from "${oldProject.name}" to "${newProject.name}" (${newStatus})`,
-      forOthers: `${userName} moved "${task.title}" from "${oldProject.name}" to "${newProject.name}" (${newStatus})`,
+      forCreator: `You moved "${task.title}" from "${sourceName}" to "${targetName}" (${newStatus})`,
+      forOthers: `${userName} moved "${task.title}" from "${sourceName}" to "${targetName}" (${newStatus})`,
     };
 
-    const activity = await createActivity({
-      projectId: newProjectId, // Activity belongs to new project
+    const activityData = {
       taskId: task._id,
       userId,
       actionType: ACTION_TYPE.UPDATE_TASK,
-      field: "projectId",
-      previousValue: previousProjectId,
-      newValue: newProjectId,
+      field: newProjectId ? "projectId" : "channelId",
+      previousValue: newProjectId ? previousProjectId : previousChannelId,
+      newValue: newProjectId || newChannelId,
       message: activityMessage,
       timestamp: new Date(),
-    });
+    };
+
+    if (newProjectId) {
+      activityData.projectId = newProjectId;
+    } else {
+      activityData.channelId = newChannelId;
+    }
+
+    const activity = await createActivity(activityData);
 
     // Prepare response data
     const responseData = {
       success: true,
       taskId,
-      newProjectId,
-      previousProjectId,
+      newProjectId: newProjectId || null,
+      newChannelId: newChannelId || null,
+      previousProjectId: previousProjectId || null,
+      previousChannelId: previousChannelId || null,
       newStatus,
       previousStatus,
       orderIndex: calculatedOrderIndex,
@@ -757,15 +910,26 @@ const processTaskMove = async (socket, data) => {
         status: newStatus,
         priority: task.priority,
         strokeColor: task.strokeColor,
-        projectId: newProjectId,
+        projectId: newProjectId || null,
+        channelId: newChannelId || null,
       },
-      sourceProject: {
+      source: oldProject ? {
         _id: oldProject._id,
         name: oldProject.name,
+        type: "project"
+      } : {
+        _id: oldChannel._id,
+        name: "Open",
+        type: "channel"
       },
-      targetProject: {
+      target: newProject ? {
         _id: newProject._id,
         name: newProject.name,
+        type: "project"
+      } : {
+        _id: newChannel._id,
+        name: "Open",
+        type: "channel"
       },
       activity: {
         _id: activity._id,
@@ -779,66 +943,69 @@ const processTaskMove = async (socket, data) => {
       },
     };
 
-    // Emit to both old and new tabs (check if same tab to avoid duplicates)
-    const isSameTab =
-      oldProject.tabId.toString() === newProject.tabId.toString();
+    // Determine source and target room IDs
+    const sourceRoomId = oldProject ? `tab:${oldProject.tabId}` : `channel:${oldChannel._id}`;
+    const targetRoomId = newProject ? `tab:${newProject.tabId}` : `channel:${newChannel._id}`;
 
-    if (isSameTab) {
-      // Same tab - emit once with consolidated message
-      io.to(`tab:${oldProject.tabId}`).emit("task-move-response", {
+    // Check if same room to avoid duplicates
+    const isSameRoom = sourceRoomId === targetRoomId;
+
+    if (isSameRoom) {
+      // Same room - emit once with consolidated message
+      io.to(sourceRoomId).emit("task-move-response", {
         ...responseData,
-        direction: "internal", // Task moved within same tab
+        direction: "internal", // Task moved within same room
       });
 
-      io.to(`tab:${oldProject.tabId}`).emit("tab-activity", {
-        type: "TASK_MOVED_WITHIN_TAB",
+      io.to(sourceRoomId).emit("tab-activity", {
+        type: "TASK_MOVED_WITHIN_ROOM",
         task: responseData.task,
-        sourceProject: responseData.sourceProject,
-        targetProject: responseData.targetProject,
+        source: responseData.source,
+        target: responseData.target,
         movedBy: {
           _id: user._id,
           name: user.name,
           email: user.email,
         },
-        notification: `${userName} moved "${task.title}" from "${oldProject.name}" to "${newProject.name}"`,
+        notification: `${userName} moved "${task.title}" from "${sourceName}" to "${targetName}"`,
         timestamp: new Date(),
       });
     } else {
-      // Different tabs - emit to both tabs
-      io.to(`tab:${oldProject.tabId}`).emit("task-move-response", {
+      // Different rooms - emit to both
+      io.to(sourceRoomId).emit("task-move-response", {
         ...responseData,
-        direction: "source", // Task removed from this tab
+        direction: "source", // Task removed from this room
       });
 
-      io.to(`tab:${newProject.tabId}`).emit("task-move-response", {
+      io.to(targetRoomId).emit("task-move-response", {
         ...responseData,
-        direction: "target", // Task added to this tab
+        direction: "target", // Task added to this room
       });
 
-      // Emit tab activities to both tabs
-      io.to(`tab:${oldProject.tabId}`).emit("tab-activity", {
+      // Emit activities to both rooms
+      io.to(sourceRoomId).emit("tab-activity", {
         type: "TASK_MOVED_OUT",
         task: responseData.task,
-        targetProject: responseData.targetProject,
+        target: responseData.target,
         movedBy: {
           _id: user._id,
           name: user.name,
           email: user.email,
         },
-        notification: `${userName} moved "${task.title}" to "${newProject.name}"`,
+        notification: `${userName} moved "${task.title}" to "${targetName}"`,
         timestamp: new Date(),
       });
 
-      io.to(`tab:${newProject.tabId}`).emit("tab-activity", {
+      io.to(targetRoomId).emit("tab-activity", {
         type: "TASK_MOVED_IN",
         task: responseData.task,
-        sourceProject: responseData.sourceProject,
+        source: responseData.source,
         movedBy: {
           _id: user._id,
           name: user.name,
           email: user.email,
         },
-        notification: `${userName} moved "${task.title}" from "${oldProject.name}"`,
+        notification: `${userName} moved "${task.title}" from "${sourceName}"`,
         timestamp: new Date(),
       });
     }
@@ -894,9 +1061,9 @@ exports.initSocket = (server) => {
   io.on("connection", (socket) => {
     console.log("New client connected:", socket.id);
 
-    // Join all accessible tabs for a user
+    // Join all accessible tabs and channels for a user
     socket.on("join-user-tabs", async (data) => {
-      const { userId, tabs } = data;
+      const { userId, tabs, channels } = data;
       console.log(`Socket ${socket.id} joining tabs for user: ${userId}`);
 
       // Join user's personal room for mentions/notifications
@@ -910,6 +1077,14 @@ exports.initSocket = (server) => {
         tabs.forEach((tabId) => {
           console.log(`Socket ${socket.id} joining tab room: ${tabId}`);
           socket.join(`tab:${tabId}`);
+        });
+      }
+
+      // Join all channel rooms the user has access to (for Open tasks)
+      if (Array.isArray(channels)) {
+        channels.forEach((channelId) => {
+          console.log(`Socket ${socket.id} joining channel room: ${channelId}`);
+          socket.join(`channel:${channelId}`);
         });
       }
     });

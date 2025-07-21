@@ -26,79 +26,164 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate) => {
   );
 
   return [
-    // Match projects by channelId and tabId
+    // Use a facet to combine project-based tasks and channel-based tasks
     {
-      $match: {
-        channelId: Types.ObjectId.createFromHexString(channelId),
-        tabId: Types.ObjectId.createFromHexString(tabId),
-        status: "active", // Only active projects
-      },
-    },
-
-    // Lookup tasks for these projects
-    {
-      $lookup: {
-        from: "tasks",
-        localField: "_id",
-        foreignField: "projectId",
-        as: "tasks",
-        pipeline: [
+      $facet: {
+        // Project-based tasks
+        projectTasks: [
+          // Match projects by channelId and tabId
           {
             $match: {
-              isActive: true,
-              // User must be assigned to task OR created the task
-              $or: [
-                { assignedTo: Types.ObjectId.createFromHexString(userId) },
-                { createdBy: Types.ObjectId.createFromHexString(userId) },
-              ],
-              // Tasks due within the current month or overdue
-              $or: [
+              channelId: Types.ObjectId.createFromHexString(channelId),
+              tabId: Types.ObjectId.createFromHexString(tabId),
+              status: "active", // Only active projects
+            },
+          },
+
+          // Lookup tasks for these projects
+          {
+            $lookup: {
+              from: "tasks",
+              localField: "_id",
+              foreignField: "projectId",
+              as: "tasks",
+              pipeline: [
                 {
-                  dueDate: {
-                    $gte: monthStart,
-                    $lte: monthEnd,
+                  $match: {
+                    isActive: true,
+                    // User must be assigned to task OR created the task
+                    $or: [
+                      { assignedTo: Types.ObjectId.createFromHexString(userId) },
+                      { createdBy: Types.ObjectId.createFromHexString(userId) },
+                    ],
+                    // Tasks due within the current month only
+                    dueDate: {
+                      $gte: monthStart,
+                      $lte: monthEnd,
+                    },
                   },
                 },
+                // Sort by dueDate
                 {
-                  $and: [
-                    { dueDate: { $lt: monthStart } }, // Overdue tasks
-                    { status: { $ne: "completed" } }, // Not completed
-                  ],
+                  $sort: { dueDate: 1 },
                 },
               ],
             },
           },
-          // Sort by dueDate
+
+          // Unwind tasks to work with individual tasks
           {
-            $sort: { dueDate: 1 },
+            $unwind: {
+              path: "$tasks",
+              preserveNullAndEmptyArrays: false, // Only projects with tasks
+            },
+          },
+
+          // Replace root with task data while preserving project info
+          {
+            $replaceRoot: {
+              newRoot: {
+                $mergeObjects: [
+                  "$tasks",
+                  {
+                    project: {
+                      _id: "$_id",
+                      name: "$name",
+                      color: "$color",
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        ],
+
+        // Channel-based tasks (without project)
+        channelTasks: [
+          // Start with a dummy document to use the facet
+          { $limit: 1 },
+          
+          // Lookup tasks directly from the tasks collection
+          {
+            $lookup: {
+              from: "tasks",
+              pipeline: [
+                {
+                  $match: {
+                    channelId: Types.ObjectId.createFromHexString(channelId),
+                    projectId: null, // Tasks without project
+                    isActive: true,
+                    // User must be assigned to task OR created the task
+                    $or: [
+                      { assignedTo: Types.ObjectId.createFromHexString(userId) },
+                      { createdBy: Types.ObjectId.createFromHexString(userId) },
+                    ],
+                    // Tasks due within the current month only
+                    dueDate: {
+                      $gte: monthStart,
+                      $lte: monthEnd,
+                    },
+                  },
+                },
+                // Sort by dueDate
+                {
+                  $sort: { dueDate: 1 },
+                },
+              ],
+              as: "tasks",
+            },
+          },
+
+          // Unwind tasks
+          {
+            $unwind: {
+              path: "$tasks",
+              preserveNullAndEmptyArrays: false,
+            },
+          },
+
+          // Replace root with task data and add Open project info
+          {
+            $replaceRoot: {
+              newRoot: {
+                $mergeObjects: [
+                  "$tasks",
+                  {
+                    project: {
+                      _id: "open",
+                      name: "Open",
+                      color: "#808080",
+                    },
+                  },
+                ],
+              },
+            },
           },
         ],
       },
     },
 
-    // Unwind tasks to work with individual tasks
+    // Combine both arrays into a single array
     {
-      $unwind: {
-        path: "$tasks",
-        preserveNullAndEmptyArrays: false, // Only projects with tasks
+      $project: {
+        allTasks: {
+          $concatArrays: ["$projectTasks", "$channelTasks"],
+        },
       },
     },
 
-    // Replace root with task data while preserving project info
+    // Unwind the combined array
+    {
+      $unwind: {
+        path: "$allTasks",
+        preserveNullAndEmptyArrays: false,
+      },
+    },
+
+    // Replace root with the task data
     {
       $replaceRoot: {
-        newRoot: {
-          $mergeObjects: [
-            "$tasks",
-            {
-              project: {
-                _id: "$_id",
-                name: "$name",
-                color: "$color",
-              },
-            },
-          ],
-        },
+        newRoot: "$allTasks",
       },
     },
 
@@ -118,6 +203,13 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate) => {
             else: false,
           },
         },
+      },
+    },
+
+    // Filter out overdue tasks from calendar
+    {
+      $match: {
+        isOverdue: false,
       },
     },
 
@@ -312,6 +404,125 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
       $sort: {
         priority: -1, // high, medium, low
         createdAt: -1, // newest first
+      },
+    },
+  ];
+};
+
+/**
+ * Get non-project tasks (Open category) for a channel
+ * @param {string} channelId - Channel ID
+ * @returns {Array} Aggregation pipeline
+ */
+exports.getOpenTasksQuery = (channelId) => {
+  return [
+    // Match tasks by channelId with no projectId
+    {
+      $match: {
+        channelId: Types.ObjectId.createFromHexString(channelId),
+        projectId: null,
+        isActive: true,
+      },
+    },
+
+    // Lookup task assignees
+    {
+      $lookup: {
+        from: "users",
+        localField: "assignedTo",
+        foreignField: "_id",
+        as: "assignees",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              email: 1,
+              isDemo: 1,
+            },
+          },
+        ],
+      },
+    },
+
+    // Lookup task creator
+    {
+      $lookup: {
+        from: "users",
+        localField: "createdBy",
+        foreignField: "_id",
+        as: "taskCreator",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              email: 1,
+            },
+          },
+        ],
+      },
+    },
+
+    {
+      $unwind: {
+        path: "$taskCreator",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // Project task fields
+    {
+      $project: {
+        _id: 1,
+        title: 1,
+        description: 1,
+        channelId: 1,
+        status: 1,
+        priority: 1,
+        dueDate: 1,
+        strokeColor: 1,
+        isActive: 1,
+        orderIndex: 1,
+        version: { $ifNull: ["$version", 0] },
+        createdAt: 1,
+        updatedAt: 1,
+        assignees: {
+          $map: {
+            input: "$assignees",
+            as: "assignee",
+            in: {
+              _id: "$$assignee._id",
+              name: "$$assignee.name",
+              email: "$$assignee.email",
+            },
+          },
+        },
+        createdBy: {
+          _id: "$taskCreator._id",
+          name: "$taskCreator.name",
+          email: "$taskCreator.email",
+        },
+        isOverdue: {
+          $cond: {
+            if: {
+              $and: [
+                { $ne: ["$dueDate", null] },
+                { $lt: ["$dueDate", new Date()] },
+                { $ne: ["$status", "completed"] },
+              ],
+            },
+            then: true,
+            else: false,
+          },
+        },
+      },
+    },
+
+    // Sort tasks by creation date
+    {
+      $sort: {
+        createdAt: -1,
       },
     },
   ];
