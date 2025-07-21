@@ -1,13 +1,10 @@
-const { parseBody, generateResponse } = require("../utils");
+const { generateResponse } = require("../utils");
 const {
   STATUS_CODES,
   CONTRIBUTION_DURATIONS,
   CONTRIBUTION_CATEGORIES,
 } = require("../utils/constants");
 const { findChannel } = require("../models/channelModel");
-const { findChannelTab } = require("../models/channelTabsModel");
-const { findUser } = require("../models/userModel");
-const { findCompany } = require("../models/companyModel");
 const { getAllActivities } = require("../models/activityModel");
 const ActivityModel = require("mongoose").model("Activity");
 const {

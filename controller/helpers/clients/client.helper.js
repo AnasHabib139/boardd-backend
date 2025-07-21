@@ -68,11 +68,14 @@ exports.createAttachmentActivity = async ({
   userId,
   userName,
   client,
-  attachments, // This will be a single attachment, not an array
+  attachments, // This will be an array of attachments
 }) => {
+  const count = Array.isArray(attachments) ? attachments.length : 1;
   const attachmentMessage = {
-    forCreator: "You uploaded an attachment",
-    forOthers: `${userName} uploaded an attachment`,
+    forCreator: `You uploaded ${count} attachment${count > 1 ? "s" : ""}`,
+    forOthers: `${userName} uploaded ${count} attachment${
+      count > 1 ? "s" : ""
+    }`,
   };
 
   return createActivity({
@@ -81,7 +84,7 @@ exports.createAttachmentActivity = async ({
     userId,
     actionType: ACTION_TYPE.ADD_CLIENT_ATTACHMENT,
     field: "attachments",
-    newValue: attachments, // Single attachment value
+    newValue: attachments, // Array of attachments
     timestamp: new Date(),
     message: attachmentMessage,
   });

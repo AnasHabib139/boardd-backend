@@ -17,16 +17,16 @@ const {
 
 exports.createOrUpdateClient = async (req, res, next) => {
   try {
-    const { tabId, personalDetails, attachment, projects } = parseBody(
+    const { tabId, personalDetails, attachments, projects } = parseBody(
       req.body
     );
 
     // Validate that at least one optional field is provided
-    if (!personalDetails && !attachment && !projects) {
+    if (!personalDetails && !attachments && !projects) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
         message:
-          "At least one field (personalDetails, attachment, or projects) is required",
+          "At least one field (personalDetails, attachments, or projects) is required",
       });
     }
 
@@ -87,19 +87,19 @@ exports.createOrUpdateClient = async (req, res, next) => {
         activities.push(personalDetailsActivity);
       }
 
-      if (attachment) {
+      if (attachments && attachments.length > 0) {
         updateOperations.$push = {
           ...updateOperations.$push,
-          attachments: attachment, // Push single attachment to array
+          attachments: { $each: attachments }, // Push array of attachments
         };
 
-        // Create activity for attachment upload
+        // Create activity for attachments upload
         const attachmentActivity = await createAttachmentActivity({
           tabId,
           userId,
           userName,
           client: existingClient,
-          attachments: attachment, // Pass single attachment
+          attachments, // Pass array of attachments
         });
         activities.push(attachmentActivity);
       }
@@ -138,7 +138,7 @@ exports.createOrUpdateClient = async (req, res, next) => {
       const newClientData = {
         tabId,
         personalDetails: personalDetails ? [personalDetails] : [],
-        attachments: attachment ? [attachment] : [], // Create array with single attachment
+        attachments: attachments || [], // Use attachments array directly
         projects: projects ? [projects] : [],
       };
 
@@ -166,13 +166,13 @@ exports.createOrUpdateClient = async (req, res, next) => {
         activities.push(personalDetailsActivity);
       }
 
-      if (attachment) {
+      if (attachments && attachments.length > 0) {
         const attachmentActivity = await createAttachmentActivity({
           tabId,
           userId,
           userName,
           client,
-          attachments: attachment, // Pass single attachment
+          attachments, // Pass array of attachments
         });
         activities.push(attachmentActivity);
       }
