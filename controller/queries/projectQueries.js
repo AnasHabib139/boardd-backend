@@ -84,10 +84,21 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate) => {
       },
     },
 
-    // Replace root with task data
+    // Replace root with task data while preserving project info
     {
       $replaceRoot: {
-        newRoot: "$tasks",
+        newRoot: {
+          $mergeObjects: [
+            "$tasks",
+            {
+              project: {
+                _id: "$_id",
+                name: "$name",
+                color: "$color",
+              },
+            },
+          ],
+        },
       },
     },
 
@@ -113,19 +124,15 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate) => {
     // Project the final lightweight task structure
     {
       $project: {
-        _id: "$tasks._id",
-        title: "$tasks.title",
-        status: "$tasks.status",
-        priority: "$tasks.priority",
-        dueDate: "$tasks.dueDate",
-        strokeColor: "$tasks.strokeColor",
-        isOverdue: "$tasks.isOverdue",
-        // Minimal project context
-        project: {
-          _id: "$_id",
-          name: "$name",
-          color: "$color",
-        },
+        _id: 1,
+        title: 1,
+        status: 1,
+        priority: 1,
+        dueDate: 1,
+        strokeColor: 1,
+        isOverdue: 1,
+        // Project context
+        project: 1,
       },
     },
 
