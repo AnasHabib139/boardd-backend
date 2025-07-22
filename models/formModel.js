@@ -8,6 +8,7 @@ const {
   FORM_FIELD_TYPES,
   FORM_STATUS,
   FORM_SHARING,
+  FORM_TYPE,
 } = require("../utils/constants");
 
 // Form field validation schema
@@ -89,8 +90,15 @@ const sharingSettingsSchema = new Schema(
 const formSchema = new Schema({
   title: { type: String, required: true },
   description: { type: String, default: "" },
-  type: { type: String }, // Optional text field to describe what kind of form this is
-  tabId: { type: Types.ObjectId, ref: "ChannelTab", required: true },
+  type: {
+    type: String,
+    enum: Object.values(FORM_TYPE),
+    default: FORM_TYPE.FORM,
+  },
+  // Support both folder and channel context
+  isFolder: { type: Boolean, default: false }, // true if created in folder context
+  tabId: { type: Types.ObjectId, ref: "ChannelTab", required: false },
+  channelId: { type: Types.ObjectId, ref: "Channel", required: false }, // For shared forms
   createdBy: { type: Types.ObjectId, ref: "User", required: true },
   status: {
     type: String,
@@ -109,8 +117,11 @@ const formSchema = new Schema({
 
 // Indexes
 formSchema.index({ tabId: 1 });
+formSchema.index({ isFolder: 1 });
+formSchema.index({ channelId: 1 });
 formSchema.index({ createdBy: 1 });
 formSchema.index({ status: 1 });
+formSchema.index({ type: 1 });
 
 // Register pagination plugins
 formSchema.plugin(mongoosePaginate);
@@ -138,4 +149,44 @@ exports.getAllForms = async ({ query, page, limit, responseKey = "data" }) => {
     limit,
   });
   return { [responseKey]: data, pagination };
+};
+
+// Helper function to share form from folder to channel
+exports.shareFormToChannel = async (formId, channelId, tabId) => {
+  return FormModel.findByIdAndUpdate(
+    formId,
+    {
+      channelId,
+      tabId,
+      isFolder: false, // No longer in folder context when shared
+      updatedAt: new Date(),
+    },
+    { new: true }
+  );
+};
+
+// Helper function to find forms by folder context
+exports.findFormsByFolder = (options = {}) => {
+  return FormModel.find({ isFolder: true, isActive: true, ...options });
+};
+
+// Get all folder forms with user details and pagination
+exports.getAllFolderForms = async ({ query, page, limit, responseKey = "data" }) => {
+  const { data, pagination } = await getMongooseAggregatePaginatedData({
+    model: FormModel,
+    query,
+    page,
+    limit,
+  });
+  return { [responseKey]: data, pagination };
+};
+
+// Helper function to find forms by channel
+exports.findFormsByChannel = (channelId, options = {}) => {
+  return FormModel.find({ channelId, isActive: true, ...options });
+};
+
+// Helper function to find forms by type
+exports.findFormsByType = (type, options = {}) => {
+  return FormModel.find({ type, isActive: true, ...options });
 };

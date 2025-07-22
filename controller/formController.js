@@ -1,7 +1,7 @@
 "use strict";
 
 const { parseBody, generateResponse, generateNextOrder } = require("../utils");
-const { STATUS_CODES } = require("../utils/constants");
+const { STATUS_CODES, FORM_TYPE } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
@@ -11,6 +11,10 @@ const {
   updateForm,
   deleteForm,
   getAllForms,
+  getAllFolderForms,
+  shareFormToChannel,
+  findFormsByChannel,
+  findFormsByType,
 } = require("../models/formModel");
 const {
   Document,
@@ -56,7 +60,9 @@ exports.createForm = async (req, res, next) => {
       title,
       description,
       type,
+      isFolder,
       tabId,
+      channelId,
       fields,
       attachments,
       sharingSettings,
@@ -73,31 +79,53 @@ exports.createForm = async (req, res, next) => {
       });
     }
 
-    // Validate tab exists
-    const tab = await findChannelTab({ _id: tabId });
-    if (!tab) {
+    // Validate context - if not folder creation, tabId must be provided
+    if (!isFolder && !tabId) {
       return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Tab not found",
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "tabId is required for channel forms",
       });
     }
 
-    // Check if user is a member of the tab
-    if (!tab?.members?.includes(userId)) {
+    if (isFolder && tabId) {
       return next({
-        statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You are not a member of this tab",
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Cannot specify tabId for folder forms",
       });
     }
 
-    // Validate channel exists and user has access
-    const channel = await findChannel({ _id: tab.channelId });
-    if (!channel) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Channel not found",
-      });
+    let tab = null;
+    let channel = null;
+    
+    // If creating in channel context, validate tab and channel
+    if (!isFolder && tabId) {
+      tab = await findChannelTab({ _id: tabId });
+      if (!tab) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Tab not found",
+        });
+      }
+
+      // Check if user is a member of the tab
+      if (!tab?.members?.includes(userId)) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You are not a member of this tab",
+        });
+      }
+
+      // Validate channel exists and user has access
+      channel = await findChannel({ _id: tab.channelId });
+      if (!channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Channel not found",
+        });
+      }
     }
+    
+    // For folder forms, no additional validation needed
 
     // Process fields if provided
     let processedFields = [];
@@ -134,8 +162,10 @@ exports.createForm = async (req, res, next) => {
     const form = await createForm({
       title,
       description: description || "",
-      type: type || "",
+      type: type || FORM_TYPE.FORM,
+      isFolder: isFolder || false,
       tabId,
+      channelId,
       createdBy: userId,
       fields: processedFields,
       attachments: attachments || [],
@@ -277,12 +307,33 @@ exports.getFormById = async (req, res, next) => {
 
     // If user is provided, validate access
     if (userId) {
-      const tab = await findChannelTab({ _id: form.tabId });
-      if (!tab || !tab?.members?.includes(userId)) {
+      const user = await findUser({ _id: userId });
+      if (!user) {
         return next({
-          statusCode: STATUS_CODES.FORBIDDEN,
-          message: "You don't have access to this form",
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "User not found",
         });
+      }
+
+      // For folder forms (isFolder: true), check if user is in same company as form creator
+      if (form.isFolder) {
+        const formCreator = await findUser({ _id: form.createdBy });
+        if (!formCreator || !formCreator.companyId || !user.companyId || 
+            formCreator.companyId.toString() !== user.companyId.toString()) {
+          return next({
+            statusCode: STATUS_CODES.FORBIDDEN,
+            message: "You don't have access to this form",
+          });
+        }
+      } else {
+        // For channel forms, check tab membership
+        const tab = await findChannelTab({ _id: form.tabId });
+        if (!tab || !tab?.members?.includes(userId)) {
+          return next({
+            statusCode: STATUS_CODES.FORBIDDEN,
+            message: "You don't have access to this form",
+          });
+        }
       }
     }
 
@@ -417,6 +468,183 @@ exports.deleteForm = async (req, res, next) => {
 };
 
 /**
+ * Share form from folder to channel
+ */
+exports.shareForm = async (req, res, next) => {
+  try {
+    const { formId } = req.params;
+    const { channelId, tabId } = parseBody(req.body);
+    const userId = req?.user?.id;
+
+    // Validate required fields
+    if (!channelId || !tabId) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Both channelId and tabId are required",
+      });
+    }
+
+    // Find form
+    const form = await findForm({ _id: formId, isActive: true });
+    if (!form) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Form not found",
+      });
+    }
+
+    // Check if form is in folder context (not already shared)
+    if (!form.isFolder) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Form must be in folder context to be shared",
+      });
+    }
+
+    // Validate user is creator or has permission
+    if (form.createdBy.toString() !== userId) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You don't have permission to share this form",
+      });
+    }
+
+    // Validate tab exists and is form builder tab
+    const tab = await findChannelTab({ _id: tabId });
+    if (!tab) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Tab not found",
+      });
+    }
+
+    // Check if user is a member of the target tab
+    if (!tab?.members?.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of the target tab",
+      });
+    }
+
+    // Validate channel exists
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Share form to channel
+    const sharedForm = await shareFormToChannel(formId, channelId, tabId);
+
+    return generateResponse(
+      sharedForm,
+      "Form shared to channel successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in shareForm:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Get forms by folder context with pagination
+ */
+exports.getFormsByFolder = async (req, res, next) => {
+  try {
+    const { page, limit, type } = req.query;
+    const userId = req?.user?.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Build aggregation query - get all folder forms from same company
+    const query = [
+      {
+        $match: {
+          isFolder: true,
+          isActive: true,
+        },
+      },
+    ];
+
+    // Add type filter if provided
+    if (type && Object.values(FORM_TYPE).includes(type)) {
+      query[0].$match.type = type;
+    }
+
+    // Add user details lookup
+    query.push(
+      {
+        $lookup: {
+          from: "users",
+          localField: "createdBy",
+          foreignField: "_id",
+          as: "creator",
+        },
+      },
+      {
+        $unwind: "$creator",
+      },
+      {
+        $match: {
+          "creator.companyId": user.companyId,
+        },
+      },
+      {
+        $project: {
+          title: 1,
+          description: 1,
+          type: 1,
+          status: 1,
+          responseCount: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          creator: {
+            _id: 1,
+            name: 1,
+            email: 1,
+          },
+        },
+      },
+      { $sort: { createdAt: -1 } }
+    );
+
+    const result = await getAllFolderForms({
+      query,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 10,
+      responseKey: "forms",
+    });
+
+    return generateResponse(
+      result,
+      "Folder forms fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getFormsByFolder:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
  * Download form as DOCX file
  */
 exports.downloadForm = async (req, res, next) => {
@@ -436,19 +664,48 @@ exports.downloadForm = async (req, res, next) => {
 
     // Validate user has access
     if (userId) {
-      const tab = await findChannelTab({ _id: form.tabId });
-      if (!tab || !tab?.members?.includes(userId)) {
+      const user = await findUser({ _id: userId });
+      if (!user) {
         return next({
-          statusCode: STATUS_CODES.FORBIDDEN,
-          message: "You don't have access to download this form",
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "User not found",
         });
+      }
+
+      // For folder forms (isFolder: true), check if user is in same company as form creator
+      if (form.isFolder) {
+        const formCreator = await findUser({ _id: form.createdBy });
+        if (!formCreator || !formCreator.companyId || !user.companyId || 
+            formCreator.companyId.toString() !== user.companyId.toString()) {
+          return next({
+            statusCode: STATUS_CODES.FORBIDDEN,
+            message: "You don't have access to download this form",
+          });
+        }
+      } else {
+        // For channel forms, check tab membership
+        const tab = await findChannelTab({ _id: form.tabId });
+        if (!tab || !tab?.members?.includes(userId)) {
+          return next({
+            statusCode: STATUS_CODES.FORBIDDEN,
+            message: "You don't have access to download this form",
+          });
+        }
       }
     }
 
     // Get creator info for form metadata
     const creator = await findUser({ _id: form.createdBy });
-    const tab = await findChannelTab({ _id: form.tabId });
-    const channel = await findChannel({ _id: tab.channelId });
+    let tab = null;
+    let channel = null;
+
+    // Only get tab/channel info for channel forms
+    if (!form.isFolder && form.tabId) {
+      tab = await findChannelTab({ _id: form.tabId });
+      if (tab) {
+        channel = await findChannel({ _id: tab.channelId });
+      }
+    }
 
     if (format.toLowerCase() === "docx") {
       return await generateDocxDownload(form, creator, tab, channel, res);
@@ -1102,9 +1359,7 @@ const generateDocxDownload = async (form, creator, tab, channel, res) => {
           new TextRun({
             text: `Form created by ${
               creator?.name || creator?.email || "Unknown"
-            } | ${channel?.channelName} / ${
-              tab?.tabName
-            } | Generated: ${new Date().toLocaleDateString()}`,
+            }${channel && tab ? ` | ${channel?.channelName} / ${tab?.tabName}` : " | Folder Form"} | Generated: ${new Date().toLocaleDateString()}`,
             size: 16,
             color: "999999",
             italics: true,

@@ -171,6 +171,12 @@ exports.FORM_SHARING = Object.freeze({
   LINK_ONLY: "link_only",
 });
 
+exports.FORM_TYPE = Object.freeze({
+  FORM: "form",
+  TEMPLATE: "template",
+  DOCUMENT: "document",
+});
+
 // Work Progress Contribution Constants
 exports.CONTRIBUTION_LEVELS = {
   NONE: { level: 0, min: 0, max: 0, name: "none" },

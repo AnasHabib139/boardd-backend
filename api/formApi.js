@@ -8,6 +8,8 @@ const {
   updateForm,
   deleteForm,
   downloadForm,
+  shareForm,
+  getFormsByFolder,
 } = require("../controller/formController");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -17,6 +19,8 @@ const {
   validateGetFormsQuery,
   validateFormId,
   validateTabId,
+  validateShareForm,
+  validateGetFolderFormsQuery,
 } = require("../validation/formValidation");
 
 class FormApi {
@@ -43,6 +47,23 @@ class FormApi {
       validateTabId,
       validateGetFormsQuery,
       getFormsByTab
+    );
+
+    // Get forms by folder context
+    router.get(
+      "/folder",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
+      validateGetFolderFormsQuery,
+      getFormsByFolder
+    );
+
+    // Share form from folder to channel
+    router.post(
+      "/:formId/share",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
+      validateFormId,
+      validateShareForm,
+      shareForm
     );
 
     // Get form by ID

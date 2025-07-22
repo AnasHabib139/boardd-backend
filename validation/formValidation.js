@@ -5,6 +5,7 @@ const {
   FORM_FIELD_TYPES,
   FORM_STATUS,
   FORM_SHARING,
+  FORM_TYPE,
 } = require("../utils/constants");
 const { STATUS_CODES } = require("../utils/constants");
 
@@ -91,11 +92,16 @@ const createFormSchema = Joi.object({
   title: Joi.string().required().trim().min(1).max(100),
   description: Joi.string().trim().max(500).allow("").default(""),
   type: Joi.string().trim().max(100).allow(""),
+  isFolder: Joi.boolean().default(false),
   tabId: Joi.string()
-    .required()
     .pattern(/^[0-9a-fA-F]{24}$/)
     .messages({
       "string.pattern.base": "Invalid tab ID format",
+    })
+    .when("isFolder", {
+      is: false,
+      then: Joi.required(),
+      otherwise: Joi.optional(),
     }),
   fields: Joi.array().items(formFieldSchema).default([]),
   attachments: Joi.array()
@@ -132,6 +138,25 @@ const getFormsQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(10),
   status: Joi.string().valid(...Object.values(FORM_STATUS)),
+  type: Joi.string().valid(...Object.values(FORM_TYPE)),
+}).unknown(false);
+
+// Share form validation
+const shareFormSchema = Joi.object({
+  channelId: Joi.string()
+    .required()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .messages({
+      "string.pattern.base": "Invalid channel ID format",
+      "any.required": "Channel ID is required",
+    }),
+  tabId: Joi.string()
+    .required()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .messages({
+      "string.pattern.base": "Invalid tab ID format",
+      "any.required": "Tab ID is required",
+    }),
 }).unknown(false);
 
 // Validation middleware
@@ -213,10 +238,54 @@ const validateTabId = (req, res, next) => {
   next();
 };
 
+// Share form validation middleware
+const validateShareForm = (req, res, next) => {
+  const { error, value } = shareFormSchema.validate(req.body);
+
+  if (error) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json({
+      message: "Validation error",
+      errors: error.details.map((detail) => ({
+        field: detail.path.join("."),
+        message: detail.message,
+      })),
+    });
+  }
+
+  Object.assign(req.body, value);
+  next();
+};
+
+// Get folder forms query validation (reuse existing with type filter)
+const validateGetFolderFormsQuery = (req, res, next) => {
+  const folderQuerySchema = Joi.object({
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(100).default(10),
+    type: Joi.string().valid(...Object.values(FORM_TYPE)),
+  }).unknown(false);
+
+  const { error, value } = folderQuerySchema.validate(req.query);
+
+  if (error) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json({
+      message: "Query validation error",
+      errors: error.details.map((detail) => ({
+        field: detail.path.join("."),
+        message: detail.message,
+      })),
+    });
+  }
+
+  Object.assign(req.query, value);
+  next();
+};
+
 module.exports = {
   validateCreateForm,
   validateUpdateForm,
   validateGetFormsQuery,
   validateFormId,
   validateTabId,
+  validateShareForm,
+  validateGetFolderFormsQuery,
 };
