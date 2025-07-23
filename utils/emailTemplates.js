@@ -1475,3 +1475,334 @@ This invitation was sent by ${companyName} via Boardd.
 
   return { html, text };
 };
+
+/**
+ * Generate form invite email template
+ * @param {Object} params Parameters for the template
+ * @param {string} params.formTitle Form title
+ * @param {string} params.formDescription Form description
+ * @param {string} params.sharedByName Name of the person sharing
+ * @param {string} params.shareLink Form share link
+ * @param {string} params.customMessage Custom message from sender
+ * @param {string} params.recipientName Name of the recipient
+ * @returns {Object} Object containing HTML and text versions of the email
+ */
+exports.generateFormInviteEmail = ({
+  formTitle,
+  formDescription,
+  sharedByName,
+  shareLink,
+  customMessage,
+  recipientName,
+}) => {
+  const baseUrl = process.env.BACKEND_URL;
+  const logoUrl = `${baseUrl}/assets/images/boardd-logo.png`;
+
+  // Professional HTML email
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Form shared by ${sharedByName}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      line-height: 1.6;
+      color: #1f2937;
+      background-color: #f9fafb;
+      -webkit-text-size-adjust: none;
+    }
+    
+    .email-container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .email-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 32px 40px;
+      text-align: center;
+    }
+    
+    .logo {
+      height: 48px;
+      width: auto;
+      margin-bottom: 16px;
+      filter: brightness(0) invert(1);
+    }
+    
+    .header-title {
+      color: #ffffff;
+      font-size: 28px;
+      font-weight: 700;
+      margin: 0;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+    
+    .email-body {
+      padding: 40px;
+    }
+    
+    .greeting {
+      font-size: 18px;
+      color: #1f2937;
+      margin-bottom: 24px;
+      font-weight: 500;
+    }
+    
+    .share-message {
+      font-size: 16px;
+      color: #4b5563;
+      margin-bottom: 32px;
+      line-height: 1.7;
+    }
+    
+    .sharer-name {
+      color: #667eea;
+      font-weight: 600;
+    }
+    
+    .form-card {
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      border-left: 4px solid #667eea;
+      padding: 24px;
+      border-radius: 8px;
+      margin: 24px 0;
+    }
+    
+    .form-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 12px;
+    }
+    
+    .form-description {
+      font-size: 15px;
+      color: #6b7280;
+      line-height: 1.5;
+    }
+    
+    .custom-message-card {
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      border-left: 4px solid #f59e0b;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 24px 0;
+    }
+    
+    .custom-message-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #92400e;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+    }
+    
+    .custom-message-title::before {
+      content: "💬";
+      margin-right: 8px;
+    }
+    
+    .custom-message-text {
+      font-size: 15px;
+      color: #78350f;
+      font-style: italic;
+      line-height: 1.5;
+    }
+    
+    .cta-section {
+      text-align: center;
+      margin: 32px 0;
+    }
+    
+    .cta-button {
+      display: inline-block;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #ffffff;
+      text-decoration: none;
+      padding: 16px 32px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 14px 0 rgba(102, 126, 234, 0.3);
+      text-align: center;
+      min-width: 200px;
+    }
+    
+    .cta-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px 0 rgba(102, 126, 234, 0.4);
+    }
+    
+    .alternative-link {
+      margin-top: 24px;
+      padding: 16px;
+      background-color: #f9fafb;
+      border-radius: 6px;
+      border: 1px solid #e5e7eb;
+    }
+    
+    .alternative-text {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 8px;
+    }
+    
+    .alternative-url {
+      font-size: 12px;
+      color: #4b5563;
+      word-break: break-all;
+      background-color: #ffffff;
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #d1d5db;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+    }
+    
+    .email-footer {
+      background-color: #f9fafb;
+      padding: 32px 40px;
+      text-align: center;
+      border-top: 1px solid #e5e7eb;
+    }
+    
+    .footer-text {
+      font-size: 14px;
+      color: #6b7280;
+      margin-bottom: 16px;
+    }
+    
+    .footer-branding {
+      font-size: 12px;
+      color: #9ca3af;
+    }
+    
+    .footer-branding a {
+      color: #667eea;
+      text-decoration: none;
+    }
+    
+    @media only screen and (max-width: 600px) {
+      .email-container {
+        margin: 0;
+        border-radius: 0;
+      }
+      
+      .email-header, .email-body, .email-footer {
+        padding: 24px 20px;
+      }
+      
+      .header-title {
+        font-size: 24px;
+      }
+      
+      .cta-button {
+        padding: 14px 24px;
+        font-size: 15px;
+        min-width: auto;
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="email-container">
+    <!-- Header -->
+    <div class="email-header">
+      <img src="${logoUrl}" alt="Boardd" class="logo" />
+      <h1 class="header-title">Form shared with you</h1>
+    </div>
+    
+    <!-- Body -->
+    <div class="email-body">
+      <div class="greeting">Hi ${recipientName || "there"}! 👋</div>
+      
+      <div class="share-message">
+        <span class="sharer-name">${sharedByName}</span> has shared a form with you and would like your response.
+      </div>
+      
+      <div class="form-card">
+        <div class="form-title">${formTitle}</div>
+        ${
+          formDescription
+            ? `<div class="form-description">${formDescription}</div>`
+            : ""
+        }
+      </div>
+      
+      ${
+        customMessage
+          ? `
+      <div class="custom-message-card">
+        <div class="custom-message-title">Message from ${sharedByName}</div>
+        <div class="custom-message-text">"${customMessage}"</div>
+      </div>
+      `
+          : ""
+      }
+      
+      <div class="cta-section">
+        <a href="${shareLink}" class="cta-button">Fill Out Form</a>
+      </div>
+      
+      <div class="alternative-link">
+        <div class="alternative-text">Or copy and paste this link in your browser:</div>
+        <div class="alternative-url">${shareLink}</div>
+      </div>
+    </div>
+    
+    <!-- Footer -->
+    <div class="email-footer">
+      <div class="footer-text">
+        This form was shared with you via Boardd.
+        <br>
+        Thank you for taking the time to respond!
+      </div>
+      <div class="footer-branding">
+        Powered by <a href="${process.env.FRONTEND_URL}">Boardd</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+
+  // Plain text version
+  const text = `
+📋 Form shared with you by ${sharedByName}
+
+Hi ${recipientName || "there"}!
+
+${sharedByName} has shared a form with you and would like your response.
+
+Form: ${formTitle}
+${formDescription ? `Description: ${formDescription}` : ""}
+
+${customMessage ? `💬 Message from ${sharedByName}:\n"${customMessage}"` : ""}
+
+🔗 Fill out the form here:
+${shareLink}
+
+This form was shared with you via Boardd.
+Thank you for taking the time to respond!
+
+Powered by Boardd - ${process.env.FRONTEND_URL}
+  `;
+
+  return { html, text };
+};

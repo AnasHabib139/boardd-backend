@@ -17,6 +17,17 @@ const {
   findFormsByType,
 } = require("../models/formModel");
 const {
+  createFormInvite,
+  findInviteByToken,
+  markAsResponded,
+  updateFormInvite
+} = require("../models/formInviteModel");
+const {
+  createFormResponse
+} = require("../models/formResponseModel");
+const Mailer = require("../utils/mailer");
+const { generateFormInviteEmail } = require("../utils/emailTemplates");
+const {
   Document,
   Packer,
   Paragraph,
@@ -603,6 +614,54 @@ exports.getFormsByFolder = async (req, res, next) => {
           "creator.companyId": user.companyId,
         },
       },
+      // Add form invites lookup for sharing statistics
+      {
+        $lookup: {
+          from: "forminvites",
+          localField: "_id",
+          foreignField: "formId",
+          as: "invites",
+          pipeline: [
+            { $match: { isActive: true } }
+          ]
+        },
+      },
+      {
+        $addFields: {
+          totalResponses: {
+            $size: {
+              $filter: {
+                input: "$invites",
+                as: "invite",
+                cond: { $eq: ["$$invite.hasResponded", true] }
+              }
+            }
+          },
+          totalWaiting: {
+            $size: {
+              $filter: {
+                input: "$invites",
+                as: "invite",
+                cond: { $eq: ["$$invite.hasResponded", false] }
+              }
+            }
+          },
+          totalShared: { $size: "$invites" },
+          sharedWithData: {
+            $map: {
+              input: "$invites",
+              as: "invite",
+              in: {
+                name: "$$invite.invitedName",
+                email: "$$invite.invitedEmail",
+                dateTime: "$$invite.respondedAt",
+                isSubmitted: "$$invite.hasResponded",
+                sharedAt: "$$invite.createdAt"
+              }
+            }
+          }
+        }
+      },
       {
         $project: {
           title: 1,
@@ -612,6 +671,10 @@ exports.getFormsByFolder = async (req, res, next) => {
           responseCount: 1,
           createdAt: 1,
           updatedAt: 1,
+          totalResponses: 1,
+          totalWaiting: 1,
+          totalShared: 1,
+          sharedWithData: 1,
           creator: {
             _id: 1,
             name: 1,
@@ -1415,3 +1478,329 @@ const generateDocxDownload = async (form, creator, tab, channel, res) => {
     throw error;
   }
 };
+
+/**
+ * Share form (exactly like task sharing)
+ */
+exports.shareForm = async (req, res, next) => {
+  try {
+    const { formId } = req.params;
+    const { emails, names, message, shareType = "both" } = parseBody(req.body);
+    const userId = req?.user?.id;
+
+    // Validate form exists
+    const form = await findForm({ _id: formId, isActive: true });
+    if (!form) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Form not found"
+      });
+    }
+
+    // Get current user for context
+    const currentUser = await findUser({ _id: userId });
+    if (!currentUser) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found"
+      });
+    }
+
+    // Check permissions based on form type
+    let hasAccess = false;
+    if (form.isFolder) {
+      // For folder forms, check if user is in same company as form creator
+      const formCreator = await findUser({ _id: form.createdBy });
+      hasAccess = formCreator && formCreator.companyId && currentUser.companyId &&
+                  formCreator.companyId.toString() === currentUser.companyId.toString();
+    } else {
+      // For channel forms, check tab membership
+      const tab = await findChannelTab({ _id: form.tabId });
+      hasAccess = tab && tab.members.includes(userId);
+    }
+
+    if (!hasAccess) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You don't have permission to share this form"
+      });
+    }
+
+    const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    
+    // Create a general form invite for the link sharing (without specific email)
+    let generalInvite = null;
+    if (shareType === "link" || shareType === "both") {
+      generalInvite = await createFormInvite({
+        formId,
+        invitedBy: userId,
+        invitedEmail: "general@link.share", // Placeholder for link sharing
+        invitedName: "Link Share",
+        customMessage: message,
+        shareMethod: "link"
+      });
+    }
+
+    // Generate shareable link with token
+    const shareLink = generalInvite 
+      ? `${baseUrl}/form/${formId}?token=${generalInvite.inviteToken}`
+      : `${baseUrl}/shared/form/${formId}`;
+
+    // Prepare response
+    const response = {
+      shareLink,
+      form: {
+        id: form._id,
+        title: form.title,
+        description: form.description
+      },
+      sharedBy: {
+        name: currentUser.name,
+        email: currentUser.email
+      }
+    };
+
+    // Handle email sharing if emails provided
+    if (
+      emails &&
+      Array.isArray(emails) &&
+      emails.length > 0 &&
+      (shareType === "email" || shareType === "both")
+    ) {
+      // Validate emails array
+      const uniqueEmails = [...new Set(emails)];
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const invalidEmails = uniqueEmails.filter(
+        (email) => !emailRegex.test(email)
+      );
+
+      if (invalidEmails.length > 0) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: `Invalid email format: ${invalidEmails.join(", ")}`
+        });
+      }
+
+      if (uniqueEmails.length > 20) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "Cannot share with more than 20 recipients at once"
+        });
+      }
+
+      const emailResults = [];
+      const emailErrors = [];
+
+      // Process each email with corresponding name
+      for (let i = 0; i < uniqueEmails.length; i++) {
+        const email = uniqueEmails[i];
+        const name = (names && names[i]) || email.split('@')[0]; // Use provided name or fallback
+
+        try {
+          // Create form invite for tracking
+          const formInvite = await createFormInvite({
+            formId,
+            invitedBy: userId,
+            invitedEmail: email.toLowerCase(),
+            invitedName: name,
+            customMessage: message,
+            shareMethod: "email"
+          });
+
+          // Generate personalized link with token
+          const personalizedLink = `${baseUrl}/form/${formId}?token=${formInvite.inviteToken}`;
+
+          // Generate email template
+          const emailTemplate = generateFormInviteEmail({
+            formTitle: form.title,
+            formDescription: form.description,
+            sharedByName: currentUser.name,
+            shareLink: personalizedLink,
+            customMessage: message || "",
+            recipientName: name
+          });
+
+          await Mailer.sendEmail({
+            email: email,
+            subject: `${currentUser.name} shared a form with you: ${form.title}`,
+            message: emailTemplate.text,
+            html: emailTemplate.html,
+            replyTo: currentUser.email
+          });
+
+          // Update invite as email sent
+          await updateFormInvite(
+            { _id: formInvite._id },
+            { emailSent: true, emailSentAt: new Date() }
+          );
+
+          emailResults.push({ email, name });
+        } catch (emailError) {
+          console.error(`Failed to send email to ${email}:`, emailError);
+          emailErrors.push(
+            `Failed to send email to ${email}: ${emailError.message}`
+          );
+        }
+      }
+
+      response.emailResults = {
+        sent: emailResults,
+        failed: emailErrors,
+        totalSent: emailResults.length,
+        totalRequested: uniqueEmails.length
+      };
+
+      if (emailErrors.length > 0) {
+        response.emailResults.errors = emailErrors;
+      }
+    }
+
+    // Determine response message
+    let responseMessage = "Form shared successfully";
+    if (shareType === "email" && response.emailResults) {
+      const { totalSent, totalRequested } = response.emailResults;
+      if (totalSent === totalRequested) {
+        responseMessage = `Form shared via email with ${totalSent} recipients`;
+      } else if (totalSent > 0) {
+        responseMessage = `Form shared with ${totalSent} out of ${totalRequested} recipients`;
+      } else {
+        responseMessage = "Failed to send form emails";
+      }
+    } else if (shareType === "both" && response.emailResults) {
+      responseMessage = `Form link generated and shared via email with ${response.emailResults.totalSent} recipients`;
+    }
+
+    return generateResponse(
+      response,
+      responseMessage,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+
+  } catch (error) {
+    console.error("Error in shareForm:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to share form"
+    });
+  }
+};
+
+
+/**
+ * Submit form response
+ */
+exports.submitFormResponse = async (req, res, next) => {
+  try {
+    const { formId } = req.params;
+    const { token, responses } = parseBody(req.body);
+
+    if (!token) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Token is required"
+      });
+    }
+
+    if (!responses || !Array.isArray(responses) || responses.length === 0) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Responses are required"
+      });
+    }
+
+    // Find invite by token
+    const invite = await findInviteByToken(token);
+    if (!invite) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Invalid or expired invite token"
+      });
+    }
+
+    // Verify form ID matches
+    if (invite.formId._id.toString() !== formId) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Token does not match form"
+      });
+    }
+
+    // Check if already responded
+    if (invite.hasResponded) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You have already responded to this form"
+      });
+    }
+
+    // Validate responses against form fields
+    const form = invite.formId;
+    const formFieldsMap = new Map();
+    form.fields.forEach(field => {
+      formFieldsMap.set(field.fieldName, field);
+    });
+
+    // Validate each response
+    const validatedResponses = [];
+    for (const response of responses) {
+      const { fieldName, value } = response;
+      const formField = formFieldsMap.get(fieldName);
+      
+      if (!formField) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: `Invalid field: ${fieldName}`
+        });
+      }
+
+      // Basic validation (you can expand this)
+      if (formField.validation?.required && (!value || value === "")) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: `Field '${formField.label}' is required`
+        });
+      }
+
+      validatedResponses.push({
+        fieldName,
+        fieldType: formField.type,
+        label: formField.label,
+        value
+      });
+    }
+
+    // Create form response
+    const formResponse = await createFormResponse({
+      formId,
+      inviteToken: token,
+      responses: validatedResponses,
+      ipAddress: req.ip,
+      userAgent: req.get("User-Agent")
+    });
+
+    // Mark invite as responded
+    await markAsResponded(token, formResponse._id);
+
+    // Update form response count
+    await updateForm(
+      { _id: formId },
+      { $inc: { responseCount: 1 } }
+    );
+
+    return generateResponse(
+      { responseId: formResponse._id },
+      "Form response submitted successfully",
+      res,
+      STATUS_CODES.CREATED
+    );
+
+  } catch (error) {
+    console.error("Error in submitFormResponse:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message
+    });
+  }
+};
+

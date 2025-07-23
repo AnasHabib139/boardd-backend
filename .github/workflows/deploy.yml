@@ -20,11 +20,22 @@ jobs:
             # Navigate to your project directory
             cd /home/ubuntu/boardd-backend
 
-            # Pull latest changes
+            # Ensure deploy key permissions are correct
+            chmod 600 ~/.ssh/boardd_deploy_key
+
+            # Set SSH command for git operations
+            export GIT_SSH_COMMAND="ssh -i ~/.ssh/boardd_deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+
+            # Pull latest changes from private repository
             git pull origin main
 
             # Install/update dependencies
             npm install --production
+
+            # Run database migrations if any
+            if [ -f "scripts/migrate.js" ]; then
+              node scripts/migrate.js
+            fi
 
             # Restart PM2
             pm2 restart backend

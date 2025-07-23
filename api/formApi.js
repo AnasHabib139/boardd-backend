@@ -10,8 +10,10 @@ const {
   downloadForm,
   shareForm,
   getFormsByFolder,
+  submitFormResponse,
 } = require("../controller/formController");
 const Auth = require("../middlewares/Auth");
+const OptionalAuth = require("../middlewares/OptionalAuth");
 const { ROLES } = require("../utils/constants");
 const {
   validateCreateForm,
@@ -69,7 +71,7 @@ class FormApi {
     // Get form by ID
     router.get(
       "/:formId",
-      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]), // Allow guest access for public forms
+      OptionalAuth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]), // Allow guest access for public forms
       validateFormId,
       getFormById
     );
@@ -98,6 +100,19 @@ class FormApi {
       validateFormId,
       deleteForm
     );
+
+    // Share form (email/link) - like task sharing
+    router.post(
+      "/:formId/share",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
+      validateFormId,
+      validateShareForm,
+      shareForm
+    );
+
+
+    // Submit form response (public access - no auth required)
+    router.post("/:formId/submit", submitFormResponse);
   }
 
   getRouter() {

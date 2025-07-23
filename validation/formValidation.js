@@ -141,21 +141,44 @@ const getFormsQuerySchema = Joi.object({
   type: Joi.string().valid(...Object.values(FORM_TYPE)),
 }).unknown(false);
 
-// Share form validation
+// Share form validation (like task sharing)
 const shareFormSchema = Joi.object({
-  channelId: Joi.string()
-    .required()
-    .pattern(/^[0-9a-fA-F]{24}$/)
+  emails: Joi.array()
+    .items(
+      Joi.string().email().messages({
+        "string.email": "Each email must be a valid email address",
+      })
+    )
+    .min(0)
+    .max(20)
+    .optional()
     .messages({
-      "string.pattern.base": "Invalid channel ID format",
-      "any.required": "Channel ID is required",
+      "array.base": "Emails must be an array of email addresses",
+      "array.max": "Cannot share with more than 20 people at once",
     }),
-  tabId: Joi.string()
-    .required()
-    .pattern(/^[0-9a-fA-F]{24}$/)
+  
+  names: Joi.array()
+    .items(
+      Joi.string().trim().min(1).max(100).messages({
+        "string.min": "Name cannot be empty",
+        "string.max": "Name cannot exceed 100 characters"
+      })
+    )
+    .optional()
     .messages({
-      "string.pattern.base": "Invalid tab ID format",
-      "any.required": "Tab ID is required",
+      "array.base": "Names must be an array of strings"
+    }),
+
+  message: Joi.string().trim().max(500).optional().messages({
+    "string.max": "Message cannot exceed 500 characters",
+  }),
+
+  shareType: Joi.string()
+    .valid("link", "email", "both")
+    .optional()
+    .default("both")
+    .messages({
+      "any.only": "Share type must be one of: link, email, both",
     }),
 }).unknown(false);
 
