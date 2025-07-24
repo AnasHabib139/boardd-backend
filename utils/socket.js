@@ -396,12 +396,37 @@ const processTaskUpdate = async (socket, data) => {
     );
 
     // Create activity with both messages
-    const activityMessage = generateActivityMessage(field, userName, {
+    let activityMessageData = {
       previousValue,
       newValue: processedValue,
       taskTitle: task.title,
       isCreation: false,
-    });
+    };
+
+    // Convert user IDs to names for assignedTo field
+    if (field === "assignedTo" && Array.isArray(processedValue)) {
+      const assigneeUsers = await Promise.all(
+        processedValue.map(id => findUser({ _id: id }))
+      );
+      const assigneeNames = assigneeUsers
+        .filter(user => user) // Filter out null users
+        .map(user => user.name || user.email);
+      
+      activityMessageData.newValue = assigneeNames;
+      
+      // Also convert previous value if it exists
+      if (previousValue && Array.isArray(previousValue)) {
+        const prevAssigneeUsers = await Promise.all(
+          previousValue.map(id => findUser({ _id: id }))
+        );
+        const prevAssigneeNames = prevAssigneeUsers
+          .filter(user => user) // Filter out null users
+          .map(user => user.name || user.email);
+        activityMessageData.previousValue = prevAssigneeNames;
+      }
+    }
+
+    const activityMessage = generateActivityMessage(field, userName, activityMessageData);
 
     const activityData = {
       taskId: task._id,
