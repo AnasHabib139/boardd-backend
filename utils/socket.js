@@ -1,5 +1,6 @@
 "use strict";
 const socketIO = require("socket.io");
+const { Types } = require("mongoose");
 const { createActivity } = require("../models/activityModel");
 const {
   updateTask,
@@ -7,8 +8,9 @@ const {
   updateTaskOrderIndex,
   moveTaskToProject,
   moveTaskToChannel,
+  getAllTasks,
 } = require("../models/taskModel");
-const { updateSubtask } = require("../models/subtaskModel");
+// Removed unused imports: getTaskByIdQuery, updateSubtask
 const { findProject } = require("../models/projectModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
@@ -36,6 +38,109 @@ const parseDate = (dateString) => {
   }
 
   return new Date(dateString);
+};
+
+// Helper function to get essential task details for socket responses
+const getEssentialTaskDetails = async (taskId, userId = null) => {
+  try {
+    // Custom aggregation query with only essential fields
+    const query = [
+      {
+        $match: {
+          _id: Types.ObjectId.isValid(taskId) ? new Types.ObjectId(taskId) : null,
+        },
+      },
+      // Lookup creator details
+      {
+        $lookup: {
+          from: "users",
+          localField: "createdBy",
+          foreignField: "_id",
+          as: "creator",
+        },
+      },
+      // Lookup assigned users details
+      {
+        $lookup: {
+          from: "users",
+          localField: "assignedTo",
+          foreignField: "_id",
+          as: "assignees",
+        },
+      },
+      // Unwind creator array
+      {
+        $unwind: {
+          path: "$creator",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      // Add isOverdue calculation
+      {
+        $addFields: {
+          isOverdue: {
+            $cond: {
+              if: { $and: ["$dueDate", { $lt: ["$dueDate", new Date()] }] },
+              then: true,
+              else: false,
+            },
+          },
+        },
+      },
+      // Project only essential fields
+      {
+        $project: {
+          _id: 1,
+          title: 1,
+          description: 1,
+          projectId: 1,
+          channelId: 1,
+          status: 1,
+          priority: 1,
+          dueDate: 1,
+          strokeColor: 1,
+          isActive: 1,
+          orderIndex: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          version: 1,
+          isOverdue: 1,
+          createdBy: {
+            _id: "$creator._id",
+            name: "$creator.name",
+            email: "$creator.email",
+          },
+          assignees: {
+            $map: {
+              input: "$assignees",
+              as: "assignee",
+              in: {
+                _id: "$$assignee._id",
+                name: "$$assignee.name",
+                email: "$$assignee.email",
+              },
+            },
+          },
+        },
+      },
+    ];
+    
+    const result = await getAllTasks({
+      query,
+      page: 1,
+      limit: 1,
+      responseKey: "task",
+    });
+    
+    if (!result.task.length) {
+      return null;
+    }
+    
+    return result.task[0];
+  } catch (error) {
+    console.error("Error getting essential task details:", error);
+    return null;
+  }
 };
 
 // Validate field values
@@ -622,6 +727,9 @@ const processTaskReorder = async (socket, data) => {
 
     const activity = await createActivity(activityData);
 
+    // Get essential task details for response
+    const essentialTask = await getEssentialTaskDetails(taskId, userId);
+    
     // Emit success response
     const responseData = {
       success: true,
@@ -629,7 +737,7 @@ const processTaskReorder = async (socket, data) => {
       newStatus,
       previousStatus,
       orderIndex: calculatedOrderIndex,
-      task: {
+      task: essentialTask || {
         _id: task._id,
         title: task.title,
         status: newStatus,
@@ -651,6 +759,22 @@ const processTaskReorder = async (socket, data) => {
     // Emit to appropriate room based on task type
     const roomId = project ? `tab:${project.tabId}` : `channel:${channel._id}`;
     io.to(roomId).emit("task-reorder-response", responseData);
+
+    // Also emit to task room for users viewing the task (activity updates)
+    io.to(`task:${taskId}`).emit("task-update-response", {
+      success: true,
+      taskId,
+      field: "status",
+      previousValue: previousStatus,
+      newValue: newStatus,
+      version: task.version,
+      activity: {
+        _id: responseData.activity._id,
+        message: responseData.activity.message,
+        timestamp: responseData.activity.timestamp,
+        user: responseData.activity.user,
+      },
+    });
 
     // Emit tab activity
     io.to(roomId).emit("tab-activity", {
@@ -893,6 +1017,9 @@ const processTaskMove = async (socket, data) => {
 
     const activity = await createActivity(activityData);
 
+    // Get essential task details for response
+    const essentialTask = await getEssentialTaskDetails(taskId, userId);
+    
     // Prepare response data
     const responseData = {
       success: true,
@@ -904,7 +1031,7 @@ const processTaskMove = async (socket, data) => {
       newStatus,
       previousStatus,
       orderIndex: calculatedOrderIndex,
-      task: {
+      task: essentialTask || {
         _id: task._id,
         title: task.title,
         status: newStatus,
@@ -957,6 +1084,22 @@ const processTaskMove = async (socket, data) => {
         direction: "internal", // Task moved within same room
       });
 
+      // Also emit to task room for users viewing the task (activity updates)
+      io.to(`task:${taskId}`).emit("task-update-response", {
+        success: true,
+        taskId,
+        field: "location",
+        previousValue: `${sourceName}`,
+        newValue: `${targetName}`,
+        version: task.version,
+        activity: {
+          _id: responseData.activity._id,
+          message: responseData.activity.message,
+          timestamp: responseData.activity.timestamp,
+          user: responseData.activity.user,
+        },
+      });
+
       io.to(sourceRoomId).emit("tab-activity", {
         type: "TASK_MOVED_WITHIN_ROOM",
         task: responseData.task,
@@ -980,6 +1123,22 @@ const processTaskMove = async (socket, data) => {
       io.to(targetRoomId).emit("task-move-response", {
         ...responseData,
         direction: "target", // Task added to this room
+      });
+
+      // Also emit to task room for users viewing the task (activity updates)
+      io.to(`task:${taskId}`).emit("task-update-response", {
+        success: true,
+        taskId,
+        field: "location",
+        previousValue: `${sourceName}`,
+        newValue: `${targetName}`,
+        version: task.version,
+        activity: {
+          _id: responseData.activity._id,
+          message: responseData.activity.message,
+          timestamp: responseData.activity.timestamp,
+          user: responseData.activity.user,
+        },
       });
 
       // Emit activities to both rooms
