@@ -263,7 +263,7 @@ exports.prepareTaskEventPayload = ({
   contextPath,
 }) => ({
   taskId: task._id,
-  tabId: tab?._id || null,
+  channelId: channel._id,
   type: "TASK_CREATED",
   payload: {
     task,

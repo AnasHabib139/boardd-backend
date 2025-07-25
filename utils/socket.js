@@ -509,9 +509,8 @@ const processTaskUpdate = async (socket, data) => {
       activities: [activity],
     });
 
-    // Emit to appropriate room based on task type
-    const roomId = project ? `tab:${project.tabId}` : `channel:${channel._id}`;
-    io.to(roomId).emit("tab-activity", {
+    // Emit to channel room (covers all tabs and open tasks)
+    io.to(`channel:${channel._id}`).emit("tab-activity", {
       type: "TASK_UPDATED",
       task: updatedTask,
       activities: [activity],
@@ -784,9 +783,8 @@ const processTaskReorder = async (socket, data) => {
       },
     };
 
-    // Emit to appropriate room based on task type
-    const roomId = project ? `tab:${project.tabId}` : `channel:${channel._id}`;
-    io.to(roomId).emit("task-reorder-response", responseData);
+    // Emit to channel room (simplified approach - covers all tabs and open tasks)
+    io.to(`channel:${channel._id}`).emit("task-reorder-response", responseData);
 
     // Also emit to task room for users viewing the task (activity updates)
     io.to(`task:${taskId}`).emit("task-update-response", {
@@ -804,8 +802,8 @@ const processTaskReorder = async (socket, data) => {
       },
     });
 
-    // Emit tab activity
-    io.to(roomId).emit("tab-activity", {
+    // Emit tab activity to channel room
+    io.to(`channel:${channel._id}`).emit("tab-activity", {
       type: "TASK_REORDERED",
       task: responseData.task,
       newStatus,
@@ -1123,9 +1121,11 @@ const processTaskMove = async (socket, data) => {
       },
     };
 
-    // Determine source and target room IDs
-    const sourceRoomId = oldProject ? `tab:${oldProject.tabId}` : `channel:${oldChannel._id}`;
-    const targetRoomId = newProject ? `tab:${newProject.tabId}` : `channel:${newChannel._id}`;
+    // Determine source and target room IDs (channel-based approach)
+    const sourceChannelId = sourceChannel ? sourceChannel._id : oldChannel._id;
+    const targetChannelId = targetChannel ? targetChannel._id : newChannel._id;
+    const sourceRoomId = `channel:${sourceChannelId}`;
+    const targetRoomId = `channel:${targetChannelId}`;
 
     // Check if same room to avoid duplicates
     const isSameRoom = sourceRoomId === targetRoomId;
@@ -1273,10 +1273,19 @@ exports.initSocket = (server) => {
   io.on("connection", (socket) => {
     console.log("New client connected:", socket.id);
 
-    // Join all accessible tabs and channels for a user
-    socket.on("join-user-tabs", async (data) => {
-      const { userId, tabs, channels } = data;
-      console.log(`Socket ${socket.id} joining tabs for user: ${userId}`);
+    // Join user channel for simplified room management
+    socket.on("join-user-channel", async (data) => {
+      const { userId, channelId } = data;
+      console.log(`Socket ${socket.id} joining channel for user: ${userId}`);
+
+      // Leave all previous channel rooms to avoid conflicts
+      const socketRooms = Array.from(socket.rooms);
+      socketRooms.forEach(room => {
+        if (room.startsWith('channel:')) {
+          console.log(`Socket ${socket.id} leaving previous channel room: ${room}`);
+          socket.leave(room);
+        }
+      });
 
       // Join user's personal room for mentions/notifications
       if (userId) {
@@ -1284,19 +1293,16 @@ exports.initSocket = (server) => {
         socket.join(`user:${userId}`);
       }
 
-      // Join all tab rooms the user has access to
-      if (Array.isArray(tabs)) {
-        tabs.forEach((tabId) => {
-          console.log(`Socket ${socket.id} joining tab room: ${tabId}`);
-          socket.join(`tab:${tabId}`);
-        });
-      }
-
-      // Join all channel rooms the user has access to (for Open tasks)
-      if (Array.isArray(channels)) {
-        channels.forEach((channelId) => {
-          console.log(`Socket ${socket.id} joining channel room: ${channelId}`);
-          socket.join(`channel:${channelId}`);
+      // Join the current channel room (covers all tabs and open tasks)
+      if (channelId) {
+        console.log(`Socket ${socket.id} joining channel room: ${channelId}`);
+        socket.join(`channel:${channelId}`);
+        
+        // Emit confirmation
+        socket.emit("channel-joined", {
+          success: true,
+          channelId,
+          message: "Successfully joined channel"
         });
       }
     });
@@ -1481,7 +1487,7 @@ exports.emitTaskEvent = (data) => {
     throw new Error("Socket.io not initialized!");
   }
 
-  const { taskId, tabId, type, payload } = data;
+  const { taskId, channelId, type, payload } = data;
 
   // Emit task-specific update to users viewing the task
   if (taskId) {
@@ -1492,11 +1498,11 @@ exports.emitTaskEvent = (data) => {
     });
   }
 
-  // Emit to tab for activity feed with notification message
-  if (tabId) {
+  // Emit to channel for activity feed with notification message
+  if (channelId) {
     const notificationMessage = generateTabNotificationMessage(type, payload);
 
-    io.to(`tab:${tabId}`).emit("tab-activity", {
+    io.to(`channel:${channelId}`).emit("tab-activity", {
       type,
       ...payload,
       notification: notificationMessage,

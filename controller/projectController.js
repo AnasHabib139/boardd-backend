@@ -90,7 +90,7 @@ exports.CreateProject = async (req, res, next) => {
     const contextPath = `${channel.channelName} / ${tab.tabName}`;
 
     emitTaskEvent({
-      tabId: tab._id,
+      channelId: channel._id,
       type: "PROJECT_CREATED",
       payload: {
         project: {

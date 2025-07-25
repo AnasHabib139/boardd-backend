@@ -689,7 +689,7 @@ exports.batchUpdateTask = async (req, res, next) => {
     // Emit task update event
     emitTaskEvent({
       taskId,
-      tabId: project.tabId,
+      channelId: project.channelId,
       type: "TASK_UPDATED",
       payload: {
         task: updatedTask,
