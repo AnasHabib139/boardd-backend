@@ -285,6 +285,8 @@ exports.getTaskByIdQuery = (taskId, userId = null) => {
         tags: 1,
         strokeColor: 1,
         type: 1,
+        attachments: 1,
+        checklist: 1,
         customFields: 1,
         version: { $ifNull: ["$version", 0] },
         createdAt: 1,
