@@ -14,51 +14,46 @@ const {
 
 // Helper function to calculate date range based on duration
 const calculateDateRange = (duration) => {
-  const endDate = new Date();
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth();
+  
+  // End date is always the last day of current month
+  const endDate = new Date(currentYear, currentMonth + 1, 0); // Last day of current month
   endDate.setHours(23, 59, 59, 999);
 
   let startDate;
+  let monthsBack;
 
   switch (duration) {
     case CONTRIBUTION_DURATIONS.CURRENT_MONTH.key:
-      startDate = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
-      startDate.setHours(0, 0, 0, 0);
+      monthsBack = 0;
       break;
     case CONTRIBUTION_DURATIONS.THREE_MONTHS.key:
-      startDate = new Date();
-      startDate.setMonth(startDate.getMonth() - 3);
-      startDate.setHours(0, 0, 0, 0);
+      monthsBack = 2; // Current month + 2 previous months = 3 months
       break;
     case CONTRIBUTION_DURATIONS.FOUR_MONTHS.key:
-      startDate = new Date();
-      startDate.setMonth(startDate.getMonth() - 4);
-      startDate.setHours(0, 0, 0, 0);
+      monthsBack = 3; // Current month + 3 previous months = 4 months
       break;
     case CONTRIBUTION_DURATIONS.SIX_MONTHS.key:
-      startDate = new Date();
-      startDate.setMonth(startDate.getMonth() - 6);
-      startDate.setHours(0, 0, 0, 0);
+      monthsBack = 5; // Current month + 5 previous months = 6 months
       break;
     case CONTRIBUTION_DURATIONS.EIGHT_MONTHS.key:
-      startDate = new Date();
-      startDate.setMonth(startDate.getMonth() - 8);
-      startDate.setHours(0, 0, 0, 0);
+      monthsBack = 7; // Current month + 7 previous months = 8 months
       break;
     case CONTRIBUTION_DURATIONS.NINE_MONTHS.key:
-      startDate = new Date();
-      startDate.setMonth(startDate.getMonth() - 9);
-      startDate.setHours(0, 0, 0, 0);
+      monthsBack = 8; // Current month + 8 previous months = 9 months
       break;
     case CONTRIBUTION_DURATIONS.TWELVE_MONTHS.key:
-      startDate = new Date();
-      startDate.setMonth(startDate.getMonth() - 12);
-      startDate.setHours(0, 0, 0, 0);
+      monthsBack = 11; // Current month + 11 previous months = 12 months
       break;
     default:
-      // Default to current month
-      startDate = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
-      startDate.setHours(0, 0, 0, 0);
+      monthsBack = 0; // Default to current month
   }
+
+  // Start date is the 1st of the starting month
+  startDate = new Date(currentYear, currentMonth - monthsBack, 1);
+  startDate.setHours(0, 0, 0, 0);
 
   return { startDate, endDate };
 };
@@ -74,6 +69,8 @@ const formatDateLocal = (date) => {
 // Helper function to generate complete date range with missing dates
 const generateCompleteDateRange = (startDate, endDate, contributions) => {
   const dateMap = new Map();
+  const today = new Date();
+  const todayStr = formatDateLocal(today);
 
   // Create a map of existing dates
   contributions.forEach((item) => {
@@ -88,6 +85,7 @@ const generateCompleteDateRange = (startDate, endDate, contributions) => {
 
   while (currentDate <= endDate) {
     const dateStr = formatDateLocal(currentDate);
+    const isAfterToday = currentDate > today;
 
     if (dateMap.has(dateStr)) {
       const dayData = dateMap.get(dateStr);
@@ -96,8 +94,15 @@ const generateCompleteDateRange = (startDate, endDate, contributions) => {
         clientProgress: dayData.clientProgress,
         companyProgress: dayData.companyProgress,
       });
+    } else if (isAfterToday) {
+      // Add future dates (after today) with null values
+      completeDateRange.push({
+        date: dateStr,
+        clientProgress: null,
+        companyProgress: null,
+      });
     } else {
-      // Add missing date with zero contributions
+      // Add past dates with zero contributions
       completeDateRange.push({
         date: dateStr,
         clientProgress: {
@@ -123,43 +128,48 @@ const generateCompleteDateRange = (startDate, endDate, contributions) => {
 
 // Helper function to calculate summary statistics
 const calculateSummary = (contributions) => {
-  const totalClientContributions = contributions.reduce(
+  // Filter out null entries for calculations (future dates)
+  const validContributions = contributions.filter(
+    (item) => item.clientProgress !== null && item.companyProgress !== null
+  );
+
+  const totalClientContributions = validContributions.reduce(
     (sum, item) => sum + item.clientProgress.count,
     0
   );
 
-  const totalCompanyContributions = contributions.reduce(
+  const totalCompanyContributions = validContributions.reduce(
     (sum, item) => sum + item.companyProgress.count,
     0
   );
 
-  const clientActiveDays = contributions.filter(
+  const clientActiveDays = validContributions.filter(
     (item) => item.clientProgress.count > 0
   ).length;
 
-  const companyActiveDays = contributions.filter(
+  const companyActiveDays = validContributions.filter(
     (item) => item.companyProgress.count > 0
   ).length;
 
   const maxDailyClientContributions = Math.max(
-    ...contributions.map((item) => item.clientProgress.count),
+    ...validContributions.map((item) => item.clientProgress.count),
     0
   );
 
   const maxDailyCompanyContributions = Math.max(
-    ...contributions.map((item) => item.companyProgress.count),
+    ...validContributions.map((item) => item.companyProgress.count),
     0
   );
 
   const averageDailyClientContributions =
-    contributions.length > 0
-      ? Math.round((totalClientContributions / contributions.length) * 100) /
+    validContributions.length > 0
+      ? Math.round((totalClientContributions / validContributions.length) * 100) /
         100
       : 0;
 
   const averageDailyCompanyContributions =
-    contributions.length > 0
-      ? Math.round((totalCompanyContributions / contributions.length) * 100) /
+    validContributions.length > 0
+      ? Math.round((totalCompanyContributions / validContributions.length) * 100) /
         100
       : 0;
 
@@ -227,16 +237,16 @@ exports.getContributions = async (req, res, next) => {
         totalContributions: summary.totalClientContributions,
         dailyData: completeContributions.map((day) => ({
           date: day.date,
-          count: day.clientProgress.count,
-          level: day.clientProgress.level,
+          count: day.clientProgress ? day.clientProgress.count : null,
+          level: day.clientProgress ? day.clientProgress.level : null,
         })),
       },
       companyProgress: {
         totalContributions: summary.totalCompanyContributions,
         dailyData: completeContributions.map((day) => ({
           date: day.date,
-          count: day.companyProgress.count,
-          level: day.companyProgress.level,
+          count: day.companyProgress ? day.companyProgress.count : null,
+          level: day.companyProgress ? day.companyProgress.level : null,
         })),
       },
       summary: {
