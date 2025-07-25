@@ -752,6 +752,9 @@ const processTaskReorder = async (socket, data) => {
 
     const activity = await createActivity(activityData);
 
+    // Note: No additional status activity needed for reorder because
+    // the main activity already uses field: "status" when status changes
+
     // Get essential task details for response
     const essentialTask = await getEssentialTaskDetails(taskId, userId);
     
@@ -1041,6 +1044,31 @@ const processTaskMove = async (socket, data) => {
     }
 
     const activity = await createActivity(activityData);
+
+    // Create additional activity for status change if status changed (for work progress tracking)
+    if (newStatus !== previousStatus) {
+      const statusActivityData = {
+        taskId: task._id,
+        userId,
+        actionType: ACTION_TYPE.UPDATE_TASK,
+        field: "status",
+        previousValue: previousStatus,
+        newValue: newStatus,
+        message: {
+          forCreator: `You changed the status to ${newStatus}`,
+          forOthers: `${userName} changed the status to ${newStatus}`,
+        },
+        timestamp: new Date(),
+      };
+
+      if (newProjectId) {
+        statusActivityData.projectId = newProjectId;
+      } else {
+        statusActivityData.channelId = newChannelId;
+      }
+
+      await createActivity(statusActivityData);
+    }
 
     // Get essential task details for response
     const essentialTask = await getEssentialTaskDetails(taskId, userId);
