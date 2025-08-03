@@ -38,19 +38,34 @@ exports.getTaskByIdQuery = (taskId, userId = null) => {
         preserveNullAndEmptyArrays: true,
       },
     },
-    // Lookup channel details
+    // Lookup channel details (for project-based tasks via tab)
     {
       $lookup: {
         from: "channels",
         localField: "tab.channelId",
         foreignField: "_id",
-        as: "channel",
+        as: "channelFromTab",
       },
     },
+    // Lookup channel details (for non-project tasks directly)
     {
-      $unwind: {
-        path: "$channel",
-        preserveNullAndEmptyArrays: true,
+      $lookup: {
+        from: "channels",
+        localField: "channelId",
+        foreignField: "_id",
+        as: "channelFromTask",
+      },
+    },
+    // Merge channel data - use from tab if available, otherwise from task
+    {
+      $addFields: {
+        channel: {
+          $cond: {
+            if: { $gt: [{ $size: "$channelFromTab" }, 0] },
+            then: { $arrayElemAt: ["$channelFromTab", 0] },
+            else: { $arrayElemAt: ["$channelFromTask", 0] },
+          },
+        },
       },
     },
     // Lookup creator details
@@ -212,13 +227,13 @@ exports.getTaskByIdQuery = (taskId, userId = null) => {
                   userObjectId: { $toObjectId: userId },
                   currentUserInfo: { $arrayElemAt: ["$currentUser", 0] },
                   isChannelMember: {
-                    $in: [{ $toObjectId: userId }, "$channel.members"],
+                    $in: [{ $toObjectId: userId }, { $ifNull: ["$channel.members", []] }],
                   },
                   isTabMember: {
-                    $in: [{ $toObjectId: userId }, "$tab.members"],
+                    $in: [{ $toObjectId: userId }, { $ifNull: ["$tab.members", []] }],
                   },
                   isAssigned: {
-                    $in: [{ $toObjectId: userId }, "$assignedTo"],
+                    $in: [{ $toObjectId: userId }, { $ifNull: ["$assignedTo", []] }],
                   },
                   isCreator: {
                     $eq: [{ $toObjectId: userId }, "$createdBy"],
@@ -264,14 +279,18 @@ exports.getTaskByIdQuery = (taskId, userId = null) => {
         },
         contextPath: {
           $concat: [
-            "$channel.channelName",
+            { $ifNull: ["$channel.channelName", "Unknown Channel"] },
             " / ",
-            "$tab.tabName",
+            { $ifNull: ["$tab.tabName", "Unknown Tab"] },
             " / ",
-            "$project.name",
+            { $ifNull: ["$project.name", "Open"] },
           ],
         },
       },
+    },
+    // Remove temporary fields
+    {
+      $unset: ["channelFromTab", "channelFromTask"],
     },
     // Final projection
     {
@@ -292,6 +311,7 @@ exports.getTaskByIdQuery = (taskId, userId = null) => {
         createdAt: 1,
         updatedAt: 1,
         projectId: 1,
+        channelId: 1,
         // Creator details
         createdBy: {
           _id: "$creator._id",
