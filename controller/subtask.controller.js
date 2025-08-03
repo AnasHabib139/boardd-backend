@@ -257,7 +257,7 @@ exports.updateSubtask = async (req, res, next) => {
     const updateFields = {};
 
     // Only update allowed fields and track changes
-    const allowedFields = ["title", "description", "status", "assignedTo"];
+    const allowedFields = ["title", "description", "status", "assignedTo", "isCompleted"];
 
     for (const field of allowedFields) {
       if (field in updates && updates[field] !== undefined) {

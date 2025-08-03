@@ -12,6 +12,7 @@ const subtaskSchema = new Schema({
   createdBy: { type: Types.ObjectId, ref: "User", required: true },
   assignedTo: [{ type: Types.ObjectId, ref: "User" }],
   isActive: { type: Boolean, default: true },
+  isCompleted: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

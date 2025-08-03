@@ -58,6 +58,13 @@ const createSubtaskValidation = Joi.object({
       "string.pattern.base":
         "Stroke color must be a valid hex color (e.g., #6C63FF)",
     }),
+
+  isCompleted: Joi.boolean()
+    .optional()
+    .default(false)
+    .messages({
+      "boolean.base": "isCompleted must be a boolean value",
+    }),
 });
 
 // Update subtask validation schema
@@ -106,6 +113,12 @@ const updateSubtaskValidation = Joi.object({
     .messages({
       "string.pattern.base":
         "Stroke color must be a valid hex color (e.g., #6C63FF)",
+    }),
+
+  isCompleted: Joi.boolean()
+    .optional()
+    .messages({
+      "boolean.base": "isCompleted must be a boolean value",
     }),
 })
   .min(1)

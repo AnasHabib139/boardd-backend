@@ -1,0 +1,180 @@
+"use strict";
+
+const Joi = require("joi");
+const { STATUS_CODES } = require("../utils/constants");
+
+// Validation for creating team card
+const createTeamCardSchema = Joi.object({
+  title: Joi.string()
+    .min(1)
+    .max(100)
+    .required()
+    .messages({
+      "string.min": "Title must be at least 1 character long",
+      "string.max": "Title cannot exceed 100 characters",
+      "any.required": "Title is required",
+    }),
+});
+
+// Validation for adding member to team card
+const addTeamCardMemberSchema = Joi.object({
+  memberId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "memberId must be a valid MongoDB ObjectId",
+      "any.required": "memberId is required",
+    }),
+  designation: Joi.string()
+    .max(100)
+    .optional()
+    .allow("")
+    .messages({
+      "string.max": "Designation cannot exceed 100 characters",
+    }),
+  hashtags: Joi.array()
+    .items(
+      Joi.object({
+        text: Joi.string().max(50).required().messages({
+          "string.max": "Hashtag text cannot exceed 50 characters",
+          "any.required": "Hashtag text is required",
+        }),
+        color: Joi.string()
+          .pattern(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/)
+          .optional()
+          .messages({
+            "string.pattern.base": "Hashtag color must be a valid hex color code",
+          }),
+        textColor: Joi.string()
+          .pattern(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/)
+          .optional()
+          .messages({
+            "string.pattern.base": "Hashtag text color must be a valid hex color code",
+          }),
+      })
+    )
+    .max(10)
+    .optional()
+    .messages({
+      "array.max": "Cannot have more than 10 hashtags",
+    }),
+  backgroundColor: Joi.string()
+    .pattern(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/)
+    .optional()
+    .messages({
+      "string.pattern.base": "backgroundColor must be a valid hex color code",
+    }),
+});
+
+// Validation for removing member from team card
+const removeTeamCardMemberSchema = Joi.object({
+  memberId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "memberId must be a valid MongoDB ObjectId",
+      "any.required": "memberId is required",
+    }),
+});
+
+// Validation for team card ID parameter
+const teamCardIdParamSchema = Joi.object({
+  cardId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "cardId must be a valid MongoDB ObjectId",
+      "any.required": "cardId is required",
+    }),
+});
+
+// Middleware to validate create team card request
+exports.validateCreateTeamCard = (req, res, next) => {
+  const { error } = createTeamCardSchema.validate(req.body);
+  if (error) {
+    return next({
+      statusCode: STATUS_CODES.BAD_REQUEST,
+      message: error.details[0].message,
+    });
+  }
+  next();
+};
+
+// Middleware to validate add team card member request
+exports.validateAddTeamCardMember = (req, res, next) => {
+  const { error } = addTeamCardMemberSchema.validate(req.body);
+  if (error) {
+    return next({
+      statusCode: STATUS_CODES.BAD_REQUEST,
+      message: error.details[0].message,
+    });
+  }
+  next();
+};
+
+// Middleware to validate remove team card member request
+exports.validateRemoveTeamCardMember = (req, res, next) => {
+  const { error } = removeTeamCardMemberSchema.validate(req.body);
+  if (error) {
+    return next({
+      statusCode: STATUS_CODES.BAD_REQUEST,
+      message: error.details[0].message,
+    });
+  }
+  next();
+};
+
+// Validation for member profile query parameters
+const memberProfileQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).optional().default(1),
+  limit: Joi.number().integer().min(1).max(100).optional().default(20),
+  filter: Joi.string().valid('all', 'ongoing', 'completed').optional().default('all').messages({
+    "any.only": "Filter must be 'all', 'ongoing', or 'completed'",
+  }),
+});
+
+// Validation for member ID parameter
+const memberIdParamSchema = Joi.object({
+  memberId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "memberId must be a valid MongoDB ObjectId",
+      "any.required": "memberId is required",
+    }),
+});
+
+// Middleware to validate team card ID parameter
+exports.validateTeamCardIdParam = (req, res, next) => {
+  const { error } = teamCardIdParamSchema.validate(req.params);
+  if (error) {
+    return next({
+      statusCode: STATUS_CODES.BAD_REQUEST,
+      message: error.details[0].message,
+    });
+  }
+  next();
+};
+
+// Middleware to validate member profile request
+exports.validateMemberProfile = (req, res, next) => {
+  // Validate params
+  const paramError = memberIdParamSchema.validate(req.params);
+  if (paramError.error) {
+    return next({
+      statusCode: STATUS_CODES.BAD_REQUEST,
+      message: paramError.error.details[0].message,
+    });
+  }
+
+  // Validate query parameters
+  const queryError = memberProfileQuerySchema.validate(req.query);
+  if (queryError.error) {
+    return next({
+      statusCode: STATUS_CODES.BAD_REQUEST,
+      message: queryError.error.details[0].message,
+    });
+  }
+
+  next();
+};
