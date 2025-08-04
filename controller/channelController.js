@@ -21,8 +21,6 @@ const {
 const { findCompany } = require("../models/companyModel");
 // Import required functions
 const {
-  findAvailableInviteSlot,
-  updateInviteSlot,
   findInviteSlot,
 } = require("../models/inviteSlotModel");
 const Mailer = require("../utils/mailer");
@@ -111,60 +109,18 @@ exports.getChannelJoiningLink = async (req, res, next) => {
 
     const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
 
-    // Try to get company slot for main joining link
-    const companySlot = await findAvailableInviteSlot({
-      companyId: company._id,
-      isGuestInviteSlot: false,
-    });
+    // Generate simple channel joining link using channel ID
+    const joiningLink = `${baseUrl}/channel/invite?channelId=${channel._id}`;
 
-    let joiningLink;
-    let guestLink = null;
-    let errors = [];
-
-    // Generate company link (backward compatible)
-    if (companySlot) {
-      joiningLink = `${baseUrl}/invite/channel/${companySlot.token}?flow=company&channelId=${channel._id}&companyId=${company.domain}`;
-    } else {
-      // Fallback to old channel token if no company slots available
-      joiningLink = `${baseUrl}/join-channel?token=${channel.channelToken}&companyId=${company.domain}`;
-      errors.push("No company invite slots available - using fallback link");
-    }
-
-    // Try to get guest slot for additional functionality
-    const guestSlot = await findAvailableInviteSlot({
-      companyId: company._id,
-      isGuestInviteSlot: true,
-    });
-
-    if (guestSlot) {
-      guestLink = `${baseUrl}/invite/channel/${guestSlot.token}?flow=guest&channelId=${channel._id}&companyId=${company.domain}`;
-    } else {
-      errors.push("No guest invite slots available");
-    }
-
-    // Determine message based on availability
-    let message = "Channel joining link fetched successfully";
-    if (errors.length > 0) {
-      message = `Channel joining link fetched with limitations: ${errors.join(
-        ", "
-      )}`;
-    }
-
-    // Send response directly for backward compatibility (avoiding double nesting)
-    return res.status(errors.length > 0 ? 206 : 200).json({
+    // Send response
+    return res.status(200).json({
       success: true,
-      message: message,
-      data: joiningLink, // Backward compatible - just the link
-      guestLink: guestLink, // New feature
+      message: "Channel joining link fetched successfully",
+      data: joiningLink,
       channelInfo: {
         id: channel._id,
         name: channel.channelName,
         description: channel.channelDescription,
-      },
-      availability: {
-        companySlotsAvailable: !!companySlot,
-        guestSlotsAvailable: !!guestSlot,
-        errors: errors,
       },
     });
   } catch (error) {
@@ -539,6 +495,9 @@ exports.sendChannelInviteEmails = async (req, res, next) => {
     };
 
     const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    
+    // Generate simple invite link using channel ID (assuming users have accounts)
+    const inviteLink = `${baseUrl}/channel/invite?channelId=${channel._id}`;
 
     // Process each email
     for (const email of emails) {
@@ -550,104 +509,35 @@ exports.sendChannelInviteEmails = async (req, res, next) => {
             email,
             reason: "Invalid email format",
           });
-          continue; // Continue processing other emails
+          continue;
         }
 
-        // Determine if this should be a guest invite
-        const emailDomain = extractDomainFromEmail(email);
-        const isGuestInvite = emailDomain !== company.domain;
-
-        // Validate guest invites are allowed if needed
-        if (isGuestInvite && !allowGuests) {
+        // Check if user exists (assuming users have accounts)
+        const existingUser = await findUser({ email });
+        if (!existingUser) {
           results.failed.push({
             email,
-            reason:
-              "Guest invites not allowed. Only company domain emails permitted.",
+            reason: "User not found. User must have an account to join channels.",
           });
-          continue; // Continue processing other emails
+          continue;
         }
 
-        // Check if user exists and determine flow
-        const existingUser = await findUser({ email });
-        let isExistingCompanyMember = false;
-
-        if (existingUser) {
-          // Check if user is already a channel member
-          if (channel.members.includes(existingUser._id)) {
-            results.failed.push({
-              email,
-              reason: "User is already a member of this channel",
-            });
-            continue; // Continue processing other emails
-          }
-
-          // Check if user is a company member
-          if (
-            existingUser.companyId &&
-            existingUser.companyId.toString() === company._id.toString()
-          ) {
-            isExistingCompanyMember = true;
-          }
-        }
-
-        // For existing company members, no slot reservation needed
-        let availableSlot = null;
-        let shouldReserveSlot = !isExistingCompanyMember;
-
-        if (shouldReserveSlot) {
-          // Check if email already has ANY pending invite (not just this channel)
-          const existingAnyInvite = await findInviteSlot({
-            companyId: company._id,
-            reservedFor: email,
-            used: false,
+        // Check if user is already a channel member
+        if (channel.members.includes(existingUser._id)) {
+          results.failed.push({
+            email,
+            reason: "User is already a member of this channel",
           });
-
-          if (existingAnyInvite) {
-            results.failed.push({
-              email,
-              reason: "User already has an existing invite pending",
-            });
-            continue; // Continue processing other emails
-          }
-
-          // Find appropriate slot for non-company members
-          if (isGuestInvite) {
-            availableSlot = await findAvailableInviteSlot({
-              companyId: company._id,
-              isGuestInviteSlot: true,
-            });
-            if (!availableSlot) {
-              results.failed.push({
-                email,
-                reason: "No guest invite slots available",
-              });
-              continue; // Continue processing other emails
-            }
-          } else {
-            availableSlot = await findAvailableInviteSlot({
-              companyId: company._id,
-              isGuestInviteSlot: false,
-            });
-            if (!availableSlot) {
-              results.failed.push({
-                email,
-                reason: "No company invite slots available",
-              });
-              continue; // Continue processing other emails
-            }
-          }
+          continue;
         }
 
-        // Generate invite link
-        let inviteLink;
-        if (shouldReserveSlot && availableSlot) {
-          // Use slot token for non-company members
-          inviteLink = `${baseUrl}/invite/channel/${availableSlot.token}?flow=${
-            isGuestInvite ? "guest" : "company"
-          }&channelId=${channel._id}&companyId=${company.domain}`;
-        } else {
-          // Use channel token for existing company members
-          inviteLink = `${baseUrl}/join-channel?token=${channel.channelToken}&channelId=${channel._id}&companyId=${company.domain}`;
+        // Check if user account is active
+        if (!existingUser.isActive) {
+          results.failed.push({
+            email,
+            reason: "User account is inactive",
+          });
+          continue;
         }
 
         // Prepare email content
@@ -659,7 +549,7 @@ exports.sendChannelInviteEmails = async (req, res, next) => {
           inviterName: inviter.name,
           inviterEmail: inviter.email,
           channelDescription,
-          isGuestInvite,
+          isGuestInvite: false, // Simplified - no guest flow
         });
 
         // Send email
@@ -671,29 +561,11 @@ exports.sendChannelInviteEmails = async (req, res, next) => {
           replyTo: inviter.email,
         });
 
-        // Reserve slot only for non-company members (only after successful email send)
-        if (shouldReserveSlot && availableSlot) {
-          await updateInviteSlot(
-            { _id: availableSlot._id },
-            {
-              reserved: true,
-              reservedFor: email,
-              channelId: channel._id,
-              inviteType: isGuestInvite ? "guest" : "company",
-              reservedAt: new Date(),
-            }
-          );
-        }
-
         results.successful.push({
           email,
-          inviteType: isExistingCompanyMember
-            ? "existing_member"
-            : isGuestInvite
-            ? "guest"
-            : "company",
+          inviteType: "existing_user",
           inviteLink,
-          slotReserved: shouldReserveSlot,
+          slotReserved: false, // No slot reservation needed
         });
       } catch (error) {
         console.error(`Error processing invite for ${email}:`, error);
@@ -715,7 +587,6 @@ exports.sendChannelInviteEmails = async (req, res, next) => {
         totalEmailsRequested: totalEmails,
         emailsSentSuccessfully: successfulEmails,
         emailsFailed: failedEmails,
-        allowGuests: allowGuests,
       },
       channelInfo: {
         id: channel._id,
