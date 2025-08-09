@@ -1,6 +1,6 @@
 const { findChannel } = require("../models/channelModel");
 const { findChannelTab } = require("../models/channelTabsModel");
-const { createProject, getAllProjects } = require("../models/projectModel");
+const { createProject, getAllProjects, findProject, updateProject } = require("../models/projectModel");
 const { findUser } = require("../models/userModel");
 const { findCompany } = require("../models/companyModel");
 const ProjectModel = require("../models/projectModel");
@@ -224,6 +224,7 @@ exports.getProjectsOfTab = async (req, res, next) => {
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 10,
       responseKey: "projects",
+      sort: { isPinned: -1, createdAt: -1 }, // Pinned first, then newest
     });
 
     // For list view, also fetch open tasks (tasks without project)
@@ -497,6 +498,76 @@ const handleCalendarView = async (req, res, next, params) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to fetch calendar data",
+    });
+  }
+};
+
+/**
+ * Toggle project pin status
+ */
+exports.toggleProjectPin = async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req?.user?.id;
+
+    // Find project
+    const project = await findProject({ _id: projectId });
+    if (!project) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Project not found",
+      });
+    }
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Check if user has access to the project (via tab membership)
+    const tab = await findChannelTab({ _id: project.tabId });
+    if (!tab) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Project tab not found",
+      });
+    }
+
+    if (!tab?.members?.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You don't have access to this project",
+      });
+    }
+
+    // Toggle pin status
+    const updatedProject = await updateProject(
+      { _id: projectId },
+      { 
+        isPinned: !project.isPinned,
+        updatedAt: new Date()
+      }
+    );
+
+    return generateResponse(
+      { 
+        projectId, 
+        isPinned: updatedProject.isPinned,
+        message: updatedProject.isPinned ? "Project pinned" : "Project unpinned"
+      },
+      "Project pin status updated successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in toggleProjectPin:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
     });
   }
 };

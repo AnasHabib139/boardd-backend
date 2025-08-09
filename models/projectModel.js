@@ -21,6 +21,7 @@ const projectSchema = new Schema({
     default: "medium",
   },
   color: { type: String, required: true },
+  isPinned: { type: Boolean, default: false }, // Project pinning flag
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
@@ -43,12 +44,14 @@ exports.getAllProjects = async ({
   page,
   limit,
   responseKey = "data",
+  sort = { createdAt: -1 },
 }) => {
   const { data, pagination } = await getMongooseAggregatePaginatedData({
     model: ProjectModel,
     query,
     page,
     limit,
+    sort,
   });
   return { [responseKey]: data, pagination };
 };
@@ -63,3 +66,11 @@ exports.getAllProjectsWithoutPagination = async (query) => {
     throw error;
   }
 };
+
+// update project
+exports.updateProject = (query, update, options = {}) =>
+  ProjectModel.findOneAndUpdate(query, update, { new: true, ...options });
+
+// find many projects
+exports.findManyProjects = (query, options = {}) =>
+  ProjectModel.find(query, null, options);

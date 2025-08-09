@@ -370,6 +370,13 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
       },
     },
 
+    // Add default value for isPinned if missing
+    {
+      $addFields: {
+        isPinned: { $ifNull: ["$isPinned", false] },
+      },
+    },
+
     // Project final overview structure
     {
       $project: {
@@ -381,6 +388,7 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
         endDate: 1,
         priority: 1,
         color: 1,
+        isPinned: 1,
         createdAt: 1,
         updatedAt: 1,
         creator: 1,
@@ -396,14 +404,6 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
             "$name",
           ],
         },
-      },
-    },
-
-    // Sort projects by priority and creation date
-    {
-      $sort: {
-        priority: -1, // high, medium, low
-        createdAt: -1, // newest first
       },
     },
   ];
@@ -830,6 +830,13 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
       },
     },
 
+    // Add default value for isPinned if missing
+    {
+      $addFields: {
+        isPinned: { $ifNull: ["$isPinned", false] },
+      },
+    },
+
     // Final project structure
     {
       $project: {
@@ -841,6 +848,7 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
         endDate: 1,
         priority: 1,
         color: 1,
+        isPinned: 1,
         createdAt: 1,
         updatedAt: 1,
         creator: 1,
@@ -889,15 +897,6 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
             else: null,
           },
         },
-      },
-    },
-
-    // Sort projects by priority and due date
-    {
-      $sort: {
-        priority: -1, // high, medium, low
-        endDate: 1, // earliest first
-        createdAt: -1, // newest first if no due date
       },
     },
   ];

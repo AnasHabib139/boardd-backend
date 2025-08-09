@@ -4,6 +4,7 @@ const { Router } = require("express");
 const {
   CreateProject,
   getProjectsOfTab,
+  toggleProjectPin,
 } = require("../controller/projectController");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -37,6 +38,14 @@ class ProjectAPI {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.VIEWER]),
       validateGetProjectsQuery,
       getProjectsOfTab
+    );
+
+    // Toggle project pin status
+    router.post(
+      "/:projectId/pin",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateProjectIdParam,
+      toggleProjectPin
     );
   }
 
