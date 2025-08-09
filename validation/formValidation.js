@@ -287,6 +287,7 @@ const validateGetFolderFormsQuery = (req, res, next) => {
     type: Joi.string().valid(...Object.values(FORM_TYPE)),
     sortBy: Joi.string().valid("latest_viewed").optional(),
     created_by: Joi.string().valid("by_me").optional(),
+    status: Joi.string().valid("all", "shared", "private").optional(),
   }).unknown(false);
 
   const { error, value } = folderQuerySchema.validate(req.query);

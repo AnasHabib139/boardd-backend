@@ -110,6 +110,7 @@ const formSchema = new Schema({
   sharingSettings: { type: sharingSettingsSchema, default: {} },
   preferences: { type: preferencesSchema, default: {} },
   responseCount: { type: Number, default: 0 },
+  isPrivate: { type: Boolean, default: false }, // Form privacy setting (company level)
   isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
@@ -122,6 +123,7 @@ formSchema.index({ channelId: 1 });
 formSchema.index({ createdBy: 1 });
 formSchema.index({ status: 1 });
 formSchema.index({ type: 1 });
+formSchema.index({ isPrivate: 1 });
 
 // Register pagination plugins
 formSchema.plugin(mongoosePaginate);

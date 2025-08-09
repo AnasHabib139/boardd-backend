@@ -30,6 +30,11 @@ const {
   findFormFavorite,
 } = require("../models/favoriteModel");
 const { upsertFormView } = require("../models/formViewModel");
+const { 
+  buildFolderFormsQuery, 
+  buildFolderFavoritesQuery, 
+  getSortOptions 
+} = require("./queries/formFolderQueries");
 const {
   Document,
   Packer,
@@ -588,7 +593,7 @@ exports.shareForm = async (req, res, next) => {
  */
 exports.getFormsByFolder = async (req, res, next) => {
   try {
-    const { page, limit, type, sortBy, created_by } = req.query;
+    const { page, limit, type, sortBy, created_by, status } = req.query;
     const userId = req?.user?.id;
 
     // Validate user exists
@@ -600,171 +605,21 @@ exports.getFormsByFolder = async (req, res, next) => {
       });
     }
 
-    // Build aggregation query - get all folder forms from same company
-    const query = [
-      {
-        $match: {
-          isFolder: true,
-          isActive: true,
-        },
-      },
-    ];
-
-    // Add type filter if provided
-    if (type && Object.values(FORM_TYPE).includes(type)) {
-      query[0].$match.type = type;
-    }
-
-    // Add user details lookup
-    query.push(
-      {
-        $lookup: {
-          from: "users",
-          localField: "createdBy",
-          foreignField: "_id",
-          as: "creator",
-        },
-      },
-      {
-        $unwind: "$creator",
-      },
-      {
-        $match: {
-          "creator.companyId": user.companyId,
-          // Add created_by filter if 'by_me' is specified
-          ...(created_by === "by_me" && { "creator._id": user._id }),
-        },
-      },
-      // Lookup personalized favorite for current user
-      {
-        $lookup: {
-          from: "formfavorites",
-          let: { formId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$formId", "$$formId"] },
-                    { $eq: ["$userId", user._id] },
-                  ],
-                },
-              },
-            },
-            { $limit: 1 },
-          ],
-          as: "fav",
-        },
-      },
-      { $addFields: { isFav: { $gt: [{ $size: "$fav" }, 0] } } },
-      // Lookup last viewed for current user
-      {
-        $lookup: {
-          from: "formviews",
-          let: { formId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$formId", "$$formId"] },
-                    { $eq: ["$userId", user._id] },
-                  ],
-                },
-              },
-            },
-            { $limit: 1 },
-          ],
-          as: "views",
-        },
-      },
-      {
-        $addFields: {
-          lastViewedAt: {
-            $ifNull: [{ $arrayElemAt: ["$views.lastViewedAt", 0] }, null],
-          },
-        },
-      },
-      // Add form invites lookup for sharing statistics
-      {
-        $lookup: {
-          from: "forminvites",
-          localField: "_id",
-          foreignField: "formId",
-          as: "invites",
-          pipeline: [{ $match: { isActive: true } }],
-        },
-      },
-      {
-        $addFields: {
-          totalResponses: {
-            $size: {
-              $filter: {
-                input: "$invites",
-                as: "invite",
-                cond: { $eq: ["$$invite.hasResponded", true] },
-              },
-            },
-          },
-          totalWaiting: {
-            $size: {
-              $filter: {
-                input: "$invites",
-                as: "invite",
-                cond: { $eq: ["$$invite.hasResponded", false] },
-              },
-            },
-          },
-          totalShared: { $size: "$invites" },
-          sharedWithData: {
-            $map: {
-              input: "$invites",
-              as: "invite",
-              in: {
-                name: "$$invite.invitedName",
-                email: "$$invite.invitedEmail",
-                dateTime: "$$invite.respondedAt",
-                isSubmitted: "$$invite.hasResponded",
-                sharedAt: "$$invite.createdAt",
-              },
-            },
-          },
-        },
-      },
-      {
-        $project: {
-          title: 1,
-          description: 1,
-          type: 1,
-          status: 1,
-          responseCount: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          lastViewedAt: 1,
-          isFav: 1,
-          isFolder: 1,
-          totalResponses: 1,
-          totalWaiting: 1,
-          totalShared: 1,
-          sharedWithData: 1,
-          creator: {
-            _id: 1,
-            name: 1,
-            email: 1,
-          },
-        },
-      }
-    );
+    // Build aggregation query using query builder
+    const query = buildFolderFormsQuery({
+      user,
+      type,
+      created_by,
+      status,
+      sortBy
+    });
 
     const result = await getAllForms({
       query,
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 10,
       responseKey: "forms",
-      sort:
-        sortBy === "latest_viewed"
-          ? { lastViewedAt: -1, createdAt: -1 }
-          : { createdAt: -1 },
+      sort: getSortOptions(sortBy),
     });
 
     return generateResponse(
@@ -892,6 +747,82 @@ exports.unfavoriteForm = async (req, res, next) => {
 };
 
 /**
+ * Toggle form privacy (private/public)
+ */
+exports.toggleFormPrivacy = async (req, res, next) => {
+  try {
+    const { formId } = req.params;
+    const userId = req?.user?.id;
+
+    // Find form
+    const form = await findForm({ _id: formId, isActive: true });
+    if (!form) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Form not found",
+      });
+    }
+
+    // Check if user has permission to toggle privacy
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // For folder forms, check if user is in same company as form creator
+    if (form.isFolder) {
+      const formCreator = await findUser({ _id: form.createdBy });
+      if (
+        !formCreator ||
+        !formCreator.companyId ||
+        !user.companyId ||
+        formCreator.companyId.toString() !== user.companyId.toString()
+      ) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You don't have access to this form",
+        });
+      }
+    } else {
+      // For channel forms, check tab membership
+      const tab = await findChannelTab({ _id: form.tabId });
+      if (!tab || !tab?.members?.includes(userId)) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You don't have access to this form",
+        });
+      }
+    }
+
+    // Toggle privacy
+    const updatedForm = await updateForm(
+      { _id: formId },
+      { isPrivate: !form.isPrivate, updatedAt: new Date() }
+    );
+
+    return generateResponse(
+      { 
+        formId, 
+        isPrivate: updatedForm.isPrivate,
+        message: updatedForm.isPrivate ? "Form is now private" : "Form is now public"
+      },
+      "Form privacy updated successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in toggleFormPrivacy:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
  * Toggle favorite (favorite if not present, otherwise unfavorite)
  */
 exports.toggleFavoriteForm = async (req, res, next) => {
@@ -980,7 +911,7 @@ exports.toggleFavoriteForm = async (req, res, next) => {
  */
 exports.getFolderFavorites = async (req, res, next) => {
   try {
-    const { page, limit, type, sortBy, created_by } = req.query;
+    const { page, limit, type, sortBy, created_by, status } = req.query;
     const userId = req?.user?.id;
 
     // Validate user exists
@@ -992,108 +923,21 @@ exports.getFolderFavorites = async (req, res, next) => {
       });
     }
 
-    // Aggregation to fetch only forms favorited by this user in folder context and same company
-    const query = [
-      { $match: { isFolder: true, isActive: true } },
-      // Optional type filter
-      ...(type && Object.values(FORM_TYPE).includes(type)
-        ? [{ $match: { type } }]
-        : []),
-      // Join creator and filter by same company
-      {
-        $lookup: {
-          from: "users",
-          localField: "createdBy",
-          foreignField: "_id",
-          as: "creator",
-        },
-      },
-      { $unwind: "$creator" },
-      { 
-        $match: { 
-          "creator.companyId": user.companyId,
-          // Add created_by filter if 'by_me' is specified
-          ...(created_by === "by_me" && { "creator._id": user._id }),
-        } 
-      },
-      // Join favorites for this user
-      {
-        $lookup: {
-          from: "formfavorites",
-          let: { formId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$formId", "$$formId"] },
-                    { $eq: ["$userId", user._id] },
-                  ],
-                },
-              },
-            },
-            { $limit: 1 },
-          ],
-          as: "fav",
-        },
-      },
-      { $addFields: { isFav: { $gt: [{ $size: "$fav" }, 0] } } },
-      // Join last viewed for this user
-      {
-        $lookup: {
-          from: "formviews",
-          let: { formId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$formId", "$$formId"] },
-                    { $eq: ["$userId", user._id] },
-                  ],
-                },
-              },
-            },
-            { $limit: 1 },
-          ],
-          as: "views",
-        },
-      },
-      {
-        $addFields: {
-          lastViewedAt: {
-            $ifNull: [{ $arrayElemAt: ["$views.lastViewedAt", 0] }, null],
-          },
-        },
-      },
-      { $match: { isFav: true } },
-      {
-        $project: {
-          title: 1,
-          description: 1,
-          type: 1,
-          status: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          lastViewedAt: 1,
-          isFolder: 1,
-          isFav: 1,
-          creator: { _id: 1, name: 1, email: 1 },
-        },
-      },
-      {
-        $sort:
-          sortBy === "latest_viewed"
-            ? { lastViewedAt: -1, createdAt: -1 }
-            : { createdAt: -1 },
-      },
-    ];
+    // Build aggregation query using query builder for favorites
+    const query = buildFolderFavoritesQuery({
+      user,
+      type,
+      created_by,
+      status,
+      sortBy
+    });
 
     const result = await getAllForms({
       query,
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 10,
       responseKey: "forms",
+      sort: getSortOptions(sortBy),
     });
 
     return generateResponse(

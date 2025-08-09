@@ -84,6 +84,14 @@ class FormApi {
       require("../controller/formController").toggleFavoriteForm
     );
 
+    // Toggle form privacy (private/public)
+    router.post(
+      "/:formId/privacy",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
+      validateFormId,
+      require("../controller/formController").toggleFormPrivacy
+    );
+
     // Get form by ID
     router.get(
       "/:formId",
