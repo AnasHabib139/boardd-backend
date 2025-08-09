@@ -141,12 +141,19 @@ exports.updateForm = (query, update, options = {}) =>
 
 exports.deleteForm = (query) => FormModel.findOneAndDelete(query);
 
-exports.getAllForms = async ({ query, page, limit, responseKey = "data" }) => {
+exports.getAllForms = async ({
+  query,
+  page,
+  limit,
+  responseKey = "data",
+  sort = { createdAt: -1 },
+}) => {
   const { data, pagination } = await getMongooseAggregatePaginatedData({
     model: FormModel,
     query,
     page,
     limit,
+    sort,
   });
   return { [responseKey]: data, pagination };
 };
@@ -171,7 +178,12 @@ exports.findFormsByFolder = (options = {}) => {
 };
 
 // Get all folder forms with user details and pagination
-exports.getAllFolderForms = async ({ query, page, limit, responseKey = "data" }) => {
+exports.getAllFolderForms = async ({
+  query,
+  page,
+  limit,
+  responseKey = "data",
+}) => {
   const { data, pagination } = await getMongooseAggregatePaginatedData({
     model: FormModel,
     query,

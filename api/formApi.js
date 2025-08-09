@@ -51,12 +51,20 @@ class FormApi {
       getFormsByTab
     );
 
-    // Get forms by folder context
+    // Get forms by folder context (includes personalized isFav)
     router.get(
       "/folder",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
       validateGetFolderFormsQuery,
       getFormsByFolder
+    );
+
+    // Get current user's favorites in folder context
+    router.get(
+      "/folder/favorites",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
+      validateGetFolderFormsQuery,
+      require("../controller/formController").getFolderFavorites
     );
 
     // Share form from folder to channel
@@ -66,6 +74,14 @@ class FormApi {
       validateFormId,
       validateShareForm,
       shareForm
+    );
+
+    // Toggle favorite for a form (personalized)
+    router.post(
+      "/:formId/favorite",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
+      validateFormId,
+      require("../controller/formController").toggleFavoriteForm
     );
 
     // Get form by ID
@@ -109,7 +125,6 @@ class FormApi {
       validateShareForm,
       shareForm
     );
-
 
     // Submit form response (public access - no auth required)
     router.post("/:formId/submit", submitFormResponse);

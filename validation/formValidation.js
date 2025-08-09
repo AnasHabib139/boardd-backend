@@ -156,17 +156,17 @@ const shareFormSchema = Joi.object({
       "array.base": "Emails must be an array of email addresses",
       "array.max": "Cannot share with more than 20 people at once",
     }),
-  
+
   names: Joi.array()
     .items(
       Joi.string().trim().min(1).max(100).messages({
         "string.min": "Name cannot be empty",
-        "string.max": "Name cannot exceed 100 characters"
+        "string.max": "Name cannot exceed 100 characters",
       })
     )
     .optional()
     .messages({
-      "array.base": "Names must be an array of strings"
+      "array.base": "Names must be an array of strings",
     }),
 
   message: Joi.string().trim().max(500).optional().messages({
@@ -285,6 +285,8 @@ const validateGetFolderFormsQuery = (req, res, next) => {
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10),
     type: Joi.string().valid(...Object.values(FORM_TYPE)),
+    sortBy: Joi.string().valid("latest_viewed").optional(),
+    created_by: Joi.string().valid("by_me").optional(),
   }).unknown(false);
 
   const { error, value } = folderQuerySchema.validate(req.query);

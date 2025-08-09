@@ -11,7 +11,6 @@ const {
   updateForm,
   deleteForm,
   getAllForms,
-  getAllFolderForms,
   shareFormToChannel,
   findFormsByChannel,
   findFormsByType,
@@ -20,13 +19,17 @@ const {
   createFormInvite,
   findInviteByToken,
   markAsResponded,
-  updateFormInvite
+  updateFormInvite,
 } = require("../models/formInviteModel");
-const {
-  createFormResponse
-} = require("../models/formResponseModel");
+const { createFormResponse } = require("../models/formResponseModel");
 const Mailer = require("../utils/mailer");
 const { generateFormInviteEmail } = require("../utils/emailTemplates");
+const {
+  createFormFavorite,
+  deleteFormFavorite,
+  findFormFavorite,
+} = require("../models/favoriteModel");
+const { upsertFormView } = require("../models/formViewModel");
 const {
   Document,
   Packer,
@@ -107,7 +110,7 @@ exports.createForm = async (req, res, next) => {
 
     let tab = null;
     let channel = null;
-    
+
     // If creating in channel context, validate tab and channel
     if (!isFolder && tabId) {
       tab = await findChannelTab({ _id: tabId });
@@ -135,7 +138,7 @@ exports.createForm = async (req, res, next) => {
         });
       }
     }
-    
+
     // For folder forms, no additional validation needed
 
     // Process fields if provided
@@ -329,8 +332,12 @@ exports.getFormById = async (req, res, next) => {
       // For folder forms (isFolder: true), check if user is in same company as form creator
       if (form.isFolder) {
         const formCreator = await findUser({ _id: form.createdBy });
-        if (!formCreator || !formCreator.companyId || !user.companyId || 
-            formCreator.companyId.toString() !== user.companyId.toString()) {
+        if (
+          !formCreator ||
+          !formCreator.companyId ||
+          !user.companyId ||
+          formCreator.companyId.toString() !== user.companyId.toString()
+        ) {
           return next({
             statusCode: STATUS_CODES.FORBIDDEN,
             message: "You don't have access to this form",
@@ -346,6 +353,18 @@ exports.getFormById = async (req, res, next) => {
           });
         }
       }
+
+      // Track last viewed (non-blocking)
+      upsertFormView({ userId, formId, when: new Date() }).catch((e) => {
+        console.error(
+          "Failed to record last viewed for form",
+          formId,
+          "by user",
+          userId,
+          "Error:",
+          e?.message
+        );
+      });
     }
 
     return generateResponse(
@@ -569,7 +588,7 @@ exports.shareForm = async (req, res, next) => {
  */
 exports.getFormsByFolder = async (req, res, next) => {
   try {
-    const { page, limit, type } = req.query;
+    const { page, limit, type, sortBy, created_by } = req.query;
     const userId = req?.user?.id;
 
     // Validate user exists
@@ -612,6 +631,58 @@ exports.getFormsByFolder = async (req, res, next) => {
       {
         $match: {
           "creator.companyId": user.companyId,
+          // Add created_by filter if 'by_me' is specified
+          ...(created_by === "by_me" && { "creator._id": user._id }),
+        },
+      },
+      // Lookup personalized favorite for current user
+      {
+        $lookup: {
+          from: "formfavorites",
+          let: { formId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$formId", "$$formId"] },
+                    { $eq: ["$userId", user._id] },
+                  ],
+                },
+              },
+            },
+            { $limit: 1 },
+          ],
+          as: "fav",
+        },
+      },
+      { $addFields: { isFav: { $gt: [{ $size: "$fav" }, 0] } } },
+      // Lookup last viewed for current user
+      {
+        $lookup: {
+          from: "formviews",
+          let: { formId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$formId", "$$formId"] },
+                    { $eq: ["$userId", user._id] },
+                  ],
+                },
+              },
+            },
+            { $limit: 1 },
+          ],
+          as: "views",
+        },
+      },
+      {
+        $addFields: {
+          lastViewedAt: {
+            $ifNull: [{ $arrayElemAt: ["$views.lastViewedAt", 0] }, null],
+          },
         },
       },
       // Add form invites lookup for sharing statistics
@@ -621,9 +692,7 @@ exports.getFormsByFolder = async (req, res, next) => {
           localField: "_id",
           foreignField: "formId",
           as: "invites",
-          pipeline: [
-            { $match: { isActive: true } }
-          ]
+          pipeline: [{ $match: { isActive: true } }],
         },
       },
       {
@@ -633,18 +702,18 @@ exports.getFormsByFolder = async (req, res, next) => {
               $filter: {
                 input: "$invites",
                 as: "invite",
-                cond: { $eq: ["$$invite.hasResponded", true] }
-              }
-            }
+                cond: { $eq: ["$$invite.hasResponded", true] },
+              },
+            },
           },
           totalWaiting: {
             $size: {
               $filter: {
                 input: "$invites",
                 as: "invite",
-                cond: { $eq: ["$$invite.hasResponded", false] }
-              }
-            }
+                cond: { $eq: ["$$invite.hasResponded", false] },
+              },
+            },
           },
           totalShared: { $size: "$invites" },
           sharedWithData: {
@@ -656,11 +725,11 @@ exports.getFormsByFolder = async (req, res, next) => {
                 email: "$$invite.invitedEmail",
                 dateTime: "$$invite.respondedAt",
                 isSubmitted: "$$invite.hasResponded",
-                sharedAt: "$$invite.createdAt"
-              }
-            }
-          }
-        }
+                sharedAt: "$$invite.createdAt",
+              },
+            },
+          },
+        },
       },
       {
         $project: {
@@ -671,6 +740,9 @@ exports.getFormsByFolder = async (req, res, next) => {
           responseCount: 1,
           createdAt: 1,
           updatedAt: 1,
+          lastViewedAt: 1,
+          isFav: 1,
+          isFolder: 1,
           totalResponses: 1,
           totalWaiting: 1,
           totalShared: 1,
@@ -681,15 +753,18 @@ exports.getFormsByFolder = async (req, res, next) => {
             email: 1,
           },
         },
-      },
-      { $sort: { createdAt: -1 } }
+      }
     );
 
-    const result = await getAllFolderForms({
+    const result = await getAllForms({
       query,
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 10,
       responseKey: "forms",
+      sort:
+        sortBy === "latest_viewed"
+          ? { lastViewedAt: -1, createdAt: -1 }
+          : { createdAt: -1 },
     });
 
     return generateResponse(
@@ -700,6 +775,335 @@ exports.getFormsByFolder = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in getFormsByFolder:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Favorite a form (personalized per user)
+ */
+exports.favoriteForm = async (req, res, next) => {
+  try {
+    const { formId } = req.params;
+    const userId = req?.user?.id;
+
+    // Validate form
+    const form = await findForm({ _id: formId, isActive: true });
+    if (!form) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Form not found",
+      });
+    }
+
+    // Validate access similar to getFormById
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    if (form.isFolder) {
+      const formCreator = await findUser({ _id: form.createdBy });
+      if (
+        !formCreator ||
+        !formCreator.companyId ||
+        !user.companyId ||
+        formCreator.companyId.toString() !== user.companyId.toString()
+      ) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You don't have access to this form",
+        });
+      }
+    } else {
+      const tab = await findChannelTab({ _id: form.tabId });
+      if (!tab || !tab?.members?.includes(userId)) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You don't have access to this form",
+        });
+      }
+    }
+
+    // Idempotent favorite
+    const existing = await findFormFavorite({ userId, formId });
+    if (existing) {
+      return generateResponse(
+        { formId, isFav: true },
+        "Form already favorited",
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+
+    await createFormFavorite({ userId, formId });
+    return generateResponse(
+      { formId, isFav: true },
+      "Form favorited",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    // Handle duplicate key gracefully
+    if (error?.code === 11000) {
+      return generateResponse(
+        { formId: req.params.formId, isFav: true },
+        "Form already favorited",
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+    console.error("Error in favoriteForm:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Unfavorite a form (personalized per user)
+ */
+exports.unfavoriteForm = async (req, res, next) => {
+  try {
+    const { formId } = req.params;
+    const userId = req?.user?.id;
+
+    await deleteFormFavorite({ userId, formId });
+    return generateResponse(
+      { formId, isFav: false },
+      "Form unfavorited",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in unfavoriteForm:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Toggle favorite (favorite if not present, otherwise unfavorite)
+ */
+exports.toggleFavoriteForm = async (req, res, next) => {
+  try {
+    const { formId } = req.params;
+    const userId = req?.user?.id;
+
+    // If already favorited, unfavorite without requiring access to the form
+    const existing = await findFormFavorite({ userId, formId });
+    if (existing) {
+      await deleteFormFavorite({ userId, formId });
+      return generateResponse(
+        { formId, isFav: false },
+        "Form unfavorited",
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+
+    // Otherwise, validate form and access before favoriting
+    const form = await findForm({ _id: formId, isActive: true });
+    if (!form) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Form not found",
+      });
+    }
+
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    if (form.isFolder) {
+      const formCreator = await findUser({ _id: form.createdBy });
+      const sameCompany =
+        formCreator &&
+        formCreator.companyId &&
+        user.companyId &&
+        formCreator.companyId.toString() === user.companyId.toString();
+      if (!sameCompany) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You don't have access to this form",
+        });
+      }
+    } else {
+      const tab = await findChannelTab({ _id: form.tabId });
+      if (!tab || !tab?.members?.includes(userId)) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You don't have access to this form",
+        });
+      }
+    }
+
+    await createFormFavorite({ userId, formId });
+    return generateResponse(
+      { formId, isFav: true },
+      "Form favorited",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    if (error?.code === 11000) {
+      return generateResponse(
+        { formId: req.params.formId, isFav: true },
+        "Form already favorited",
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+    console.error("Error in toggleFavoriteForm:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Get user's favorites in folder context (personalized)
+ */
+exports.getFolderFavorites = async (req, res, next) => {
+  try {
+    const { page, limit, type, sortBy, created_by } = req.query;
+    const userId = req?.user?.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Aggregation to fetch only forms favorited by this user in folder context and same company
+    const query = [
+      { $match: { isFolder: true, isActive: true } },
+      // Optional type filter
+      ...(type && Object.values(FORM_TYPE).includes(type)
+        ? [{ $match: { type } }]
+        : []),
+      // Join creator and filter by same company
+      {
+        $lookup: {
+          from: "users",
+          localField: "createdBy",
+          foreignField: "_id",
+          as: "creator",
+        },
+      },
+      { $unwind: "$creator" },
+      { 
+        $match: { 
+          "creator.companyId": user.companyId,
+          // Add created_by filter if 'by_me' is specified
+          ...(created_by === "by_me" && { "creator._id": user._id }),
+        } 
+      },
+      // Join favorites for this user
+      {
+        $lookup: {
+          from: "formfavorites",
+          let: { formId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$formId", "$$formId"] },
+                    { $eq: ["$userId", user._id] },
+                  ],
+                },
+              },
+            },
+            { $limit: 1 },
+          ],
+          as: "fav",
+        },
+      },
+      { $addFields: { isFav: { $gt: [{ $size: "$fav" }, 0] } } },
+      // Join last viewed for this user
+      {
+        $lookup: {
+          from: "formviews",
+          let: { formId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$formId", "$$formId"] },
+                    { $eq: ["$userId", user._id] },
+                  ],
+                },
+              },
+            },
+            { $limit: 1 },
+          ],
+          as: "views",
+        },
+      },
+      {
+        $addFields: {
+          lastViewedAt: {
+            $ifNull: [{ $arrayElemAt: ["$views.lastViewedAt", 0] }, null],
+          },
+        },
+      },
+      { $match: { isFav: true } },
+      {
+        $project: {
+          title: 1,
+          description: 1,
+          type: 1,
+          status: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          lastViewedAt: 1,
+          isFolder: 1,
+          isFav: 1,
+          creator: { _id: 1, name: 1, email: 1 },
+        },
+      },
+      {
+        $sort:
+          sortBy === "latest_viewed"
+            ? { lastViewedAt: -1, createdAt: -1 }
+            : { createdAt: -1 },
+      },
+    ];
+
+    const result = await getAllForms({
+      query,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 10,
+      responseKey: "forms",
+    });
+
+    return generateResponse(
+      result,
+      "Favorites fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getFolderFavorites:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,
@@ -738,8 +1142,12 @@ exports.downloadForm = async (req, res, next) => {
       // For folder forms (isFolder: true), check if user is in same company as form creator
       if (form.isFolder) {
         const formCreator = await findUser({ _id: form.createdBy });
-        if (!formCreator || !formCreator.companyId || !user.companyId || 
-            formCreator.companyId.toString() !== user.companyId.toString()) {
+        if (
+          !formCreator ||
+          !formCreator.companyId ||
+          !user.companyId ||
+          formCreator.companyId.toString() !== user.companyId.toString()
+        ) {
           return next({
             statusCode: STATUS_CODES.FORBIDDEN,
             message: "You don't have access to download this form",
@@ -1422,7 +1830,11 @@ const generateDocxDownload = async (form, creator, tab, channel, res) => {
           new TextRun({
             text: `Form created by ${
               creator?.name || creator?.email || "Unknown"
-            }${channel && tab ? ` | ${channel?.channelName} / ${tab?.tabName}` : " | Folder Form"} | Generated: ${new Date().toLocaleDateString()}`,
+            }${
+              channel && tab
+                ? ` | ${channel?.channelName} / ${tab?.tabName}`
+                : " | Folder Form"
+            } | Generated: ${new Date().toLocaleDateString()}`,
             size: 16,
             color: "999999",
             italics: true,
@@ -1493,7 +1905,7 @@ exports.shareForm = async (req, res, next) => {
     if (!form) {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Form not found"
+        message: "Form not found",
       });
     }
 
@@ -1502,7 +1914,7 @@ exports.shareForm = async (req, res, next) => {
     if (!currentUser) {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
-        message: "User not found"
+        message: "User not found",
       });
     }
 
@@ -1511,8 +1923,11 @@ exports.shareForm = async (req, res, next) => {
     if (form.isFolder) {
       // For folder forms, check if user is in same company as form creator
       const formCreator = await findUser({ _id: form.createdBy });
-      hasAccess = formCreator && formCreator.companyId && currentUser.companyId &&
-                  formCreator.companyId.toString() === currentUser.companyId.toString();
+      hasAccess =
+        formCreator &&
+        formCreator.companyId &&
+        currentUser.companyId &&
+        formCreator.companyId.toString() === currentUser.companyId.toString();
     } else {
       // For channel forms, check tab membership
       const tab = await findChannelTab({ _id: form.tabId });
@@ -1522,12 +1937,12 @@ exports.shareForm = async (req, res, next) => {
     if (!hasAccess) {
       return next({
         statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You don't have permission to share this form"
+        message: "You don't have permission to share this form",
       });
     }
 
     const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-    
+
     // Create a general form invite for the link sharing (without specific email)
     let generalInvite = null;
     if (shareType === "link" || shareType === "both") {
@@ -1537,12 +1952,12 @@ exports.shareForm = async (req, res, next) => {
         invitedEmail: "general@link.share", // Placeholder for link sharing
         invitedName: "Link Share",
         customMessage: message,
-        shareMethod: "link"
+        shareMethod: "link",
       });
     }
 
     // Generate shareable link with token
-    const shareLink = generalInvite 
+    const shareLink = generalInvite
       ? `${baseUrl}/form/${formId}?token=${generalInvite.inviteToken}`
       : `${baseUrl}/shared/form/${formId}`;
 
@@ -1552,12 +1967,12 @@ exports.shareForm = async (req, res, next) => {
       form: {
         id: form._id,
         title: form.title,
-        description: form.description
+        description: form.description,
       },
       sharedBy: {
         name: currentUser.name,
-        email: currentUser.email
-      }
+        email: currentUser.email,
+      },
     };
 
     // Handle email sharing if emails provided
@@ -1577,14 +1992,14 @@ exports.shareForm = async (req, res, next) => {
       if (invalidEmails.length > 0) {
         return next({
           statusCode: STATUS_CODES.BAD_REQUEST,
-          message: `Invalid email format: ${invalidEmails.join(", ")}`
+          message: `Invalid email format: ${invalidEmails.join(", ")}`,
         });
       }
 
       if (uniqueEmails.length > 20) {
         return next({
           statusCode: STATUS_CODES.BAD_REQUEST,
-          message: "Cannot share with more than 20 recipients at once"
+          message: "Cannot share with more than 20 recipients at once",
         });
       }
 
@@ -1594,7 +2009,7 @@ exports.shareForm = async (req, res, next) => {
       // Process each email with corresponding name
       for (let i = 0; i < uniqueEmails.length; i++) {
         const email = uniqueEmails[i];
-        const name = (names && names[i]) || email.split('@')[0]; // Use provided name or fallback
+        const name = (names && names[i]) || email.split("@")[0]; // Use provided name or fallback
 
         try {
           // Create form invite for tracking
@@ -1604,7 +2019,7 @@ exports.shareForm = async (req, res, next) => {
             invitedEmail: email.toLowerCase(),
             invitedName: name,
             customMessage: message,
-            shareMethod: "email"
+            shareMethod: "email",
           });
 
           // Generate personalized link with token
@@ -1617,7 +2032,7 @@ exports.shareForm = async (req, res, next) => {
             sharedByName: currentUser.name,
             shareLink: personalizedLink,
             customMessage: message || "",
-            recipientName: name
+            recipientName: name,
           });
 
           await Mailer.sendEmail({
@@ -1625,7 +2040,7 @@ exports.shareForm = async (req, res, next) => {
             subject: `${currentUser.name} shared a form with you: ${form.title}`,
             message: emailTemplate.text,
             html: emailTemplate.html,
-            replyTo: currentUser.email
+            replyTo: currentUser.email,
           });
 
           // Update invite as email sent
@@ -1647,7 +2062,7 @@ exports.shareForm = async (req, res, next) => {
         sent: emailResults,
         failed: emailErrors,
         totalSent: emailResults.length,
-        totalRequested: uniqueEmails.length
+        totalRequested: uniqueEmails.length,
       };
 
       if (emailErrors.length > 0) {
@@ -1676,16 +2091,14 @@ exports.shareForm = async (req, res, next) => {
       res,
       STATUS_CODES.SUCCESS
     );
-
   } catch (error) {
     console.error("Error in shareForm:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
-      message: error?.message ?? "Failed to share form"
+      message: error?.message ?? "Failed to share form",
     });
   }
 };
-
 
 /**
  * Submit form response
@@ -1698,14 +2111,14 @@ exports.submitFormResponse = async (req, res, next) => {
     if (!token) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Token is required"
+        message: "Token is required",
       });
     }
 
     if (!responses || !Array.isArray(responses) || responses.length === 0) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Responses are required"
+        message: "Responses are required",
       });
     }
 
@@ -1714,7 +2127,7 @@ exports.submitFormResponse = async (req, res, next) => {
     if (!invite) {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Invalid or expired invite token"
+        message: "Invalid or expired invite token",
       });
     }
 
@@ -1722,7 +2135,7 @@ exports.submitFormResponse = async (req, res, next) => {
     if (invite.formId._id.toString() !== formId) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Token does not match form"
+        message: "Token does not match form",
       });
     }
 
@@ -1730,14 +2143,14 @@ exports.submitFormResponse = async (req, res, next) => {
     if (invite.hasResponded) {
       return next({
         statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You have already responded to this form"
+        message: "You have already responded to this form",
       });
     }
 
     // Validate responses against form fields
     const form = invite.formId;
     const formFieldsMap = new Map();
-    form.fields.forEach(field => {
+    form.fields.forEach((field) => {
       formFieldsMap.set(field.fieldName, field);
     });
 
@@ -1746,11 +2159,11 @@ exports.submitFormResponse = async (req, res, next) => {
     for (const response of responses) {
       const { fieldName, value } = response;
       const formField = formFieldsMap.get(fieldName);
-      
+
       if (!formField) {
         return next({
           statusCode: STATUS_CODES.BAD_REQUEST,
-          message: `Invalid field: ${fieldName}`
+          message: `Invalid field: ${fieldName}`,
         });
       }
 
@@ -1758,7 +2171,7 @@ exports.submitFormResponse = async (req, res, next) => {
       if (formField.validation?.required && (!value || value === "")) {
         return next({
           statusCode: STATUS_CODES.BAD_REQUEST,
-          message: `Field '${formField.label}' is required`
+          message: `Field '${formField.label}' is required`,
         });
       }
 
@@ -1766,7 +2179,7 @@ exports.submitFormResponse = async (req, res, next) => {
         fieldName,
         fieldType: formField.type,
         label: formField.label,
-        value
+        value,
       });
     }
 
@@ -1776,17 +2189,14 @@ exports.submitFormResponse = async (req, res, next) => {
       inviteToken: token,
       responses: validatedResponses,
       ipAddress: req.ip,
-      userAgent: req.get("User-Agent")
+      userAgent: req.get("User-Agent"),
     });
 
     // Mark invite as responded
     await markAsResponded(token, formResponse._id);
 
     // Update form response count
-    await updateForm(
-      { _id: formId },
-      { $inc: { responseCount: 1 } }
-    );
+    await updateForm({ _id: formId }, { $inc: { responseCount: 1 } });
 
     return generateResponse(
       { responseId: formResponse._id },
@@ -1794,13 +2204,11 @@ exports.submitFormResponse = async (req, res, next) => {
       res,
       STATUS_CODES.CREATED
     );
-
   } catch (error) {
     console.error("Error in submitFormResponse:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
-      message: error?.message
+      message: error?.message,
     });
   }
 };
-
