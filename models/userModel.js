@@ -207,6 +207,9 @@ exports.getAllUsers = async ({ query, page, limit, responseKey = "data" }) => {
   return { [responseKey]: data, pagination };
 };
 
+// aggregate users
+exports.aggregateUsers = (query) => UserModel.aggregate(query);
+
 // generate token
 exports.generateToken = (user) => {
   const token = sign(

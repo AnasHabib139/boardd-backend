@@ -67,6 +67,13 @@ exports.refreshToken = async (req, res, next) => {
       );
     }
 
+    // Update user's last active time (using lastLoginAt field)
+    // This happens every 15 minutes when refresh token is used
+    await updateUser(
+      { _id: user._id },
+      { lastLoginAt: new Date() }
+    );
+
     // Generate new access token
     const accessToken = generateToken(user);
 
