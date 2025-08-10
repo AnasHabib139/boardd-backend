@@ -17,9 +17,11 @@ const {
   updateUser,
   getAllUsers,
   addRefreshToken,
+  removeUser,
+  findManyUsers,
 } = require("../models/userModel");
 const { createCompany, findCompany } = require("../models/companyModel");
-const { createManyInviteSlots } = require("../models/inviteSlotModel");
+const { createManyInviteSlots, findInviteSlot, updateInviteSlot, findManyInviteSlots } = require("../models/inviteSlotModel");
 const {
   hashPassword,
   generateJoinToken,
@@ -35,6 +37,7 @@ const {
   handleInviteFlow,
   handleGuestFlow,
 } = require("./helpers/users/login.flow");
+const { cleanupUserReferences } = require("./helpers/users/deleteUser.helper");
 
 exports.signup = async (req, res, next) => {
   try {
@@ -420,6 +423,147 @@ exports.updateUserSettings = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in updateUserSettings:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Delete user account and free up slot
+ */
+exports.deleteUserAccount = async (req, res, next) => {
+  try {
+    const userId = req?.user?.id;
+
+    // Find current user with all data
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    const companyId = user.companyId;
+
+    // Find company to validate
+    const company = await findCompany({ _id: companyId });
+    if (!company) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Company not found",
+      });
+    }
+
+    // Check if user is admin - prevent deletion
+    if (company.adminUser.toString() === userId) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "Admin cannot delete their own account. Transfer admin rights first.",
+      });
+    }
+
+    // Count current users in company to understand slot usage
+    const companyUsers = await findManyUsers({ 
+      companyId: companyId,
+      _id: { $ne: userId } // Exclude current user from count
+    });
+
+    // Determine slot type based on user role and account type
+    const isGuestUser = user.role === "guest" || user.expiresAt !== null;
+    const slotType = isGuestUser ? "guest" : "company";
+
+    console.log(`Deleting ${slotType} user: ${user.email} from company: ${company.name}`);
+    console.log(`Remaining users after deletion: ${companyUsers.length}`);
+
+    // COMPREHENSIVE DATA CLEANUP - Remove user references across entire database
+    console.log(`🧹 Starting comprehensive data cleanup...`);
+    const cleanupResults = await cleanupUserReferences(userId, companyId);
+
+    // Find a used slot of the appropriate type to free up
+    const slotToFree = await findInviteSlot({
+      companyId: companyId,
+      used: true,
+      inviteType: slotType,
+      isGuestInviteSlot: isGuestUser
+    });
+
+    if (slotToFree) {
+      // Free up the slot - reset it to available state
+      await updateInviteSlot(
+        { _id: slotToFree._id },
+        {
+          used: false,
+          reserved: false,
+          reservedFor: null,
+          reservedRole: null,
+          reservedAt: null,
+        }
+      );
+      console.log(`Freed up ${slotType} slot ${slotToFree.slot} for company ${company.name}`);
+    } else {
+      console.log(`Warning: No used ${slotType} slot found to free up for company ${company.name}`);
+    }
+
+    // Delete the user account (final step after cleanup)
+    await removeUser(userId);
+    console.log(`🗑️ User account deleted successfully`);
+
+    // Calculate remaining slot availability for response
+    const availableCompanySlots = await findManyInviteSlots({ 
+      companyId: companyId, 
+      used: false, 
+      reserved: false,
+      inviteType: "company",
+      isGuestInviteSlot: false 
+    });
+
+    const availableGuestSlots = await findManyInviteSlots({ 
+      companyId: companyId, 
+      used: false, 
+      reserved: false,
+      inviteType: "guest",
+      isGuestInviteSlot: true 
+    });
+
+    return generateResponse(
+      {
+        message: "Account deleted successfully",
+        deletedUser: {
+          id: userId,
+          email: user.email,
+          role: user.role,
+          accountType: slotType
+        },
+        slotInfo: {
+          slotFreed: !!slotToFree,
+          slotType: slotType,
+          slotNumber: slotToFree?.slot || null,
+          remainingUsers: companyUsers.length,
+          availableSlots: {
+            company: availableCompanySlots.length,
+            guest: availableGuestSlots.length
+          }
+        },
+        dataCleanup: {
+          ownership: cleanupResults.ownership,
+          assignments: cleanupResults.assignments,
+          personalData: cleanupResults.personalData,
+          errors: cleanupResults.errors,
+          totalOperations: Object.values(cleanupResults.ownership).reduce((sum, count) => sum + count, 0) +
+                          Object.values(cleanupResults.assignments).reduce((sum, count) => sum + count, 0) +
+                          Object.values(cleanupResults.personalData).reduce((sum, count) => sum + count, 0)
+        }
+      },
+      "Account and all related data deleted successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+
+  } catch (error) {
+    console.error("Error in deleteUserAccount:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

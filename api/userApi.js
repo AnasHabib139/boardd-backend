@@ -7,6 +7,7 @@ const {
   getUsersOfCompany,
   getUserProfile,
   updateUserSettings,
+  deleteUserAccount,
 } = require("../controller/user.controller");
 const { ROLES } = require("../utils/constants");
 const Auth = require("../middlewares/Auth");
@@ -47,6 +48,13 @@ class UserAPI {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
       validateUpdateUserSettings,
       updateUserSettings
+    );
+
+    // Delete user account
+    router.delete(
+      "/account",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
+      deleteUserAccount
     );
   }
 
