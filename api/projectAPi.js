@@ -5,6 +5,9 @@ const {
   CreateProject,
   getProjectsOfTab,
   toggleProjectPin,
+  toggleProjectStatus,
+  deleteProjectById,
+  updateProjectById,
 } = require("../controller/projectController");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -46,6 +49,31 @@ class ProjectAPI {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateProjectIdParam,
       toggleProjectPin
+    );
+
+    // Toggle project status (active/archived)
+    router.post(
+      "/:projectId/status",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateProjectIdParam,
+      toggleProjectStatus
+    );
+
+    // Update project details
+    router.put(
+      "/:projectId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateProjectIdParam,
+      validateUpdateProject,
+      updateProjectById
+    );
+
+    // Delete project
+    router.delete(
+      "/:projectId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateProjectIdParam,
+      deleteProjectById
     );
   }
 

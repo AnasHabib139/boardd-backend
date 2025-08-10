@@ -12,7 +12,7 @@ const projectSchema = new Schema({
   companyId: { type: Types.ObjectId, ref: "Company", required: true },
   channelId: { type: Types.ObjectId, ref: "Channel", required: true },
   tabId: { type: Types.ObjectId, ref: "ChannelTab", required: true },
-  status: { type: String, enum: ["active", "inactive"], default: "active" },
+  status: { type: String, enum: ["active", "archived"], default: "active" },
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true },
   priority: {
@@ -74,3 +74,6 @@ exports.updateProject = (query, update, options = {}) =>
 // find many projects
 exports.findManyProjects = (query, options = {}) =>
   ProjectModel.find(query, null, options);
+
+// delete project
+exports.deleteProject = (query) => ProjectModel.findOneAndDelete(query);

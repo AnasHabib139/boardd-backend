@@ -1,6 +1,6 @@
 const { findChannel } = require("../models/channelModel");
 const { findChannelTab } = require("../models/channelTabsModel");
-const { createProject, getAllProjects, findProject, updateProject } = require("../models/projectModel");
+const { createProject, getAllProjects, findProject, updateProject, deleteProject } = require("../models/projectModel");
 const { findUser } = require("../models/userModel");
 const { findCompany } = require("../models/companyModel");
 const ProjectModel = require("../models/projectModel");
@@ -503,6 +503,77 @@ const handleCalendarView = async (req, res, next, params) => {
 };
 
 /**
+ * Toggle project status (active/archived)
+ */
+exports.toggleProjectStatus = async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req?.user?.id;
+
+    // Find project
+    const project = await findProject({ _id: projectId });
+    if (!project) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Project not found",
+      });
+    }
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Check if user has access to the project (via tab membership)
+    const tab = await findChannelTab({ _id: project.tabId });
+    if (!tab) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Project tab not found",
+      });
+    }
+
+    if (!tab?.members?.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You don't have access to this project",
+      });
+    }
+
+    // Toggle status: active <-> archived
+    const newStatus = project.status === "active" ? "archived" : "active";
+    const updatedProject = await updateProject(
+      { _id: projectId },
+      { 
+        status: newStatus,
+        updatedAt: new Date()
+      }
+    );
+
+    return generateResponse(
+      { 
+        projectId, 
+        status: updatedProject.status,
+        message: `Project ${newStatus}`
+      },
+      "Project status updated successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in toggleProjectStatus:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
  * Toggle project pin status
  */
 exports.toggleProjectPin = async (req, res, next) => {
@@ -565,6 +636,142 @@ exports.toggleProjectPin = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in toggleProjectPin:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Delete project
+ */
+exports.deleteProjectById = async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req?.user?.id;
+
+    // Find project
+    const project = await findProject({ _id: projectId });
+    if (!project) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Project not found",
+      });
+    }
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Check if user has access to the project (via tab membership)
+    const tab = await findChannelTab({ _id: project.tabId });
+    if (!tab) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Project tab not found",
+      });
+    }
+
+    if (!tab?.members?.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You don't have access to this project",
+      });
+    }
+
+    // Delete the project
+    await deleteProject({ _id: projectId });
+
+    return generateResponse(
+      { 
+        projectId,
+        message: "Project deleted successfully"
+      },
+      "Project deleted successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in deleteProjectById:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Update project details
+ */
+exports.updateProjectById = async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req?.user?.id;
+    const { name, description, startDate, endDate, color, priority } = parseBody(req.body);
+
+    // Find project
+    const project = await findProject({ _id: projectId });
+    if (!project) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Project not found",
+      });
+    }
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Check if user has access to the project (via tab membership)
+    const tab = await findChannelTab({ _id: project.tabId });
+    if (!tab) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Project tab not found",
+      });
+    }
+
+    if (!tab?.members?.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You don't have access to this project",
+      });
+    }
+
+    // Prepare update data (only include fields that are provided)
+    const updateData = {
+      updatedAt: new Date()
+    };
+
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (startDate !== undefined) updateData.startDate = parseDate(startDate);
+    if (endDate !== undefined) updateData.endDate = parseDate(endDate);
+    if (color !== undefined) updateData.color = color;
+    if (priority !== undefined) updateData.priority = priority;
+
+    // Update the project
+    const updatedProject = await updateProject({ _id: projectId }, updateData);
+
+    return generateResponse(
+      updatedProject,
+      "Project updated successfully", 
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in updateProjectById:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

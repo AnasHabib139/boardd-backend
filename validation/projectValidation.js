@@ -66,12 +66,11 @@ const createProjectValidation = Joi.object({
     }),
 
   status: Joi.string()
-    .valid("planning", "active", "on_hold", "completed", "cancelled")
+    .valid("active", "archived")
     .optional()
-    .default("planning")
+    .default("active")
     .messages({
-      "any.only":
-        "Status must be one of: planning, active, on_hold, completed, cancelled",
+      "any.only": "Status must be one of: active, archived",
     }),
 
   budget: Joi.number().positive().optional().messages({
@@ -170,11 +169,10 @@ const updateProjectValidation = Joi.object({
     }),
 
   status: Joi.string()
-    .valid("planning", "active", "on_hold", "completed", "cancelled")
+    .valid("active", "archived")
     .optional()
     .messages({
-      "any.only":
-        "Status must be one of: planning, active, on_hold, completed, cancelled",
+      "any.only": "Status must be one of: active, archived",
     }),
 
   budget: Joi.number().positive().optional().allow(null).messages({
@@ -272,11 +270,10 @@ const getProjectsQueryValidation = Joi.object({
   }),
 
   status: Joi.string()
-    .valid("planning", "active", "on_hold", "completed", "cancelled")
+    .valid("active", "archived")
     .optional()
     .messages({
-      "any.only":
-        "Status must be one of: planning, active, on_hold, completed, cancelled",
+      "any.only": "Status must be one of: active, archived",
     }),
 
   priority: Joi.string()
