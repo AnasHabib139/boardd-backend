@@ -9,6 +9,76 @@ const mongoosePaginate = require("mongoose-paginate-v2");
 const aggregatePaginate = require("mongoose-aggregate-paginate-v2");
 const { getMongooseAggregatePaginatedData } = require("../utils");
 
+// User Settings Subschema
+const userSettingsSchema = new Schema(
+  {
+    // Theme settings
+    theme: {
+      color: {
+        type: String,
+        default: "#6C63FF", // Default primary color
+        validate: {
+          validator: function(v) {
+            return /^#([0-9A-F]{3}){1,2}$/i.test(v);
+          },
+          message: "Theme color must be a valid hex color code"
+        }
+      }
+    },
+
+    // Localization settings
+    localization: {
+      language: {
+        type: String,
+        default: "english",
+        lowercase: true,
+        trim: true
+      },
+      timezone: {
+        type: String,
+        default: "UTC",
+        // Common timezone formats: UTC, America/New_York, Asia/Karachi, Europe/London
+      },
+      timeFormat: {
+        type: String,
+        enum: ["12", "24"],
+        default: "12"
+      },
+      dateFormat: {
+        type: String,
+        enum: ["dd/mm/yyyy", "mm/dd/yyyy", "yyyy/mm/dd", "yyyy-mm-dd"],
+        default: "dd/mm/yyyy"
+      }
+    },
+
+    // Notification preferences (for future use)
+    notifications: {
+      email: {
+        type: Boolean,
+        default: true
+      },
+      push: {
+        type: Boolean,
+        default: true
+      },
+      desktop: {
+        type: Boolean,
+        default: false
+      }
+    },
+
+    // Privacy settings (for future use)
+    privacy: {
+      profileVisibility: {
+        type: String,
+        enum: ["public", "company", "private"],
+        default: "company"
+      }
+    }
+  },
+  { _id: false } // Don't create separate _id for settings subdocument
+);
+
 // Token Subschema for refresh tokens
 const refreshTokenSchema = new Schema(
   {
@@ -71,6 +141,12 @@ const userSchema = new Schema(
     isActive: { type: Boolean, default: true },
     isDemo: { type: Boolean, default: false },
     fcmToken: { type: String },
+
+    // User settings
+    settings: {
+      type: userSettingsSchema,
+      default: {} // Mongoose will apply schema defaults
+    },
 
     // New refresh token system
     refreshTokens: [refreshTokenSchema],

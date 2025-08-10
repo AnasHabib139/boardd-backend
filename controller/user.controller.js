@@ -1,5 +1,6 @@
 "use strict";
 
+const bcrypt = require("bcrypt");
 const { STATUS_CODES } = require("../utils/constants");
 const {
   generateResponse,
@@ -273,6 +274,152 @@ exports.getUsersOfCompany = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in getUsersOfCompany:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Get user profile
+ */
+exports.getUserProfile = async (req, res, next) => {
+  try {
+    const userId = req?.user?.id;
+
+    // Find user with all data except password and refresh tokens
+    const user = await findUser({ _id: userId }).select("-password -refreshTokens");
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    return generateResponse(
+      {
+        user,
+      },
+      "User profile fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getUserProfile:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Update user settings and profile
+ */
+exports.updateUserSettings = async (req, res, next) => {
+  try {
+    const userId = req?.user?.id;
+    const {
+      name,
+      newPassword,
+      theme,
+      localization,
+      notifications,
+      privacy
+    } = req.validatedBody;
+
+    // Find current user with password for validation
+    const user = await findUser({ _id: userId }).select("+password");
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Prepare update data
+    const updateData = {};
+
+    // Update basic profile fields
+    if (name !== undefined) {
+      updateData.name = name;
+    }
+
+    // Handle password update
+    if (newPassword) {
+      // Check if new password is same as current password
+      const isSamePassword = await bcrypt.compare(newPassword, user.password);
+      if (isSamePassword) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "New password must be different from current password",
+        });
+      }
+
+      // Hash and set new password
+      const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+      updateData.password = hashedNewPassword;
+    }
+
+    // Update settings (using dot notation for nested updates)
+    if (theme) {
+      if (theme.color !== undefined) {
+        updateData["settings.theme.color"] = theme.color;
+      }
+    }
+
+    if (localization) {
+      if (localization.language !== undefined) {
+        updateData["settings.localization.language"] = localization.language;
+      }
+      if (localization.timezone !== undefined) {
+        updateData["settings.localization.timezone"] = localization.timezone;
+      }
+      if (localization.timeFormat !== undefined) {
+        updateData["settings.localization.timeFormat"] = localization.timeFormat;
+      }
+      if (localization.dateFormat !== undefined) {
+        updateData["settings.localization.dateFormat"] = localization.dateFormat;
+      }
+    }
+
+    if (notifications) {
+      if (notifications.email !== undefined) {
+        updateData["settings.notifications.email"] = notifications.email;
+      }
+      if (notifications.push !== undefined) {
+        updateData["settings.notifications.push"] = notifications.push;
+      }
+      if (notifications.desktop !== undefined) {
+        updateData["settings.notifications.desktop"] = notifications.desktop;
+      }
+    }
+
+    if (privacy) {
+      if (privacy.profileVisibility !== undefined) {
+        updateData["settings.privacy.profileVisibility"] = privacy.profileVisibility;
+      }
+    }
+
+    // Update user
+    const updatedUser = await updateUser(
+      { _id: userId },
+      updateData,
+      { new: true }
+    ).select("-password -refreshTokens");
+
+    return generateResponse(
+      {
+        user: updatedUser,
+        message: "User settings updated successfully"
+      },
+      "User settings updated successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in updateUserSettings:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,
