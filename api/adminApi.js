@@ -4,6 +4,7 @@ const { Router } = require("express");
 const {
   getCompanyUsersAdmin,
   getInvitedUsers,
+  cancelInvite,
 } = require("../controller/admin.controller");
 const { ROLES } = require("../utils/constants");
 const Auth = require("../middlewares/Auth");
@@ -29,6 +30,13 @@ class AdminAPI {
       "/invited-users",
       Auth([ROLES.ADMIN]),
       getInvitedUsers
+    );
+
+    // Cancel an invite for a specific user by slot ID
+    router.delete(
+      "/cancel-invite/:slotId",
+      Auth([ROLES.ADMIN]),
+      cancelInvite
     );
   }
 
