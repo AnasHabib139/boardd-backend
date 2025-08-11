@@ -3,6 +3,7 @@
 const { Router } = require("express");
 const {
   getCompanyUsersAdmin,
+  getInvitedUsers,
 } = require("../controller/admin.controller");
 const { ROLES } = require("../utils/constants");
 const Auth = require("../middlewares/Auth");
@@ -21,6 +22,13 @@ class AdminAPI {
       "/users", 
       Auth([ROLES.ADMIN]), 
       getCompanyUsersAdmin
+    );
+
+    // Get invited users from reserved invite slots
+    router.get(
+      "/invited-users",
+      Auth([ROLES.ADMIN]),
+      getInvitedUsers
     );
   }
 

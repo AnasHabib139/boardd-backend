@@ -222,10 +222,15 @@ exports.sendBulkInvites = async (req, res, next) => {
           replyTo: adminUser.email,
         });
 
-        // Mark slot as reserved (not used yet)
+        // Mark slot as reserved (not used yet) with timestamp
         await updateInviteSlot(
           { _id: availableSlot._id },
-          { reserved: true, reservedFor: email, reservedRole: role }
+          { 
+            reserved: true, 
+            reservedFor: email, 
+            reservedRole: role,
+            reservedAt: new Date() // Explicitly set the reservation timestamp
+          }
         );
 
         results.successful.push({ email, role });

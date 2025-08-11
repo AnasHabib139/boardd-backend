@@ -1,4 +1,7 @@
 const { Schema, model, Types } = require("mongoose");
+const mongoosePaginate = require("mongoose-paginate-v2");
+const aggregatePaginate = require("mongoose-aggregate-paginate-v2");
+const { getMongooseAggregatePaginatedData } = require("../utils");
 const InviteSlotSchema = new Schema({
   companyId: { type: Types.ObjectId, ref: "Company", required: true },
   slot: { type: Number, required: true },
@@ -21,6 +24,10 @@ const InviteSlotSchema = new Schema({
   createdAt: { type: Date, default: Date.now },
 });
 InviteSlotSchema.index({ companyId: 1, slot: 1 }, { unique: true });
+
+// register pagination plugin to invite slot model
+InviteSlotSchema.plugin(mongoosePaginate);
+InviteSlotSchema.plugin(aggregatePaginate);
 
 // Pre-save hook to set reservedAt when reserved is true
 InviteSlotSchema.pre("save", function (next) {
@@ -53,3 +60,18 @@ exports.updateInviteSlot = (query, obj) =>
 
 //delete invite slot by query
 exports.deleteInviteSlot = (query) => InviteSlotModel.findOneAndDelete(query);
+
+//aggregate invite slots
+exports.aggregateInviteSlots = (query) => InviteSlotModel.aggregate(query);
+
+// get all invite slots with pagination
+exports.getAllInviteSlots = async ({ query, page, limit, responseKey = "data" }) => {
+  const { data, pagination } = await getMongooseAggregatePaginatedData({
+    model: InviteSlotModel,
+    query,
+    page,
+    limit,
+  });
+
+  return { [responseKey]: data, pagination };
+};
