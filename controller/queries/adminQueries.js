@@ -11,7 +11,7 @@ exports.getCompanyUsersAdminQuery = (companyId, searchTerm = null, excludeUserId
     companyId: Types.ObjectId.isValid(companyId) 
       ? new Types.ObjectId(companyId) 
       : companyId,
-    isActive: true, // Only show active users
+    // Include both active and inactive users
   };
 
   // Exclude logged-in user
