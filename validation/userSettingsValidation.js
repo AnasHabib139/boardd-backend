@@ -18,7 +18,17 @@ const updateUserSettingsSchema = Joi.object({
       "string.empty": "Name cannot be empty"
     }),
 
-  // Password update (only new password)
+  // Password update
+  oldPassword: Joi.string()
+    .when('newPassword', {
+      is: Joi.exist(),
+      then: Joi.required(),
+      otherwise: Joi.optional()
+    })
+    .messages({
+      "any.required": "Old password is required when updating password"
+    }),
+
   newPassword: Joi.string()
     .min(6)
     .max(128)
@@ -28,6 +38,18 @@ const updateUserSettingsSchema = Joi.object({
       "string.min": "New password must be at least 6 characters long",
       "string.max": "New password cannot exceed 128 characters", 
       "string.pattern.base": "New password must contain at least one lowercase letter, one uppercase letter, and one number"
+    }),
+
+  // Nickname field (optional)
+  nickname: Joi.string()
+    .trim()
+    .min(2)
+    .max(50)
+    .optional()
+    .messages({
+      "string.min": "Nickname must be at least 2 characters long",
+      "string.max": "Nickname cannot exceed 50 characters",
+      "string.empty": "Nickname cannot be empty"
     }),
 
   // Theme settings

@@ -325,6 +325,8 @@ exports.updateUserSettings = async (req, res, next) => {
     const userId = req?.user?.id;
     const {
       name,
+      nickname,
+      oldPassword,
       newPassword,
       theme,
       localization,
@@ -348,15 +350,35 @@ exports.updateUserSettings = async (req, res, next) => {
     if (name !== undefined) {
       updateData.name = name;
     }
+    
+    if (nickname !== undefined) {
+      updateData.nickname = nickname;
+    }
 
     // Handle password update
     if (newPassword) {
-      // Check if new password is same as current password
-      const isSamePassword = await bcrypt.compare(newPassword, user.password);
-      if (isSamePassword) {
+      // Validate old password
+      if (!oldPassword) {
         return next({
           statusCode: STATUS_CODES.BAD_REQUEST,
-          message: "New password must be different from current password",
+          message: "Old password is required when updating password",
+        });
+      }
+
+      // Check if old password matches current password
+      const isOldPasswordValid = await bcrypt.compare(oldPassword, user.password);
+      if (!isOldPasswordValid) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "Old password is incorrect",
+        });
+      }
+
+      // Check if new password is same as old password
+      if (oldPassword === newPassword) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "New password cannot be the same as old password",
         });
       }
 

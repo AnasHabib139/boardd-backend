@@ -123,6 +123,7 @@ const userSchema = new Schema(
       ref: "Company",
     },
     name: { type: String, required: true },
+    nickname: { type: String, trim: true, maxlength: 50 },
     dob: { type: Date },
     email: {
       type: String,
