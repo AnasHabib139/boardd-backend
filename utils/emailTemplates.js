@@ -1806,3 +1806,411 @@ Powered by Boardd - ${process.env.FRONTEND_URL}
 
   return { html, text };
 };
+
+/**
+ * Generate ownership transfer confirmation email template
+ * @param {Object} params Parameters for the template
+ * @param {string} params.currentOwnerName Current owner's name
+ * @param {string} params.newOwnerName New owner's name
+ * @param {string} params.newOwnerEmail New owner's email
+ * @param {string} params.companyName Company name
+ * @param {string} params.confirmationLink Confirmation link
+ * @returns {Object} Object containing HTML and text versions of the email
+ */
+exports.generateOwnershipTransferEmail = ({
+  currentOwnerName,
+  newOwnerName,
+  newOwnerEmail,
+  companyName,
+  confirmationLink,
+}) => {
+  const baseUrl = process.env.BACKEND_URL;
+  const logoUrl = `${baseUrl}/assets/images/boardd-logo.png`;
+
+  // HTML email with professional styling
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirm Ownership Transfer - ${companyName}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      line-height: 1.6;
+      color: #1f2937;
+      background-color: #f9fafb;
+      -webkit-text-size-adjust: none;
+    }
+    
+    .email-container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .email-header {
+      background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+      padding: 32px 40px;
+      text-align: center;
+    }
+    
+    .logo {
+      height: 48px;
+      width: auto;
+      margin-bottom: 16px;
+      filter: brightness(0) invert(1);
+    }
+    
+    .header-title {
+      color: #ffffff;
+      font-size: 28px;
+      font-weight: 700;
+      margin: 0;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+    
+    .header-subtitle {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 16px;
+      margin-top: 8px;
+    }
+    
+    .email-body {
+      padding: 40px;
+    }
+    
+    .greeting {
+      font-size: 18px;
+      color: #1f2937;
+      margin-bottom: 24px;
+      font-weight: 500;
+    }
+    
+    .transfer-message {
+      font-size: 16px;
+      color: #4b5563;
+      margin-bottom: 32px;
+      line-height: 1.7;
+    }
+    
+    .company-highlight {
+      color: #dc2626;
+      font-weight: 600;
+    }
+    
+    .transfer-card {
+      background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+      border-left: 4px solid #dc2626;
+      padding: 24px;
+      border-radius: 8px;
+      margin: 24px 0;
+    }
+    
+    .transfer-card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #991b1b;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+    }
+    
+    .transfer-card-title::before {
+      content: "⚠️";
+      margin-right: 8px;
+    }
+    
+    .transfer-details {
+      font-size: 15px;
+      color: #7f1d1d;
+      margin-bottom: 8px;
+    }
+    
+    .detail-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    
+    .detail-label {
+      font-weight: 500;
+    }
+    
+    .detail-value {
+      font-weight: 600;
+    }
+    
+    .warning-card {
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      border-left: 4px solid #f59e0b;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 24px 0;
+    }
+    
+    .warning-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #92400e;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+    }
+    
+    .warning-title::before {
+      content: "🔔";
+      margin-right: 8px;
+    }
+    
+    .warning-text {
+      font-size: 14px;
+      color: #78350f;
+      line-height: 1.5;
+    }
+    
+    .warning-text ul {
+      margin-top: 8px;
+      padding-left: 16px;
+    }
+    
+    .warning-text li {
+      margin-bottom: 4px;
+    }
+    
+    .cta-section {
+      text-align: center;
+      margin: 32px 0;
+    }
+    
+    .cta-button {
+      display: inline-block;
+      background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+      color: #ffffff;
+      text-decoration: none;
+      padding: 16px 32px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 14px 0 rgba(220, 38, 38, 0.3);
+      text-align: center;
+      min-width: 250px;
+    }
+    
+    .cta-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px 0 rgba(220, 38, 38, 0.4);
+    }
+    
+    .alternative-link {
+      margin-top: 24px;
+      padding: 16px;
+      background-color: #f9fafb;
+      border-radius: 6px;
+      border: 1px solid #e5e7eb;
+    }
+    
+    .alternative-text {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 8px;
+    }
+    
+    .alternative-url {
+      font-size: 12px;
+      color: #4b5563;
+      word-break: break-all;
+      background-color: #ffffff;
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #d1d5db;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+    }
+    
+    .expiry-notice {
+      background-color: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin: 24px 0;
+    }
+    
+    .expiry-text {
+      font-size: 14px;
+      color: #92400e;
+      font-weight: 500;
+    }
+    
+    .email-footer {
+      background-color: #f9fafb;
+      padding: 32px 40px;
+      text-align: center;
+      border-top: 1px solid #e5e7eb;
+    }
+    
+    .footer-text {
+      font-size: 14px;
+      color: #6b7280;
+      margin-bottom: 16px;
+    }
+    
+    .footer-branding {
+      font-size: 12px;
+      color: #9ca3af;
+    }
+    
+    .footer-branding a {
+      color: #dc2626;
+      text-decoration: none;
+    }
+    
+    @media only screen and (max-width: 600px) {
+      .email-container {
+        margin: 0;
+        border-radius: 0;
+      }
+      
+      .email-header, .email-body, .email-footer {
+        padding: 24px 20px;
+      }
+      
+      .header-title {
+        font-size: 24px;
+      }
+      
+      .cta-button {
+        padding: 14px 24px;
+        font-size: 15px;
+        min-width: auto;
+        width: 100%;
+      }
+      
+      .detail-item {
+        flex-direction: column;
+        gap: 4px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="email-container">
+    <!-- Header -->
+    <div class="email-header">
+      <img src="${logoUrl}" alt="Boardd" class="logo" />
+      <h1 class="header-title">Confirm Ownership Transfer</h1>
+      <div class="header-subtitle">Important action required</div>
+    </div>
+    
+    <!-- Body -->
+    <div class="email-body">
+      <div class="greeting">Hello ${currentOwnerName},</div>
+      
+      <div class="transfer-message">
+        A request has been made to transfer ownership of <span class="company-highlight">${companyName}</span> 
+        to another team member. This is a critical action that requires your explicit confirmation.
+      </div>
+      
+      <div class="transfer-card">
+        <div class="transfer-card-title">Transfer Details</div>
+        <div class="detail-item">
+          <span class="detail-label">New Owner:</span>
+          <span class="detail-value">${newOwnerName}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Email:</span>
+          <span class="detail-value">${newOwnerEmail}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Company:</span>
+          <span class="detail-value">${companyName}</span>
+        </div>
+      </div>
+      
+      <div class="warning-card">
+        <div class="warning-title">What happens when you confirm?</div>
+        <div class="warning-text">
+          <ul>
+            <li><strong>${newOwnerName}</strong> will become the company administrator</li>
+            <li>Your role will be changed to <strong>Employee</strong></li>
+            <li><strong>${newOwnerName}</strong> will have full control over the company settings</li>
+            <li>This action <strong>cannot be undone</strong> without contacting support</li>
+          </ul>
+        </div>
+      </div>
+      
+      <div class="cta-section">
+        <a href="${confirmationLink}" class="cta-button">Confirm Transfer</a>
+      </div>
+      
+      <div class="alternative-link">
+        <div class="alternative-text">Or copy and paste this link in your browser:</div>
+        <div class="alternative-url">${confirmationLink}</div>
+      </div>
+      
+      <div class="expiry-notice">
+        <div class="expiry-text">⏰ This confirmation link expires in 24 hours</div>
+      </div>
+    </div>
+    
+    <!-- Footer -->
+    <div class="email-footer">
+      <div class="footer-text">
+        If you did not request this transfer, please ignore this email.
+        <br>
+        For security concerns, contact our support team immediately.
+      </div>
+      <div class="footer-branding">
+        Powered by <a href="${process.env.FRONTEND_URL}">Boardd</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+
+  // Plain text version
+  const text = `
+🏢 OWNERSHIP TRANSFER CONFIRMATION REQUIRED
+
+Hello ${currentOwnerName},
+
+A request has been made to transfer ownership of ${companyName} to another team member. 
+This is a critical action that requires your explicit confirmation.
+
+TRANSFER DETAILS:
+═══════════════════════════════════════════════════════════
+• New Owner: ${newOwnerName}
+• Email: ${newOwnerEmail}  
+• Company: ${companyName}
+
+⚠️ WHAT HAPPENS WHEN YOU CONFIRM?
+═══════════════════════════════════════════════════════════
+• ${newOwnerName} will become the company administrator
+• Your role will be changed to Employee
+• ${newOwnerName} will have full control over company settings
+• This action CANNOT be undone without contacting support
+
+🔗 CONFIRM TRANSFER:
+${confirmationLink}
+
+⏰ This confirmation link expires in 24 hours.
+
+If you did not request this transfer, please ignore this email.
+For security concerns, contact our support team immediately.
+
+Powered by Boardd - ${process.env.FRONTEND_URL}
+  `;
+
+  return { html, text };
+};

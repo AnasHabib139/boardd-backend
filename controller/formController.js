@@ -30,10 +30,10 @@ const {
   findFormFavorite,
 } = require("../models/favoriteModel");
 const { upsertFormView } = require("../models/formViewModel");
-const { 
-  buildFolderFormsQuery, 
-  buildFolderFavoritesQuery, 
-  getSortOptions 
+const {
+  buildFolderFormsQuery,
+  buildFolderFavoritesQuery,
+  getSortOptions,
 } = require("./queries/formFolderQueries");
 const {
   Document,
@@ -611,7 +611,7 @@ exports.getFormsByFolder = async (req, res, next) => {
       type,
       created_by,
       status,
-      sortBy
+      sortBy,
     });
 
     const result = await getAllForms({
@@ -804,10 +804,12 @@ exports.toggleFormPrivacy = async (req, res, next) => {
     );
 
     return generateResponse(
-      { 
-        formId, 
+      {
+        formId,
         isPrivate: updatedForm.isPrivate,
-        message: updatedForm.isPrivate ? "Form is now private" : "Form is now public"
+        message: updatedForm.isPrivate
+          ? "Form is now private"
+          : "Form is now public",
       },
       "Form privacy updated successfully",
       res,
@@ -929,7 +931,7 @@ exports.getFolderFavorites = async (req, res, next) => {
       type,
       created_by,
       status,
-      sortBy
+      sortBy,
     });
 
     const result = await getAllForms({

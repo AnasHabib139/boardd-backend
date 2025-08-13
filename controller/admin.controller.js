@@ -2,9 +2,26 @@
 
 const { STATUS_CODES } = require("../utils/constants");
 const { generateResponse } = require("../utils");
-const { findUser, getAllUsers, aggregateUsers, updateUser } = require("../models/userModel");
-const { getAllInviteSlots, findInviteSlot, updateInviteSlot, findAvailableInviteSlot } = require("../models/inviteSlotModel");
-const { getCompanyUsersAdminQuery, getInvitedUsersQuery } = require("./queries/adminQueries");
+const {
+  findUser,
+  getAllUsers,
+  aggregateUsers,
+  updateUser,
+} = require("../models/userModel");
+const {
+  getAllInviteSlots,
+  findInviteSlot,
+  updateInviteSlot,
+  findAvailableInviteSlot,
+} = require("../models/inviteSlotModel");
+const { findCompany, updateCompany } = require("../models/companyModel");
+const crypto = require("crypto");
+const Mailer = require("../utils/mailer");
+const { generateOwnershipTransferEmail } = require("../utils/emailTemplates");
+const {
+  getCompanyUsersAdminQuery,
+  getInvitedUsersQuery,
+} = require("./queries/adminQueries");
 
 /**
  * Get all company users for admin management
@@ -25,7 +42,11 @@ exports.getCompanyUsersAdmin = async (req, res, next) => {
     }
 
     // Build aggregation query - exclude logged-in user and only show active users
-    const aggregationQuery = getCompanyUsersAdminQuery(admin.companyId, search, userId);
+    const aggregationQuery = getCompanyUsersAdminQuery(
+      admin.companyId,
+      search,
+      userId
+    );
 
     // Get users with pagination
     const result = await getAllUsers({
@@ -41,7 +62,6 @@ exports.getCompanyUsersAdmin = async (req, res, next) => {
       res,
       STATUS_CODES.SUCCESS
     );
-
   } catch (error) {
     console.error("Error in getCompanyUsersAdmin:", error);
     return next({
@@ -86,7 +106,6 @@ exports.getInvitedUsers = async (req, res, next) => {
       res,
       STATUS_CODES.SUCCESS
     );
-
   } catch (error) {
     console.error("Error in getInvitedUsers:", error);
     return next({
@@ -169,7 +188,6 @@ exports.cancelInvite = async (req, res, next) => {
       res,
       STATUS_CODES.SUCCESS
     );
-
   } catch (error) {
     console.error("Error in cancelInvite:", error);
     return next({
@@ -220,7 +238,7 @@ exports.toggleUserSeat = async (req, res, next) => {
 
     if (!targetUser.isActive) {
       // User is inactive -> Approve (activate user)
-      
+
       // Find an available slot (not reserved and not used)
       const availableSlot = await findAvailableInviteSlot({
         companyId: admin.companyId,
@@ -234,16 +252,10 @@ exports.toggleUserSeat = async (req, res, next) => {
       }
 
       // Mark the slot as used
-      await updateInviteSlot(
-        { _id: availableSlot._id },
-        { used: true }
-      );
+      await updateInviteSlot({ _id: availableSlot._id }, { used: true });
 
       // Activate the user
-      await updateUser(
-        { _id: targetUserId },
-        { isActive: true }
-      );
+      await updateUser({ _id: targetUserId }, { isActive: true });
 
       responseData = {
         user: {
@@ -256,10 +268,9 @@ exports.toggleUserSeat = async (req, res, next) => {
         slot: availableSlot.slot,
       };
       responseMessage = "User seat approved successfully";
-
     } else {
       // User is active -> Disapprove (deactivate user)
-      
+
       // Find a used slot to free up
       const usedSlot = await findInviteSlot({
         companyId: admin.companyId,
@@ -274,16 +285,10 @@ exports.toggleUserSeat = async (req, res, next) => {
       }
 
       // Free up the slot
-      await updateInviteSlot(
-        { _id: usedSlot._id },
-        { used: false }
-      );
+      await updateInviteSlot({ _id: usedSlot._id }, { used: false });
 
       // Deactivate the user
-      await updateUser(
-        { _id: targetUserId },
-        { isActive: false }
-      );
+      await updateUser({ _id: targetUserId }, { isActive: false });
 
       responseData = {
         user: {
@@ -304,7 +309,6 @@ exports.toggleUserSeat = async (req, res, next) => {
       res,
       STATUS_CODES.SUCCESS
     );
-
   } catch (error) {
     console.error("Error in toggleUserSeat:", error);
     return next({
@@ -314,3 +318,209 @@ exports.toggleUserSeat = async (req, res, next) => {
   }
 };
 
+const {
+  createOwnershipTransfer,
+  findOwnershipTransferByToken,
+  markOwnershipTransferUsed,
+} = require("../models/ownershipTransferModel");
+
+/**
+ * Initiate ownership transfer process
+ * Sends confirmation email to current owner
+ */
+exports.initiateOwnershipTransfer = async (req, res, next) => {
+  try {
+    const { newOwnerId } = req.body;
+    const currentAdminId = req.user.id;
+
+    // Get current admin user
+    const currentAdmin = await findUser({ _id: currentAdminId });
+    if (!currentAdmin) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Current admin not found",
+      });
+    }
+
+    // Get company details
+    const company = await findCompany({ _id: currentAdmin.companyId });
+    if (!company) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Company not found",
+      });
+    }
+
+    // Verify current user is the company admin
+    if (company.adminUser.toString() !== currentAdminId) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "Only the company owner can transfer ownership",
+      });
+    }
+
+    // Get new owner user
+    const newOwner = await findUser({ _id: newOwnerId });
+    if (!newOwner) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "New owner not found",
+      });
+    }
+
+    // Verify new owner belongs to same company
+    if (newOwner.companyId.toString() !== company._id.toString()) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "New owner must be a member of the same company",
+      });
+    }
+
+    // Check if new owner is already an admin
+    if (newOwner.role === "admin") {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "New owner is already an admin",
+      });
+    }
+
+    // Generate secure transfer token
+    const transferToken = crypto.randomBytes(32).toString("hex");
+
+    // Persist transfer record (24 hours expiry)
+    await createOwnershipTransfer({
+      token: transferToken,
+      companyId: company._id,
+      currentOwnerId: currentAdminId,
+      newOwnerId: newOwnerId,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+
+    // Create confirmation link (Frontend handles confirmation UI)
+    const confirmationLink = `${
+      process.env.FRONTEND_URL || "http://localhost:3000"
+    }/owner-transfer-confirm?token=${transferToken}`;
+
+    // Generate email template
+    const emailTemplate = generateOwnershipTransferEmail({
+      currentOwnerName: currentAdmin.name,
+      newOwnerName: newOwner.name,
+      newOwnerEmail: newOwner.email,
+      companyName: company.name,
+      confirmationLink,
+    });
+
+    // Send confirmation email
+    await Mailer.sendEmail({
+      email: currentAdmin.email,
+      subject: `🏢 Confirm Ownership Transfer - ${company.name}`,
+      message: emailTemplate.text,
+      html: emailTemplate.html,
+    });
+
+    return generateResponse(
+      {
+        message: "Transfer initiated successfully",
+        newOwner: {
+          _id: newOwner._id,
+          name: newOwner.name,
+          email: newOwner.email,
+        },
+        confirmationSentTo: currentAdmin.email,
+      },
+      "Ownership transfer initiated. Please check your email to confirm.",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in initiateOwnershipTransfer:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Confirm ownership transfer via token (public JSON API)
+ */
+exports.confirmOwnershipTransfer = async (req, res, next) => {
+  try {
+    const { token } = req.body;
+
+    // Load token from DB
+    const transferDoc = await findOwnershipTransferByToken(token);
+    if (!transferDoc) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Invalid or expired transfer token",
+      });
+    }
+
+    // Check if token already used or expired
+    if (transferDoc.used) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Transfer link has already been used",
+      });
+    }
+
+    if (new Date() > transferDoc.expiresAt) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Transfer link has expired",
+      });
+    }
+
+    // Get company and users
+    const company = await findCompany({ _id: transferDoc.companyId });
+    const currentOwner = await findUser({ _id: transferDoc.currentOwnerId });
+    const newOwner = await findUser({ _id: transferDoc.newOwnerId });
+
+    if (!company || !currentOwner || !newOwner) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Unable to find company or user information",
+      });
+    }
+
+    // Perform the ownership transfer
+    // 1. Update company adminUser
+    await updateCompany({ _id: company._id }, { adminUser: newOwner._id });
+
+    // 2. Update current owner role to employee
+    await updateUser({ _id: currentOwner._id }, { role: "employee" });
+
+    // 3. Update new owner role to admin
+    await updateUser({ _id: newOwner._id }, { role: "admin" });
+
+    // Mark token used
+    await markOwnershipTransferUsed(token);
+
+    // Return JSON success
+    return generateResponse(
+      {
+        company: { _id: company._id, name: company.name },
+        newOwner: {
+          _id: newOwner._id,
+          name: newOwner.name,
+          email: newOwner.email,
+        },
+        previousOwner: {
+          _id: currentOwner._id,
+          name: currentOwner.name,
+          email: currentOwner.email,
+        },
+      },
+      "Ownership transfer confirmed",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in confirmOwnershipTransfer:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};

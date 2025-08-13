@@ -8,6 +8,22 @@ const toggleUserSeatValidation = Joi.object({
   }),
 });
 
+// Validation for initiating ownership transfer
+const initiateOwnershipTransferValidation = Joi.object({
+  newOwnerId: Joi.string().trim().required().messages({
+    "string.empty": "New owner ID is required",
+    "any.required": "New owner ID is required",
+  }),
+});
+
+// Validation for confirming ownership transfer (public)
+const confirmOwnershipTransferValidation = Joi.object({
+  token: Joi.string().trim().required().messages({
+    "string.empty": "Token is required",
+    "any.required": "Token is required",
+  }),
+});
+
 // Validation middleware function
 const validateRequest = (schema, source = "body") => {
   return (req, res, next) => {
@@ -47,9 +63,17 @@ const validateRequest = (schema, source = "body") => {
 
 module.exports = {
   validateToggleUserSeat: validateRequest(toggleUserSeatValidation),
-  
+  validateInitiateOwnershipTransfer: validateRequest(
+    initiateOwnershipTransferValidation
+  ),
+  validateConfirmOwnershipTransfer: validateRequest(
+    confirmOwnershipTransferValidation
+  ),
+
   // Export schemas for testing or custom usage
   schemas: {
     toggleUserSeatValidation,
+    initiateOwnershipTransferValidation,
+    confirmOwnershipTransferValidation,
   },
 };
