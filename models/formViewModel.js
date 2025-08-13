@@ -1,6 +1,9 @@
 "use strict";
 
 const { Schema, model, Types } = require("mongoose");
+const mongoosePaginate = require("mongoose-paginate-v2");
+const aggregatePaginate = require("mongoose-aggregate-paginate-v2");
+const { getMongooseAggregatePaginatedData } = require("../utils");
 
 const formViewSchema = new Schema({
   userId: { type: Types.ObjectId, ref: "User", required: true },
@@ -11,6 +14,10 @@ const formViewSchema = new Schema({
 // Unique per user per form
 formViewSchema.index({ userId: 1, formId: 1 }, { unique: true });
 formViewSchema.index({ lastViewedAt: -1 });
+
+// Add plugins
+formViewSchema.plugin(mongoosePaginate);
+formViewSchema.plugin(aggregatePaginate);
 
 const FormViewModel = model("FormView", formViewSchema);
 
@@ -32,6 +39,24 @@ exports.upsertFormView = async ({ userId, formId, when = new Date() }) => {
   );
 
   return result;
+};
+
+// Get all recently viewed items with pagination (following convention)
+exports.getAllRecentlyViewed = async ({ 
+  query, 
+  page, 
+  limit, 
+  responseKey = "items",
+  sort = { lastViewedAt: -1 } 
+}) => {
+  const { data, pagination } = await getMongooseAggregatePaginatedData({
+    model: FormViewModel,
+    query,
+    page,
+    limit,
+    sort,
+  });
+  return { [responseKey]: data, pagination };
 };
 
 exports.findFormView = (query) => FormViewModel.findOne(query);

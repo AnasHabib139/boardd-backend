@@ -39,6 +39,7 @@ const { getTaskByIdQuery } = require("./queries/tasksQueries");
 const { getAllTasks } = require("../models/taskModel");
 const Mailer = require("../utils/mailer");
 const { generateTaskShareEmail } = require("../utils/emailTemplates");
+const { upsertTaskView } = require("../models/taskViewModel");
 
 // Helper function to parse date strings
 const parseDate = (dateString) => {
@@ -508,8 +509,24 @@ exports.getTaskById = async (req, res, next) => {
       });
     }
 
+    const task = result.task[0];
+
+    // Track last viewed (non-blocking) - only if user is authenticated
+    if (userId) {
+      upsertTaskView({ userId, taskId, when: new Date() }).catch((e) => {
+        console.error(
+          "Failed to record last viewed for task",
+          taskId,
+          "by user",
+          userId,
+          "Error:",
+          e?.message
+        );
+      });
+    }
+
     return generateResponse(
-      result.task[0],
+      task,
       "Task fetched successfully",
       res,
       STATUS_CODES.SUCCESS
