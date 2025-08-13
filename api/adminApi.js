@@ -5,9 +5,13 @@ const {
   getCompanyUsersAdmin,
   getInvitedUsers,
   cancelInvite,
+  toggleUserSeat,
 } = require("../controller/admin.controller");
 const { ROLES } = require("../utils/constants");
 const Auth = require("../middlewares/Auth");
+const {
+  validateToggleUserSeat,
+} = require("../validation/adminValidation");
 
 class AdminAPI {
   constructor() {
@@ -37,6 +41,14 @@ class AdminAPI {
       "/cancel-invite/:slotId",
       Auth([ROLES.ADMIN]),
       cancelInvite
+    );
+
+    // Toggle user seat status (approve/disapprove)
+    router.post(
+      "/toggle-seat",
+      Auth([ROLES.ADMIN]),
+      validateToggleUserSeat,
+      toggleUserSeat
     );
   }
 

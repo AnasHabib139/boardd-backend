@@ -2,8 +2,8 @@
 
 const { STATUS_CODES } = require("../utils/constants");
 const { generateResponse } = require("../utils");
-const { findUser, getAllUsers, aggregateUsers } = require("../models/userModel");
-const { getAllInviteSlots, findInviteSlot, updateInviteSlot } = require("../models/inviteSlotModel");
+const { findUser, getAllUsers, aggregateUsers, updateUser } = require("../models/userModel");
+const { getAllInviteSlots, findInviteSlot, updateInviteSlot, findAvailableInviteSlot } = require("../models/inviteSlotModel");
 const { getCompanyUsersAdminQuery, getInvitedUsersQuery } = require("./queries/adminQueries");
 
 /**
@@ -172,6 +172,141 @@ exports.cancelInvite = async (req, res, next) => {
 
   } catch (error) {
     console.error("Error in cancelInvite:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Toggle user seat status (approve/disapprove)
+ * If user is inactive -> approve (activate user and use slot)
+ * If user is active -> disapprove (deactivate user and free slot)
+ */
+exports.toggleUserSeat = async (req, res, next) => {
+  try {
+    const { userId: targetUserId } = req.body;
+    const adminId = req.user.id;
+
+    // Get admin user
+    const admin = await findUser({ _id: adminId });
+    if (!admin) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Admin user not found",
+      });
+    }
+
+    // Find the target user
+    const targetUser = await findUser({ _id: targetUserId });
+    if (!targetUser) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Verify user belongs to admin's company
+    if (targetUser.companyId.toString() !== admin.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You can only manage users from your own company",
+      });
+    }
+
+    let responseData;
+    let responseMessage;
+
+    if (!targetUser.isActive) {
+      // User is inactive -> Approve (activate user)
+      
+      // Find an available slot (not reserved and not used)
+      const availableSlot = await findAvailableInviteSlot({
+        companyId: admin.companyId,
+      });
+
+      if (!availableSlot) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "No available seats to approve this user",
+        });
+      }
+
+      // Mark the slot as used
+      await updateInviteSlot(
+        { _id: availableSlot._id },
+        { used: true }
+      );
+
+      // Activate the user
+      await updateUser(
+        { _id: targetUserId },
+        { isActive: true }
+      );
+
+      responseData = {
+        user: {
+          _id: targetUser._id,
+          name: targetUser.name,
+          email: targetUser.email,
+          isActive: true,
+        },
+        action: "approved",
+        slot: availableSlot.slot,
+      };
+      responseMessage = "User seat approved successfully";
+
+    } else {
+      // User is active -> Disapprove (deactivate user)
+      
+      // Find a used slot to free up
+      const usedSlot = await findInviteSlot({
+        companyId: admin.companyId,
+        used: true,
+      });
+
+      if (!usedSlot) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "No used slots found to free up",
+        });
+      }
+
+      // Free up the slot
+      await updateInviteSlot(
+        { _id: usedSlot._id },
+        { used: false }
+      );
+
+      // Deactivate the user
+      await updateUser(
+        { _id: targetUserId },
+        { isActive: false }
+      );
+
+      responseData = {
+        user: {
+          _id: targetUser._id,
+          name: targetUser.name,
+          email: targetUser.email,
+          isActive: false,
+        },
+        action: "disapproved",
+        slot: usedSlot.slot,
+      };
+      responseMessage = "User seat removed successfully";
+    }
+
+    return generateResponse(
+      responseData,
+      responseMessage,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+
+  } catch (error) {
+    console.error("Error in toggleUserSeat:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,
