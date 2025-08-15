@@ -8,6 +8,7 @@ const {
   shareTask,
   getTrendingTasks,
   getRecentActivities,
+  getUserTasksByFilter,
 } = require("../controller/task.controller");
 const Auth = require("../middlewares/Auth");
 const OptionalAuth = require("../middlewares/OptionalAuth");
@@ -19,6 +20,7 @@ const {
   validateShareTask,
   validateTrendingTasksQuery,
   validateRecentActivitiesQuery,
+  validateTaskFilterQuery,
 } = require("../validation/taskValidation");
 
 class TaskApi {
@@ -36,6 +38,14 @@ class TaskApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateCreateTask,
       createTask
+    );
+
+    // Get user tasks by filter (today/overdue/yesterday) - MUST be before /:taskId
+    router.get(
+      "/my-work",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
+      validateTaskFilterQuery,
+      getUserTasksByFilter
     );
 
     // Get task by ID with parameter validation (supports both authenticated and guest access)

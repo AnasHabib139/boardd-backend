@@ -35,7 +35,7 @@ const {
   handleCustomFieldsActivity,
   handleChecklistActivity,
 } = require("./helpers/tasks/task.helper");
-const { getTaskByIdQuery, getTrendingTasksQuery, getRecentActivitiesQuery } = require("./queries/tasksQueries");
+const { getTaskByIdQuery, getTrendingTasksQuery, getRecentActivitiesQuery, getUserTasksByFilterQuery } = require("./queries/tasksQueries");
 const { getAllTasks } = require("../models/taskModel");
 const Mailer = require("../utils/mailer");
 const { generateTaskShareEmail } = require("../utils/emailTemplates");
@@ -1031,6 +1031,62 @@ exports.getRecentActivities = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in getRecentActivities:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Get user tasks by filter (today/overdue/yesterday)
+ */
+exports.getUserTasksByFilter = async (req, res, next) => {
+  try {
+    const { 
+      filter, 
+      limit, 
+      page 
+    } = req.query;
+    const userId = req?.user?.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Get filtered tasks query
+    const query = getUserTasksByFilterQuery(userId, filter);
+
+    // Set sorting based on filter type
+    let sortOption = {};
+    if (filter === 'today' || filter === 'overdue') {
+      sortOption = { dueDate: 1 }; // Ascending order: earliest due date first
+    } else if (filter === 'yesterday') {
+      sortOption = { completedAt: -1 }; // Descending order: most recently completed first
+    }
+
+    // Execute query with pagination and sorting
+    const result = await getAllTasks({
+      query,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 20,
+      responseKey: `${filter}Tasks`,
+      sort: sortOption,
+    });
+
+    return generateResponse(
+      result,
+      `${filter.charAt(0).toUpperCase() + filter.slice(1)} tasks fetched successfully`,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getUserTasksByFilter:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

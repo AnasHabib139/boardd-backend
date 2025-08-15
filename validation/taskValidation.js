@@ -409,6 +409,19 @@ const recentActivitiesQueryValidation = Joi.object({
     }),
 });
 
+// Task filter query validation
+const taskFilterQueryValidation = Joi.object({
+  filter: Joi.string()
+    .valid('today', 'overdue', 'yesterday')
+    .required()
+    .messages({
+      "any.only": "Filter must be one of: today, overdue, yesterday",
+      "any.required": "Filter is required",
+    }),
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(50).default(20),
+});
+
 module.exports = {
   validateCreateTask: validateRequest(createTaskValidation),
   validateBatchUpdateTask: validateRequest(batchUpdateTaskValidation),
@@ -416,6 +429,7 @@ module.exports = {
   validateShareTask: validateRequest(shareTaskValidation),
   validateTrendingTasksQuery: validateRequest(trendingTasksQueryValidation, "query"),
   validateRecentActivitiesQuery: validateRequest(recentActivitiesQueryValidation, "query"),
+  validateTaskFilterQuery: validateRequest(taskFilterQueryValidation, "query"),
 
   // Export schemas for testing or custom usage
   schemas: {
@@ -426,5 +440,6 @@ module.exports = {
     shareTaskValidation,
     trendingTasksQueryValidation,
     recentActivitiesQueryValidation,
+    taskFilterQueryValidation,
   },
 };

@@ -872,3 +872,205 @@ exports.getRecentActivitiesQuery = (userId, { projectId, channelId } = {}) => {
 
   return query;
 };
+
+exports.getUserTasksByFilterQuery = (userId, filter) => {
+  const userObjectId = typeof userId === "string" ? new Types.ObjectId(userId) : userId;
+  
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+
+  let query = [];
+
+  if (filter === 'yesterday') {
+    // For yesterday - find tasks completed yesterday through activities
+    query = [
+      {
+        $match: {
+          isActive: true,
+          status: TASK_STATUS.COMPLETED,
+          // Simple access: only tasks assigned to me or created by me
+          $or: [
+            { assignedTo: userObjectId },
+            { createdBy: userObjectId },
+          ],
+        },
+      },
+      // Lookup activities to find completion timestamp
+      {
+        $lookup: {
+          from: "activities",
+          let: { taskId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$taskId", "$$taskId"] },
+                    { $eq: ["$field", "status"] },
+                    { $eq: ["$newValue", "completed"] },
+                    { $gte: ["$timestamp", yesterday] },
+                    { $lt: ["$timestamp", today] },
+                  ]
+                }
+              }
+            },
+            { $sort: { timestamp: -1 } },
+            { $limit: 1 }
+          ],
+          as: "completionActivity"
+        }
+      },
+      {
+        $match: {
+          "completionActivity.0": { $exists: true }
+        }
+      },
+      {
+        $addFields: {
+          completedAt: { $arrayElemAt: ["$completionActivity.timestamp", 0] }
+        }
+      }
+    ];
+  } else {
+    // For today and overdue - filter by due date
+    let dateFilter = {};
+    
+    if (filter === 'today') {
+      dateFilter = {
+        dueDate: {
+          $gte: today,
+          $lt: tomorrow
+        }
+      };
+    } else if (filter === 'overdue') {
+      dateFilter = {
+        dueDate: { $lt: today }
+      };
+    }
+
+    query = [
+      {
+        $match: {
+          isActive: true,
+          status: { $ne: TASK_STATUS.COMPLETED }, // Not completed for today/overdue
+          ...dateFilter,
+          // Simple access: only tasks assigned to me or created by me
+          $or: [
+            { assignedTo: userObjectId },
+            { createdBy: userObjectId },
+          ],
+        },
+      }
+    ];
+  }
+
+  // Common lookups for context path
+  query.push(
+    // Lookup project
+    {
+      $lookup: {
+        from: "projects",
+        localField: "projectId",
+        foreignField: "_id",
+        as: "project",
+      },
+    },
+    {
+      $addFields: {
+        project: { $arrayElemAt: ["$project", 0] },
+      },
+    },
+    // Lookup tab
+    {
+      $addFields: {
+        tabIdToLookup: {
+          $cond: {
+            if: { $ifNull: ["$project", false] },
+            then: "$project.tabId",
+            else: "$tabId",
+          },
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "channeltabs",
+        localField: "tabIdToLookup",
+        foreignField: "_id",
+        as: "tab",
+      },
+    },
+    {
+      $addFields: {
+        tab: { $arrayElemAt: ["$tab", 0] },
+      },
+    },
+    // Lookup channel
+    {
+      $addFields: {
+        channelIdToLookup: {
+          $cond: {
+            if: { $ifNull: ["$tab", false] },
+            then: "$tab.channelId",
+            else: "$channelId",
+          },
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "channels",
+        localField: "channelIdToLookup",
+        foreignField: "_id",
+        as: "channel",
+      },
+    },
+    {
+      $addFields: {
+        channel: { $arrayElemAt: ["$channel", 0] },
+      },
+    }
+  );
+
+  // No additional access filter needed - already filtered by assignedTo/createdBy
+
+  // Final projection
+  const baseProjection = {
+    _id: 1,
+    title: 1,
+    contextPath: {
+      $cond: {
+        if: { $ifNull: ["$project", false] },
+        then: {
+          $concat: [
+            { $ifNull: ["$channel.channelName", "Unknown Channel"] },
+            " / ",
+            { $ifNull: ["$tab.tabName", "Unknown Tab"] },
+            " / ",
+            { $ifNull: ["$project.name", "Project"] },
+          ],
+        },
+        else: {
+          $concat: [
+            { $ifNull: ["$channel.channelName", "Unknown Channel"] },
+            " / Open",
+          ],
+        },
+      },
+    },
+  };
+
+  if (filter === 'yesterday') {
+    baseProjection.completedAt = 1;
+  } else {
+    baseProjection.dueDate = 1;
+  }
+
+  query.push({
+    $project: baseProjection,
+  });
+
+  return query;
+};
