@@ -633,3 +633,242 @@ exports.getTrendingTasksQuery = (userId, { timeframe = 'all', projectId, channel
 
   return query;
 };
+
+exports.getRecentActivitiesQuery = (userId, { projectId, channelId } = {}) => {
+  const userObjectId = typeof userId === "string" ? new Types.ObjectId(userId) : userId;
+  
+  const query = [
+    // Start with task views for this user (all viewed tasks)
+    {
+      $match: {
+        userId: userObjectId,
+      },
+    },
+  ];
+
+  // Lookup the actual task and filter active tasks (including completed ones for recent activities)
+  query.push(
+    {
+      $lookup: {
+        from: "tasks",
+        localField: "taskId",
+        foreignField: "_id",
+        as: "task",
+        pipeline: [{ 
+          $match: { 
+            isActive: true, // Only active tasks, but all statuses
+          } 
+        }],
+      },
+    },
+    {
+      $unwind: "$task",
+    }
+  );
+
+  // Add filters if provided
+  if (projectId) {
+    query.push({
+      $match: {
+        "task.projectId": new Types.ObjectId(projectId)
+      }
+    });
+  }
+
+  if (channelId) {
+    query.push({
+      $match: {
+        "task.channelId": new Types.ObjectId(channelId)
+      }
+    });
+  }
+
+  // Lookup project, tab, and channel for context
+  query.push(
+    {
+      $lookup: {
+        from: "projects",
+        localField: "task.projectId",
+        foreignField: "_id",
+        as: "project",
+      },
+    },
+    {
+      $addFields: {
+        project: { $arrayElemAt: ["$project", 0] },
+      },
+    },
+    {
+      $addFields: {
+        tabIdToLookup: {
+          $cond: {
+            if: { $ifNull: ["$project", false] },
+            then: "$project.tabId",
+            else: "$task.tabId",
+          },
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "channeltabs",
+        localField: "tabIdToLookup",
+        foreignField: "_id",
+        as: "tab",
+      },
+    },
+    {
+      $addFields: {
+        tab: { $arrayElemAt: ["$tab", 0] },
+      },
+    },
+    {
+      $addFields: {
+        channelIdToLookup: {
+          $cond: {
+            if: { $ifNull: ["$tab", false] },
+            then: "$tab.channelId",
+            else: "$task.channelId",
+          },
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "channels",
+        localField: "channelIdToLookup",
+        foreignField: "_id",
+        as: "channel",
+      },
+    },
+    {
+      $addFields: {
+        channel: { $arrayElemAt: ["$channel", 0] },
+      },
+    }
+  );
+
+  // Filter tasks user has access to
+  query.push({
+    $match: {
+      $or: [
+        { "task.assignedTo": userObjectId },
+        { "task.createdBy": userObjectId },
+        { "tab.members": userObjectId },
+        { "channel.members": userObjectId },
+      ],
+    },
+  });
+
+  // Lookup task creator
+  query.push(
+    {
+      $lookup: {
+        from: "users",
+        localField: "task.createdBy",
+        foreignField: "_id",
+        as: "creator",
+      },
+    },
+    {
+      $addFields: {
+        creator: { $arrayElemAt: ["$creator", 0] },
+      },
+    }
+  );
+
+  // Lookup activities (top 2 recent activities per task)
+  query.push({
+    $lookup: {
+      from: "activities",
+      let: { taskId: "$task._id" },
+      pipeline: [
+        {
+          $match: {
+            $expr: { $eq: ["$taskId", "$$taskId"] },
+          },
+        },
+        // Lookup user details for each activity
+        {
+          $lookup: {
+            from: "users",
+            localField: "userId",
+            foreignField: "_id",
+            as: "user",
+          },
+        },
+        {
+          $unwind: {
+            path: "$user",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        // Project activity fields including user details
+        {
+          $project: {
+            _id: 1,
+            message: 1,
+            timestamp: 1,
+            actionType: 1,
+            field: 1,
+            previousValue: 1,
+            newValue: 1,
+            userId: 1,
+            user: {
+              _id: "$user._id",
+              name: "$user.name",
+              email: "$user.email",
+              role: "$user.role",
+            },
+          },
+        },
+        { $sort: { timestamp: -1 } },
+        { $limit: 2 }, // Only top 2 recent activities
+      ],
+      as: "activities",
+    },
+  });
+
+  // Final projection
+  query.push({
+    $project: {
+      _id: "$task._id",
+      title: "$task.title",
+      description: "$task.description",
+      status: "$task.status",
+      priority: "$task.priority",
+      dueDate: "$task.dueDate",
+      clickCount: 1,
+      lastViewedAt: 1,
+      firstViewedAt: 1,
+      contextPath: {
+        $cond: {
+          if: { $ifNull: ["$project", false] },
+          then: {
+            $concat: [
+              { $ifNull: ["$channel.channelName", "Unknown Channel"] },
+              " / ",
+              { $ifNull: ["$tab.tabName", "Unknown Tab"] },
+              " / ",
+              { $ifNull: ["$project.name", "Project"] },
+            ],
+          },
+          else: {
+            $concat: [
+              { $ifNull: ["$channel.channelName", "Unknown Channel"] },
+              " / Open",
+            ],
+          },
+        },
+      },
+      creator: {
+        _id: "$creator._id",
+        name: "$creator.name",
+        email: "$creator.email",
+      },
+      activities: 1, // Include the activities array (already processed in lookup)
+    },
+  });
+
+  return query;
+};

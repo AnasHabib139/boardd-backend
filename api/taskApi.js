@@ -7,6 +7,7 @@ const {
   batchUpdateTask,
   shareTask,
   getTrendingTasks,
+  getRecentActivities,
 } = require("../controller/task.controller");
 const Auth = require("../middlewares/Auth");
 const OptionalAuth = require("../middlewares/OptionalAuth");
@@ -17,6 +18,7 @@ const {
   validateTaskIdParam,
   validateShareTask,
   validateTrendingTasksQuery,
+  validateRecentActivitiesQuery,
 } = require("../validation/taskValidation");
 
 class TaskApi {
@@ -68,6 +70,14 @@ class TaskApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
       validateTrendingTasksQuery,
       getTrendingTasks
+    );
+
+    // Get recent activities for user (all viewed tasks sorted by most recent view)
+    router.get(
+      "/recent/activities",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
+      validateRecentActivitiesQuery,
+      getRecentActivities
     );
   }
 

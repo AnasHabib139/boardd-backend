@@ -35,7 +35,7 @@ const {
   handleCustomFieldsActivity,
   handleChecklistActivity,
 } = require("./helpers/tasks/task.helper");
-const { getTaskByIdQuery, getTrendingTasksQuery } = require("./queries/tasksQueries");
+const { getTaskByIdQuery, getTrendingTasksQuery, getRecentActivitiesQuery } = require("./queries/tasksQueries");
 const { getAllTasks } = require("../models/taskModel");
 const Mailer = require("../utils/mailer");
 const { generateTaskShareEmail } = require("../utils/emailTemplates");
@@ -982,6 +982,55 @@ exports.getTrendingTasks = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in getTrendingTasks:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Get recent activities for user (all viewed tasks sorted by most recent view)
+ */
+exports.getRecentActivities = async (req, res, next) => {
+  try {
+    const { 
+      limit, 
+      page, 
+      projectId, 
+      channelId 
+    } = req.query;
+    const userId = req?.user?.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Get recent activities query
+    const query = getRecentActivitiesQuery(userId, { projectId, channelId });
+
+    // Execute query with pagination (sorted by lastViewedAt descending)
+    const result = await getTrendingTasks({
+      query,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 20,
+      responseKey: "recentActivities",
+      sort: { lastViewedAt: -1 }, // Sort by most recent view first
+    });
+
+    return generateResponse(
+      result,
+      "Recent activities fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getRecentActivities:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

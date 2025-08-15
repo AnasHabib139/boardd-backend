@@ -391,12 +391,31 @@ const trendingTasksQueryValidation = Joi.object({
     }),
 });
 
+// Recent activities query validation
+const recentActivitiesQueryValidation = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(50).default(20),
+  projectId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .optional()
+    .messages({
+      "string.pattern.base": "Invalid project ID format",
+    }),
+  channelId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .optional()
+    .messages({
+      "string.pattern.base": "Invalid channel ID format",
+    }),
+});
+
 module.exports = {
   validateCreateTask: validateRequest(createTaskValidation),
   validateBatchUpdateTask: validateRequest(batchUpdateTaskValidation),
   validateTaskIdParam: validateRequest(taskIdParamValidation, "params"),
   validateShareTask: validateRequest(shareTaskValidation),
   validateTrendingTasksQuery: validateRequest(trendingTasksQueryValidation, "query"),
+  validateRecentActivitiesQuery: validateRequest(recentActivitiesQueryValidation, "query"),
 
   // Export schemas for testing or custom usage
   schemas: {
@@ -406,5 +425,6 @@ module.exports = {
     customFieldSchema,
     shareTaskValidation,
     trendingTasksQueryValidation,
+    recentActivitiesQueryValidation,
   },
 };
