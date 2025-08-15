@@ -52,6 +52,42 @@ const updateUserSettingsSchema = Joi.object({
       "string.empty": "Nickname cannot be empty"
     }),
 
+  // Job title field (optional)
+  title: Joi.string()
+    .trim()
+    .min(2)
+    .max(100)
+    .optional()
+    .messages({
+      "string.min": "Title must be at least 2 characters long",
+      "string.max": "Title cannot exceed 100 characters",
+      "string.empty": "Title cannot be empty"
+    }),
+
+  // Professional designation field (optional)
+  designation: Joi.string()
+    .trim()
+    .min(2)
+    .max(100)
+    .optional()
+    .messages({
+      "string.min": "Designation must be at least 2 characters long",
+      "string.max": "Designation cannot exceed 100 characters",
+      "string.empty": "Designation cannot be empty"
+    }),
+
+  // User bio/description field (optional)
+  description: Joi.string()
+    .trim()
+    .min(10)
+    .max(500)
+    .optional()
+    .messages({
+      "string.min": "Description must be at least 10 characters long",
+      "string.max": "Description cannot exceed 500 characters",
+      "string.empty": "Description cannot be empty"
+    }),
+
   // Theme settings
   theme: Joi.object({
     color: Joi.string()

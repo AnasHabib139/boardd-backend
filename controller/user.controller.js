@@ -326,6 +326,9 @@ exports.updateUserSettings = async (req, res, next) => {
     const {
       name,
       nickname,
+      title,
+      designation,
+      description,
       oldPassword,
       newPassword,
       theme,
@@ -353,6 +356,18 @@ exports.updateUserSettings = async (req, res, next) => {
     
     if (nickname !== undefined) {
       updateData.nickname = nickname;
+    }
+
+    if (title !== undefined) {
+      updateData.title = title;
+    }
+
+    if (designation !== undefined) {
+      updateData.designation = designation;
+    }
+
+    if (description !== undefined) {
+      updateData.description = description;
     }
 
     // Handle password update

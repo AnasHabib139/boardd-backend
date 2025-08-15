@@ -124,6 +124,9 @@ const userSchema = new Schema(
     },
     name: { type: String, required: true },
     nickname: { type: String, trim: true, maxlength: 50 },
+    title: { type: String, trim: true, maxlength: 100 }, // Job title or position
+    designation: { type: String, trim: true, maxlength: 100 }, // Professional designation or role
+    description: { type: String, trim: true, maxlength: 500 }, // User bio/description
     dob: { type: Date },
     email: {
       type: String,
