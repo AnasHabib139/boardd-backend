@@ -35,11 +35,11 @@ const {
   handleCustomFieldsActivity,
   handleChecklistActivity,
 } = require("./helpers/tasks/task.helper");
-const { getTaskByIdQuery } = require("./queries/tasksQueries");
+const { getTaskByIdQuery, getTrendingTasksQuery } = require("./queries/tasksQueries");
 const { getAllTasks } = require("../models/taskModel");
 const Mailer = require("../utils/mailer");
 const { generateTaskShareEmail } = require("../utils/emailTemplates");
-const { upsertTaskView } = require("../models/taskViewModel");
+const { upsertTaskView, getTrendingTasks, TaskViewModel } = require("../models/taskViewModel");
 
 // Helper function to parse date strings
 const parseDate = (dateString) => {
@@ -935,6 +935,56 @@ exports.shareTask = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to share task",
+    });
+  }
+};
+
+/**
+ * Get trending tasks for user (most clicked incomplete tasks)
+ */
+exports.getTrendingTasks = async (req, res, next) => {
+  try {
+    const { 
+      limit, 
+      page, 
+      timeframe = 'all', 
+      projectId, 
+      channelId 
+    } = req.query;
+    const userId = req?.user?.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Get trending tasks query
+    const query = getTrendingTasksQuery(userId, { timeframe, projectId, channelId });
+
+    // Execute query with pagination
+    const result = await getTrendingTasks({
+      query,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 20,
+      responseKey: "trendingTasks",
+      sort: { clickCount: -1, lastViewedAt: -1 },
+    });
+
+    return generateResponse(
+      result,
+      "Trending tasks fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getTrendingTasks:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
     });
   }
 };

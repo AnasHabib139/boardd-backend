@@ -6,6 +6,7 @@ const {
   getTaskById,
   batchUpdateTask,
   shareTask,
+  getTrendingTasks,
 } = require("../controller/task.controller");
 const Auth = require("../middlewares/Auth");
 const OptionalAuth = require("../middlewares/OptionalAuth");
@@ -15,6 +16,7 @@ const {
   validateBatchUpdateTask,
   validateTaskIdParam,
   validateShareTask,
+  validateTrendingTasksQuery,
 } = require("../validation/taskValidation");
 
 class TaskApi {
@@ -58,6 +60,14 @@ class TaskApi {
       validateTaskIdParam,
       validateShareTask,
       shareTask
+    );
+
+    // Get trending tasks for user (most clicked incomplete tasks)
+    router.get(
+      "/trending/list",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
+      validateTrendingTasksQuery,
+      getTrendingTasks
     );
   }
 
