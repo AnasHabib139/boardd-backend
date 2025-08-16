@@ -4,6 +4,7 @@ const { Router } = require("express");
 const {
   CreateProject,
   getProjectsOfTab,
+  getProjectById,
   toggleProjectPin,
   toggleProjectStatus,
   deleteProjectById,
@@ -41,6 +42,14 @@ class ProjectAPI {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.VIEWER]),
       validateGetProjectsQuery,
       getProjectsOfTab
+    );
+
+    // Get project by ID
+    router.get(
+      "/:projectId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.VIEWER]),
+      validateProjectIdParam,
+      getProjectById
     );
 
     // Toggle project pin status

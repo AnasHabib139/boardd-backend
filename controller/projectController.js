@@ -707,6 +707,63 @@ exports.deleteProjectById = async (req, res, next) => {
 };
 
 /**
+ * Get project by ID
+ */
+exports.getProjectById = async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req?.user?.id;
+
+    // Find project
+    const project = await findProject({ _id: projectId });
+    if (!project) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Project not found",
+      });
+    }
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Check if user has access to the project (via tab membership)
+    const tab = await findChannelTab({ _id: project.tabId });
+    if (!tab) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Project tab not found",
+      });
+    }
+
+    if (!tab?.members?.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You don't have access to this project",
+      });
+    }
+
+    return generateResponse(
+      project,
+      "Project fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getProjectById:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
  * Update project details
  */
 exports.updateProjectById = async (req, res, next) => {
