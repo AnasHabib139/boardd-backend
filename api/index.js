@@ -20,6 +20,7 @@ const WorkProgressApi = require("./workProgressApi");
 const TeamCardApi = require("./teamCardApi");
 const AdminApi = require("./adminApi");
 const HomeApi = require("./homeApi");
+const ClockupApi = require("./clockupApi");
 // all API routing files import here like above
 
 class API {
@@ -48,6 +49,7 @@ class API {
     this.routeGroups.push(new TeamCardApi());
     this.routeGroups.push(new AdminApi());
     this.routeGroups.push(new HomeApi());
+    this.routeGroups.push(new ClockupApi());
     // all routes register here like above
   }
 
