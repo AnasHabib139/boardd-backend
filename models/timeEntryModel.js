@@ -2,7 +2,9 @@
 
 const { Schema, model, Types } = require("mongoose");
 const mongoosePaginate = require("mongoose-paginate-v2");
+const aggregatePaginate = require("mongoose-aggregate-paginate-v2");
 const { calculateDurationMinutes } = require("../controller/helpers/timeHelper");
+const { getMongooseAggregatePaginatedData } = require("../utils");
 
 const timeEntrySchema = new Schema({
   userId: { 
@@ -54,8 +56,9 @@ timeEntrySchema.index({ userId: 1, createdAt: -1 });
 timeEntrySchema.index({ userId: 1, isActive: 1 });
 timeEntrySchema.index({ startTime: 1 });
 
-// Add pagination plugin
+// Add pagination plugins
 timeEntrySchema.plugin(mongoosePaginate);
+timeEntrySchema.plugin(aggregatePaginate);
 
 // Pre-save middleware to calculate totalTime and update updatedAt
 timeEntrySchema.pre('save', function(next) {
@@ -112,33 +115,14 @@ exports.findActiveTimeEntry = async (userId) => {
   });
 };
 
-exports.getAllTimeEntries = async ({ query, page, limit, responseKey = "timeEntries", sort = { createdAt: -1 } }) => {
-  const options = {
-    page: page || 1,
-    limit: limit || 20,
-    sort,
-    populate: {
-      path: 'userId',
-      select: 'name email'
-    }
-  };
-
-  const result = await TimeEntry.paginate(query, options);
-  
-  return {
-    [responseKey]: result.docs,
-    pagination: {
-      totalItems: result.totalDocs,
-      perPage: result.limit,
-      currentPage: result.page,
-      totalPages: result.totalPages,
-      pagingCounter: result.pagingCounter,
-      hasPrevPage: result.hasPrevPage,
-      hasNextPage: result.hasNextPage,
-      prevPage: result.prevPage,
-      nextPage: result.nextPage,
-    }
-  };
+exports.getAllTimeEntries = async ({ query, page, limit, responseKey = "timeEntries" }) => {
+  const { data, pagination } = await getMongooseAggregatePaginatedData({
+    model: TimeEntry,
+    query,
+    page,
+    limit,
+  });
+  return { [responseKey]: data, pagination };
 };
 
 exports.TimeEntry = TimeEntry;
