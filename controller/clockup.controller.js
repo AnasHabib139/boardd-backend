@@ -211,29 +211,34 @@ exports.editTimeEntry = async (req, res, next) => {
 
     // Handle start time change
     if (startTime) {
-      const result = handleStartTimeChange(timeEntry.startTime, timeEntry.endTime, startTime);
+      const currentDaysAdded = timeEntry.daysAdded || 0;
+      const result = handleStartTimeChange(timeEntry.startTime, timeEntry.endTime, startTime, currentDaysAdded);
       newStartTime = result.newStartTime;
       newEndTime = result.newEndTime;
       daysAdded = result.daysAdded;
       
       updateData.startTime = newStartTime;
       updateData.endTime = newEndTime;
+      updateData.daysAdded = daysAdded;
     }
     // Handle end time change
     else if (endTime) {
-      const result = handleEndTimeChange(timeEntry.startTime, timeEntry.endTime, endTime);
+      const currentDaysAdded = timeEntry.daysAdded || 0;
+      const result = handleEndTimeChange(timeEntry.startTime, timeEntry.endTime, endTime, currentDaysAdded);
       newEndTime = result.newEndTime;
       daysAdded = result.daysAdded;
       
       updateData.endTime = newEndTime;
+      updateData.daysAdded = daysAdded;
     }
     // Handle total time change
     else if (totalTime) {
-      const result = handleTotalTimeChange(timeEntry.startTime, timeEntry.endTime, totalTime);
+      const result = handleTotalTimeChange(timeEntry.startTime, totalTime);
       newEndTime = result.newEndTime;
       daysAdded = result.daysAdded;
       
       updateData.endTime = newEndTime;
+      updateData.daysAdded = daysAdded;
     }
 
     // Calculate final total time in minutes
@@ -254,7 +259,7 @@ exports.editTimeEntry = async (req, res, next) => {
           endTime: updatedEntry.endTime,
           totalTime: updatedEntry.totalTime, // In minutes
           totalTimeFormatted: formatDuration(updatedEntry.totalTime), // HH:MM:SS format
-          daysAdded: daysAdded, // For frontend to show +1, +2 badges
+          daysAdded: updatedEntry.daysAdded, // Stored in DB for persistence
           isActive: updatedEntry.isActive,
         }
       },

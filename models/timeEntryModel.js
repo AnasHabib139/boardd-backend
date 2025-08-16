@@ -31,6 +31,10 @@ const timeEntrySchema = new Schema({
     type: Number, // Duration in minutes (with decimal precision)
     default: 0 
   },
+  daysAdded: {
+    type: Number, // Number of days added to end time (0 = same day, 1 = next day, -1 = previous day)
+    default: 0
+  },
   isActive: { 
     type: Boolean, 
     default: true 

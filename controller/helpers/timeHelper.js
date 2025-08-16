@@ -58,15 +58,15 @@ const calculateDurationMinutes = (startTime, endTime) => {
  * Handle start time change - creates new start time preserving date
  * @param {Date} originalStartTime - Original start time (UTC from DB)
  * @param {Date} originalEndTime - Original end time (UTC from DB)
- * @param {string} newStartTimeString - New start time in HH:MM format (user's local time)
+ * @param {string} newStartTimeString - New start time in HH:MM format (treated as UTC)
+ * @param {number} currentDaysAdded - Current days added stored in DB
  * @returns {Object} - { newStartTime, newEndTime, daysAdded }
  */
-const handleStartTimeChange = (originalStartTime, originalEndTime, newStartTimeString) => {
-  // Since DB stores UTC, but user provides local time, we need to work in UTC
+const handleStartTimeChange = (originalStartTime, originalEndTime, newStartTimeString, currentDaysAdded = 0) => {
   const originalStartMoment = moment.utc(originalStartTime);
   const [newHours, newMinutes] = newStartTimeString.split(':').map(Number);
   
-  // Create new start time on same UTC date with the user's time
+  // Create new start time on same date as original start
   const newStartTime = originalStartMoment.clone()
     .utc()
     .hours(newHours)
@@ -74,13 +74,21 @@ const handleStartTimeChange = (originalStartTime, originalEndTime, newStartTimeS
     .seconds(0)
     .milliseconds(0);
   
-  // Keep original end time initially
-  let newEndTime = moment.utc(originalEndTime);
+  // Reset end time to original date (subtract current days added to get base end time)
+  const baseEndTime = moment.utc(originalEndTime).subtract(currentDaysAdded, 'days');
+  
+  // Apply the same time from original end time to the base date
+  let newEndTime = baseEndTime.clone()
+    .hours(moment.utc(originalEndTime).hours())
+    .minutes(moment.utc(originalEndTime).minutes())
+    .seconds(moment.utc(originalEndTime).seconds())
+    .milliseconds(moment.utc(originalEndTime).milliseconds());
+  
   let daysAdded = 0;
   
   // If new start time is after or equal to end time, move end time to next day
   if (newStartTime.isSameOrAfter(newEndTime)) {
-    newEndTime = newEndTime.clone().add(1, 'day');
+    newEndTime = newEndTime.add(1, 'day');
     daysAdded = 1;
   }
   
@@ -95,18 +103,16 @@ const handleStartTimeChange = (originalStartTime, originalEndTime, newStartTimeS
  * Handle end time change - creates new end time, adds day if needed
  * @param {Date} startTime - Current start time (UTC from DB)
  * @param {Date} originalEndTime - Original end time (UTC from DB)
- * @param {string} newEndTimeString - New end time in HH:MM format (user's local time)
+ * @param {string} newEndTimeString - New end time in HH:MM format (treated as UTC)
+ * @param {number} currentDaysAdded - Current days added stored in DB
  * @returns {Object} - { newEndTime, daysAdded }
  */
-const handleEndTimeChange = (startTime, originalEndTime, newEndTimeString) => {
-  // Since DB stores UTC, but user provides local time, we need to work in UTC
-  const originalEndMoment = moment.utc(originalEndTime);
+const handleEndTimeChange = (startTime, originalEndTime, newEndTimeString, currentDaysAdded = 0) => {
   const startMoment = moment.utc(startTime);
   const [newHours, newMinutes] = newEndTimeString.split(':').map(Number);
   
-  // Create new end time on same UTC date with the user's time
-  let newEndTime = originalEndMoment.clone()
-    .utc()
+  // Start with the same date as start time (reset to same day)
+  let newEndTime = startMoment.clone()
     .hours(newHours)
     .minutes(newMinutes)
     .seconds(0)
@@ -120,11 +126,6 @@ const handleEndTimeChange = (startTime, originalEndTime, newEndTimeString) => {
     daysAdded = 1;
   }
   
-  // Calculate days difference from original
-  const originalDays = moment.utc(originalEndTime).diff(startMoment, 'days');
-  const newDays = newEndTime.diff(startMoment, 'days');
-  daysAdded = newDays - originalDays;
-  
   return {
     newEndTime: newEndTime.toDate(),
     daysAdded
@@ -133,12 +134,12 @@ const handleEndTimeChange = (startTime, originalEndTime, newEndTimeString) => {
 
 /**
  * Handle total time change - calculates new end time based on duration
- * @param {Date} startTime - Current start time
+ * @param {Date} startTime - Current start time (UTC from DB)
  * @param {string} newTotalTimeString - New total time in HH:MM:SS format
  * @returns {Object} - { newEndTime, daysAdded }
  */
 const handleTotalTimeChange = (startTime, newTotalTimeString) => {
-  const startMoment = moment(startTime);
+  const startMoment = moment.utc(startTime);
   
   // Parse HH:MM:SS format
   const [hours, minutes, seconds] = newTotalTimeString.split(':').map(Number);
@@ -147,8 +148,10 @@ const handleTotalTimeChange = (startTime, newTotalTimeString) => {
   // Calculate new end time
   const newEndTime = startMoment.clone().add(totalMinutes, 'minutes');
   
-  // Calculate days added
-  const daysAdded = newEndTime.diff(startMoment, 'days');
+  // Calculate days added - check if end time crosses midnight
+  const startOfStartDay = startMoment.clone().startOf('day');
+  const startOfEndDay = newEndTime.clone().startOf('day');
+  const daysAdded = startOfEndDay.diff(startOfStartDay, 'days');
   
   return {
     newEndTime: newEndTime.toDate(),
