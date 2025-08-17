@@ -197,6 +197,52 @@ const parseUserTimeToUTC = (timeString, baseDate, timezone = 'UTC') => {
     .toDate();
 };
 
+/**
+ * Get ISO week start (Monday) and end (Sunday) dates for current week
+ * @returns {Object} - { start: Date, end: Date }
+ */
+const getThisWeekRange = () => {
+  const now = moment.utc();
+  const startOfWeek = now.clone().startOf('isoWeek'); // Monday
+  const endOfWeek = now.clone().endOf('isoWeek');     // Sunday
+  
+  return {
+    start: startOfWeek.toDate(),
+    end: endOfWeek.toDate()
+  };
+};
+
+/**
+ * Get ISO week start (Monday) and end (Sunday) dates for last week
+ * @returns {Object} - { start: Date, end: Date }
+ */
+const getLastWeekRange = () => {
+  const now = moment.utc();
+  const lastWeekStart = now.clone().subtract(1, 'week').startOf('isoWeek'); // Monday of last week
+  const lastWeekEnd = now.clone().subtract(1, 'week').endOf('isoWeek');     // Sunday of last week
+  
+  return {
+    start: lastWeekStart.toDate(),
+    end: lastWeekEnd.toDate()
+  };
+};
+
+/**
+ * Get week range based on filter type
+ * @param {string} weekFilter - 'this_week' or 'last_week'
+ * @returns {Object|null} - { start: Date, end: Date } or null if no filter
+ */
+const getWeekRange = (weekFilter) => {
+  switch (weekFilter) {
+    case 'this_week':
+      return getThisWeekRange();
+    case 'last_week':
+      return getLastWeekRange();
+    default:
+      return null;
+  }
+};
+
 module.exports = {
   parseTimeString,
   formatTime,
@@ -207,5 +253,8 @@ module.exports = {
   handleTotalTimeChange,
   isValidTimeFormat,
   toTimezone,
-  parseUserTimeToUTC
+  parseUserTimeToUTC,
+  getThisWeekRange,
+  getLastWeekRange,
+  getWeekRange
 };

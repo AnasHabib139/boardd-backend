@@ -1,17 +1,29 @@
 const { Types } = require("mongoose");
 
 // Get time entries for a specific user grouped by date
-exports.getUserTimeEntriesQuery = (userId) => {
+exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
   let queryArray = [];
+
+  // Build match criteria
+  const matchCriteria = {
+    userId: Types.ObjectId.createFromHexString(userId),
+    endTime: { $exists: true, $ne: null },
+    parentEntryId: null // Only parent entries
+  };
+
+  // Add week range filtering if provided
+  if (weekRange) {
+    matchCriteria.startTime = {
+      $gte: weekRange.start,
+      $lte: weekRange.end
+    };
+  }
 
   // Match time entries for the specific user that have endTime (completed entries only)
   // Only return parent entries (parentEntryId is null)
+  // Filter by week range if provided
   queryArray.push({
-    $match: {
-      userId: Types.ObjectId.createFromHexString(userId),
-      endTime: { $exists: true, $ne: null },
-      parentEntryId: null // Only parent entries
-    }
+    $match: matchCriteria
   });
 
   // Add lookup to count children entries

@@ -19,6 +19,7 @@ const {
   handleTotalTimeChange,
   calculateDurationMinutes,
   formatDuration,
+  getWeekRange,
 } = require("./helpers/timeHelper");
 const { getUserTimeEntriesQuery, getChildrenTimeEntriesQuery } = require("./queries/timeEntriesQueries");
 
@@ -446,7 +447,7 @@ exports.restartTimeEntry = async (req, res, next) => {
  */
 exports.getUserTimeEntries = async (req, res, next) => {
   try {
-    const { page, limit } = req.query;
+    const { page, limit, filter } = req.query;
     const userId = req?.user?.id;
 
     // Validate user exists
@@ -458,8 +459,20 @@ exports.getUserTimeEntries = async (req, res, next) => {
       });
     }
 
+    // Validate week filter if provided
+    const validFilters = ['this_week', 'last_week'];
+    if (filter && !validFilters.includes(filter)) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Invalid filter. Use 'this_week' or 'last_week'",
+      });
+    }
+
+    // Get week range for filtering
+    const weekRange = filter ? getWeekRange(filter) : null;
+
     // Get the aggregation query for user time entries
-    const query = getUserTimeEntriesQuery(userId);
+    const query = getUserTimeEntriesQuery(userId, weekRange);
 
     // Get paginated time entries
     const result = await getAllTimeEntries({
@@ -469,8 +482,21 @@ exports.getUserTimeEntries = async (req, res, next) => {
       responseKey: "timeEntries",
     });
 
+    // Add filter context to response
+    const responseData = {
+      ...result,
+      filterApplied: filter || 'all',
+    };
+
+    if (weekRange) {
+      responseData.weekRange = {
+        start: weekRange.start.toISOString().split('T')[0],
+        end: weekRange.end.toISOString().split('T')[0]
+      };
+    }
+
     return generateResponse(
-      result,
+      responseData,
       "Time entries retrieved successfully",
       res,
       STATUS_CODES.SUCCESS
