@@ -129,10 +129,7 @@ exports.getContributionsQuery = (channelId, startDate, endDate) => {
     {
       $match: {
         $or: [
-          // Company progress activities (task-related)
-          { actionType: ACTION_TYPE.CREATE_TASK },
-          { actionType: ACTION_TYPE.CREATE_PROJECT },
-          { actionType: ACTION_TYPE.ASSIGN_USER },
+          // Company progress activities (only task completion)
           { isTaskCompletion: true },
 
           // Client progress activities
@@ -192,15 +189,10 @@ exports.getContributionsQuery = (channelId, startDate, endDate) => {
                 },
                 then: CONTRIBUTION_CATEGORIES.CLIENT_PROGRESS,
               },
-              // Company progress activities (task-related)
+              // Company progress activities (only task completion)
               {
                 case: {
-                  $or: [
-                    { $eq: ["$actionType", ACTION_TYPE.CREATE_TASK] },
-                    { $eq: ["$actionType", ACTION_TYPE.CREATE_PROJECT] },
-                    { $eq: ["$actionType", ACTION_TYPE.ASSIGN_USER] },
-                    { $eq: ["$isTaskCompletion", true] },
-                  ],
+                  $eq: ["$isTaskCompletion", true],
                 },
                 then: CONTRIBUTION_CATEGORIES.COMPANY_PROGRESS,
               },
@@ -450,10 +442,7 @@ exports.getActivitiesQuery = (channelId, startDate, endDate) => {
     {
       $match: {
         $or: [
-          // Company progress activities (task-related)
-          { actionType: ACTION_TYPE.CREATE_TASK },
-          { actionType: ACTION_TYPE.CREATE_PROJECT },
-          { actionType: ACTION_TYPE.ASSIGN_USER },
+          // Company progress activities (only task completion)
           { isTaskCompletion: true },
 
           // Client progress activities
@@ -540,15 +529,10 @@ exports.getActivitiesQuery = (channelId, startDate, endDate) => {
                 },
                 then: "client_activity",
               },
-              // Company progress activities (task-related)
+              // Company progress activities (only task completion)
               {
                 case: {
-                  $or: [
-                    { $eq: ["$actionType", ACTION_TYPE.CREATE_TASK] },
-                    { $eq: ["$actionType", ACTION_TYPE.CREATE_PROJECT] },
-                    { $eq: ["$actionType", ACTION_TYPE.ASSIGN_USER] },
-                    { $eq: ["$isTaskCompletion", true] },
-                  ],
+                  $eq: ["$isTaskCompletion", true],
                 },
                 then: "company_activity",
               },
