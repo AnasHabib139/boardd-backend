@@ -534,36 +534,46 @@ exports.sendChannelInviteEmails = async (req, res, next) => {
           continue;
         }
 
-        // Check if user exists (assuming users have accounts)
+        // Check user domain vs company domain
+        const userDomain = extractDomainFromEmail(email);
+        const isCompanyDomain = userDomain === company.domain;
+
+        // Check if user exists (but don't require it)
         const existingUser = await findUser({ email });
-        if (!existingUser) {
-          results.failed.push({
-            email,
-            reason: "User not found. User must have an account to join channels.",
-          });
-          continue;
-        }
+        
+        // If user exists, do validation checks
+        if (existingUser) {
+          // Check if user is already a channel member
+          if (channel.members.includes(existingUser._id)) {
+            results.failed.push({
+              email,
+              reason: "User is already a member of this channel",
+            });
+            continue;
+          }
 
-        // Check if user is already a channel member
-        if (channel.members.includes(existingUser._id)) {
-          results.failed.push({
-            email,
-            reason: "User is already a member of this channel",
-          });
-          continue;
-        }
+          // Check if user account is active
+          if (!existingUser.isActive) {
+            results.failed.push({
+              email,
+              reason: "User account is inactive",
+            });
+            continue;
+          }
 
-        // Check if user account is active
-        if (!existingUser.isActive) {
-          results.failed.push({
-            email,
-            reason: "User account is inactive",
-          });
-          continue;
+          // For company domain users, ensure they're part of the company
+          if (isCompanyDomain && existingUser.companyId.toString() !== channel.companyId.toString()) {
+            results.failed.push({
+              email,
+              reason: "User is not a member of the company",
+            });
+            continue;
+          }
         }
 
         // Prepare email content
         const subject = `Join ${channel.channelName} channel at ${company.name}`;
+        const isGuestInvite = !isCompanyDomain; // Non-company domain users are guests
         const { html, text } = generateChannelInviteEmail({
           channelName: channel.channelName,
           companyName: company.name,
@@ -571,7 +581,7 @@ exports.sendChannelInviteEmails = async (req, res, next) => {
           inviterName: inviter.name,
           inviterEmail: inviter.email,
           channelDescription,
-          isGuestInvite: false, // Simplified - no guest flow
+          isGuestInvite,
         });
 
         // Send email
@@ -583,10 +593,21 @@ exports.sendChannelInviteEmails = async (req, res, next) => {
           replyTo: inviter.email,
         });
 
+        // Determine invite type based on user status and domain
+        let inviteType;
+        if (isCompanyDomain) {
+          inviteType = existingUser ? "company_existing_user" : "company_new_user";
+        } else {
+          inviteType = existingUser ? "external_existing_user" : "external_new_user";
+        }
+
         results.successful.push({
           email,
-          inviteType: "existing_user",
+          inviteType,
           inviteLink,
+          isCompanyDomain,
+          isGuestInvite,
+          userExists: !!existingUser,
           slotReserved: false, // No slot reservation needed
         });
       } catch (error) {
