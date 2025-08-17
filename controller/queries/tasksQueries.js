@@ -1,6 +1,135 @@
 const { Types } = require("mongoose");
 const { TASK_STATUS } = require("../../utils/constants");
 
+/**
+ * Get user's personal tasks for calendar view (across all channels)
+ * @param {string} userId - User ID
+ * @param {Date} currentDate - Date for the month being viewed
+ * @returns {Array} Aggregation pipeline
+ */
+exports.getUserPersonalTasksCalendarQuery = (userId, currentDate) => {
+  // Calculate start and end of the month
+  const monthStart = new Date(
+    currentDate.getFullYear(),
+    currentDate.getMonth(),
+    1
+  );
+  const monthEnd = new Date(
+    currentDate.getFullYear(),
+    currentDate.getMonth() + 1,
+    0,
+    23,
+    59,
+    59,
+    999
+  );
+
+  return [
+    // Match tasks user is assigned to OR created by, due in the month
+    {
+      $match: {
+        isActive: true,
+        // User must be assigned to task OR created the task
+        $or: [
+          { assignedTo: Types.ObjectId.createFromHexString(userId) },
+          { createdBy: Types.ObjectId.createFromHexString(userId) },
+        ],
+        // Tasks due within the current month only
+        dueDate: {
+          $gte: monthStart,
+          $lte: monthEnd,
+        },
+      },
+    },
+
+    // Lookup project details for context
+    {
+      $lookup: {
+        from: "projects",
+        localField: "projectId",
+        foreignField: "_id",
+        as: "project",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              color: 1,
+            },
+          },
+        ],
+      },
+    },
+
+    {
+      $unwind: {
+        path: "$project",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // Add computed fields for calendar
+    {
+      $addFields: {
+        isOverdue: {
+          $cond: {
+            if: {
+              $and: [
+                { $ne: ["$dueDate", null] },
+                { $lt: ["$dueDate", new Date()] },
+                { $ne: ["$status", "completed"] },
+              ],
+            },
+            then: true,
+            else: false,
+          },
+        },
+        // Add project context (or "Open" for non-project tasks)
+        projectContext: {
+          $cond: {
+            if: { $ne: ["$project", null] },
+            then: "$project",
+            else: {
+              _id: "open",
+              name: "Open",
+              color: "#808080",
+            },
+          },
+        },
+      },
+    },
+
+    // Filter out overdue tasks from calendar
+    {
+      $match: {
+        isOverdue: false,
+      },
+    },
+
+    // Project final lightweight task structure for calendar
+    {
+      $project: {
+        _id: 1,
+        title: 1,
+        status: 1,
+        priority: 1,
+        dueDate: 1,
+        strokeColor: 1,
+        isOverdue: 1,
+        project: "$projectContext",
+      },
+    },
+
+    // Sort by due date
+    {
+      $sort: {
+        dueDate: 1, // Earliest first
+        priority: -1, // High priority first for same date
+      },
+    },
+  ];
+};
+
 exports.getTaskByIdQuery = (taskId, userId = null) => {
   return [
     {

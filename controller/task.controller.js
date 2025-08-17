@@ -35,7 +35,7 @@ const {
   handleCustomFieldsActivity,
   handleChecklistActivity,
 } = require("./helpers/tasks/task.helper");
-const { getTaskByIdQuery, getTrendingTasksQuery, getRecentActivitiesQuery, getUserTasksByFilterQuery } = require("./queries/tasksQueries");
+const { getTaskByIdQuery, getTrendingTasksQuery, getRecentActivitiesQuery, getUserTasksByFilterQuery, getUserPersonalTasksCalendarQuery } = require("./queries/tasksQueries");
 const { getAllTasks } = require("../models/taskModel");
 const Mailer = require("../utils/mailer");
 const { generateTaskShareEmail } = require("../utils/emailTemplates");
@@ -1116,6 +1116,89 @@ exports.getUserTasksByFilter = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in getUserTasksByFilter:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Get user's personal tasks for calendar view (across all channels)
+ */
+exports.getUserPersonalTasksCalendar = async (req, res, next) => {
+  try {
+    const { currentDate } = req.query;
+    const userId = req?.user?.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Validate and parse currentDate
+    if (!currentDate) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "currentDate query parameter is required",
+      });
+    }
+
+    const parsedDate = new Date(currentDate);
+    if (isNaN(parsedDate.getTime())) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Invalid currentDate format. Use YYYY-MM-DD",
+      });
+    }
+
+    // Get the aggregation query for user's personal calendar
+    const query = getUserPersonalTasksCalendarQuery(userId, parsedDate);
+
+    // Execute query without pagination to get all tasks for the month
+    const tasks = await getAllTasks({
+      query,
+      page: 1,
+      limit: 1000, // Get all tasks for the month
+      responseKey: "tasks",
+    });
+
+    // Calculate month boundaries for context
+    const year = parsedDate.getFullYear();
+    const month = parsedDate.getMonth();
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
+
+    // Prepare calendar response
+    const responseData = {
+      tasks: tasks.tasks || [],
+      view: "personal-calendar",
+      totalTasks: tasks.tasks ? tasks.tasks.length : 0,
+      monthInfo: {
+        currentDate: parsedDate.toISOString().split("T")[0],
+        month: month + 1, // 1-based month
+        year,
+        monthStart: monthStart.toISOString().split("T")[0],
+        monthEnd: monthEnd.toISOString().split("T")[0],
+        monthName: monthStart.toLocaleDateString("en-US", { month: "long" }),
+      },
+    };
+
+    return generateResponse(
+      responseData,
+      `Personal calendar tasks for ${monthStart.toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric",
+      })} fetched successfully`,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getUserPersonalTasksCalendar:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

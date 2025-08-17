@@ -9,6 +9,7 @@ const {
   getTrendingTasks,
   getRecentActivities,
   getUserTasksByFilter,
+  getUserPersonalTasksCalendar,
 } = require("../controller/task.controller");
 const Auth = require("../middlewares/Auth");
 const OptionalAuth = require("../middlewares/OptionalAuth");
@@ -88,6 +89,13 @@ class TaskApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
       validateRecentActivitiesQuery,
       getRecentActivities
+    );
+
+    // Get user's personal tasks for calendar view (across all channels)
+    router.get(
+      "/user/personal-calendar",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getUserPersonalTasksCalendar
     );
   }
 
