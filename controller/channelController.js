@@ -194,8 +194,23 @@ exports.addUserToChannel = async (req, res, next) => {
       });
     }
 
-    // check if requesting user is a member of the channel
-    if (!channel?.members?.includes(requestingUserId)) {
+    // Get requesting user details to determine if this is self-joining
+    const requestingUser = await findUser({ _id: requestingUserId });
+    if (!requestingUser) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Requesting user not found",
+      });
+    }
+
+    // Determine if this is a self-join scenario
+    // Self-join: user is adding only their own email and is not a channel member
+    const isSelfJoin = nonDemoEmails.length === 1 && 
+                       nonDemoEmails[0].toLowerCase() === requestingUser.email.toLowerCase() &&
+                       !channel?.members?.includes(requestingUserId);
+
+    // Permission check: either user is a channel member OR it's a self-join
+    if (!isSelfJoin && !channel?.members?.includes(requestingUserId)) {
       return next({
         statusCode: STATUS_CODES.FORBIDDEN,
         message: "Only members of the channel can add users",
@@ -297,6 +312,7 @@ exports.addUserToChannel = async (req, res, next) => {
       totalProcessed: nonDemoEmails.length, // Total after filtering demo emails
       channelId: channel._id,
       channelName: channel.channelName,
+      isSelfJoin, // Include this info in response for frontend reference
     };
 
     // Add demo filtering info to response if demo emails were found
@@ -328,7 +344,10 @@ exports.addUserToChannel = async (req, res, next) => {
       // Partial success - some added, some failed
       const demoNote =
         demoEmailsFound.length > 0 ? " (demo users were filtered out)" : "";
-      const message = `${addedUsers.length} users added successfully. ${errors.length} users failed to be added${demoNote}.`;
+      const baseMessage = isSelfJoin 
+        ? `You joined the channel successfully, but ${errors.length} other users failed to be added`
+        : `${addedUsers.length} users added successfully. ${errors.length} users failed to be added`;
+      const message = `${baseMessage}${demoNote}.`;
       return generateResponse(
         response,
         message,
@@ -339,7 +358,10 @@ exports.addUserToChannel = async (req, res, next) => {
       // All users added successfully
       const demoNote =
         demoEmailsFound.length > 0 ? " (demo users were filtered out)" : "";
-      const message = `All users added to the channel successfully${demoNote}`;
+      const baseMessage = isSelfJoin
+        ? "You joined the channel successfully"
+        : "All users added to the channel successfully";
+      const message = `${baseMessage}${demoNote}`;
       return generateResponse(response, message, res, STATUS_CODES.SUCCESS);
     }
   } catch (error) {
