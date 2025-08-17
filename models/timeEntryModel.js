@@ -137,6 +137,12 @@ exports.findChildEntries = async (parentEntryId) => {
   return await TimeEntry.find({ parentEntryId });
 };
 
+// Check if parent has children
+exports.hasChildren = async (parentEntryId) => {
+  const children = await TimeEntry.find({ parentEntryId });
+  return children.length > 0;
+};
+
 // Update parent entry with aggregated data from children
 exports.updateParentEntryAggregates = async (parentEntryId) => {
   const children = await TimeEntry.find({ parentEntryId });

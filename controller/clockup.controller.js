@@ -10,6 +10,7 @@ const {
   findTimeEntry,
   getAllTimeEntries,
   updateParentEntryAggregates,
+  hasChildren,
 } = require("../models/timeEntryModel");
 const {
   handleStartTimeChange,
@@ -181,6 +182,28 @@ exports.editTimeEntry = async (req, res, next) => {
         statusCode: STATUS_CODES.NOT_FOUND,
         message: "Time entry not found or you don't have permission to edit it",
       });
+    }
+
+    // Validate: Parent with children cannot edit time fields
+    if (!timeEntry.parentEntryId && (startTime || endTime || totalTime)) {
+      const parentHasChildren = await hasChildren(timeEntry._id);
+      if (parentHasChildren) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "Parent entries with child sessions cannot edit time fields. Only title and description can be modified.",
+        });
+      }
+    }
+
+    // Validate: Child startTime cannot be before parent startTime
+    if (timeEntry.parentEntryId && startTime) {
+      const parentEntry = await findTimeEntry({ _id: timeEntry.parentEntryId });
+      if (parentEntry && new Date(startTime) < parentEntry.startTime) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "Child entry cannot start before parent entry start time.",
+        });
+      }
     }
 
     // Prepare update data
@@ -365,6 +388,14 @@ exports.restartTimeEntry = async (req, res, next) => {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
         message: "This time entry is already active. Please stop it first.",
+      });
+    }
+
+    // Validate child startTime cannot be before parent startTime
+    if (new Date(startTime) < timeEntry.startTime) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Child entry cannot start before parent entry start time.",
       });
     }
 
