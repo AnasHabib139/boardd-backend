@@ -180,4 +180,45 @@ exports.updateParentEntryAggregates = async (parentEntryId) => {
   );
 };
 
+// Delete time entry by ID
+exports.deleteTimeEntry = async (entryId) => {
+  return await TimeEntry.findByIdAndDelete(entryId);
+};
+
+// Recursively delete all children of a parent entry
+exports.deleteChildrenRecursively = async (parentEntryId) => {
+  const children = await TimeEntry.find({ parentEntryId });
+  
+  for (const child of children) {
+    // If child has its own children (nested), delete them first
+    await exports.deleteChildrenRecursively(child._id);
+    // Then delete the child itself
+    await TimeEntry.findByIdAndDelete(child._id);
+  }
+  
+  return children.length; // Return count of deleted children
+};
+
+// Delete time entry with all its children (if parent)
+exports.deleteTimeEntryWithChildren = async (entryId) => {
+  const entry = await TimeEntry.findById(entryId);
+  if (!entry) return null;
+
+  let deletedCount = 0;
+  
+  // If this is a parent entry (no parentEntryId), delete all children first
+  if (!entry.parentEntryId) {
+    deletedCount = await exports.deleteChildrenRecursively(entryId);
+  }
+  
+  // Delete the main entry itself
+  const deletedEntry = await TimeEntry.findByIdAndDelete(entryId);
+  deletedCount += 1;
+  
+  return {
+    deletedEntry,
+    totalDeleted: deletedCount
+  };
+};
+
 exports.TimeEntry = TimeEntry;

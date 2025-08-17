@@ -11,6 +11,7 @@ const {
   getAllTimeEntries,
   updateParentEntryAggregates,
   hasChildren,
+  deleteTimeEntryWithChildren,
 } = require("../models/timeEntryModel");
 const {
   handleStartTimeChange,
@@ -547,6 +548,83 @@ exports.getChildrenTimeEntries = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in getChildrenTimeEntries:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Delete time entry - Delete time entry with all children (if parent) or single entry (if child)
+ */
+exports.deleteTimeEntry = async (req, res, next) => {
+  try {
+    const { entryId } = req.params;
+    const userId = req?.user?.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Find the time entry to delete
+    const timeEntry = await findTimeEntry({ _id: entryId, userId });
+    if (!timeEntry) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Time entry not found or you don't have permission to delete it",
+      });
+    }
+
+    // Check if entry is currently active
+    if (timeEntry.isActive && !timeEntry.endTime) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Cannot delete an active time entry. Please stop the timer first.",
+      });
+    }
+
+    // Delete the entry (and children if it's a parent)
+    const deleteResult = await deleteTimeEntryWithChildren(entryId);
+    
+    if (!deleteResult) {
+      return next({
+        statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+        message: "Failed to delete time entry",
+      });
+    }
+
+    // If this was a child entry, update parent aggregates
+    if (timeEntry.parentEntryId) {
+      await updateParentEntryAggregates(timeEntry.parentEntryId);
+    }
+
+    const isParent = !timeEntry.parentEntryId;
+    const message = isParent 
+      ? `Time entry and ${deleteResult.totalDeleted - 1} child entries deleted successfully`
+      : "Time entry deleted successfully";
+
+    return generateResponse(
+      {
+        deletedEntry: {
+          _id: deleteResult.deletedEntry._id,
+          title: deleteResult.deletedEntry.title,
+          description: deleteResult.deletedEntry.description,
+          isParent,
+          totalDeleted: deleteResult.totalDeleted
+        }
+      },
+      message,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in deleteTimeEntry:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

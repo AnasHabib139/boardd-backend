@@ -1,14 +1,22 @@
 "use strict";
 
 const { Router } = require("express");
-const { startClock, stopClock, editTimeEntry, restartTimeEntry, getUserTimeEntries, getChildrenTimeEntries } = require("../controller/clockup.controller");
+const {
+  startClock,
+  stopClock,
+  editTimeEntry,
+  restartTimeEntry,
+  getUserTimeEntries,
+  getChildrenTimeEntries,
+  deleteTimeEntry,
+} = require("../controller/clockup.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
-const { 
-  validateStartClock, 
-  validateStopClock, 
+const {
+  validateStartClock,
+  validateStopClock,
   validateEditTimeEntry,
-  validateTimeEntryIdParam 
+  validateTimeEntryIdParam,
 } = require("../validation/clockupValidation");
 
 class ClockupApi {
@@ -67,6 +75,14 @@ class ClockupApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateTimeEntryIdParam,
       getChildrenTimeEntries
+    );
+
+    // Delete time entry - Delete time entry with all children (if parent) or single entry (if child)
+    router.delete(
+      "/:entryId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateTimeEntryIdParam,
+      deleteTimeEntry
     );
   }
 
