@@ -19,7 +19,7 @@ const {
   calculateDurationMinutes,
   formatDuration,
 } = require("./helpers/timeHelper");
-const { getUserTimeEntriesQuery } = require("./queries/timeEntriesQueries");
+const { getUserTimeEntriesQuery, getChildrenTimeEntriesQuery } = require("./queries/timeEntriesQueries");
 
 /**
  * Start clock - Begin time tracking
@@ -476,6 +476,77 @@ exports.getUserTimeEntries = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in getUserTimeEntries:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Get children time entries - Retrieve paginated child entries for a parent time entry
+ */
+exports.getChildrenTimeEntries = async (req, res, next) => {
+  try {
+    const { entryId } = req.params;
+    const { page, limit } = req.query;
+    const userId = req?.user?.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Validate parent entry exists and belongs to user
+    const parentEntry = await findTimeEntry({ _id: entryId, userId });
+    if (!parentEntry) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Parent time entry not found or you don't have permission to view it",
+      });
+    }
+
+    // Validate this is a parent entry (not a child)
+    if (parentEntry.parentEntryId) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Cannot get children of a child entry. Please use the parent entry ID.",
+      });
+    }
+
+    // Get the aggregation query for children time entries
+    const query = getChildrenTimeEntriesQuery(entryId);
+
+    // Get paginated children time entries
+    const result = await getAllTimeEntries({
+      query,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 20,
+      responseKey: "childrenEntries"
+    });
+
+    return generateResponse(
+      {
+        ...result,
+        parentEntry: {
+          _id: parentEntry._id,
+          title: parentEntry.title,
+          description: parentEntry.description,
+          startTime: parentEntry.startTime,
+          endTime: parentEntry.endTime,
+          totalTime: parentEntry.totalTime,
+        }
+      },
+      "Children time entries retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getChildrenTimeEntries:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

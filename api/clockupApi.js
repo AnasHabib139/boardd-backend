@@ -1,7 +1,7 @@
 "use strict";
 
 const { Router } = require("express");
-const { startClock, stopClock, editTimeEntry, restartTimeEntry, getUserTimeEntries } = require("../controller/clockup.controller");
+const { startClock, stopClock, editTimeEntry, restartTimeEntry, getUserTimeEntries, getChildrenTimeEntries } = require("../controller/clockup.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
 const { 
@@ -59,6 +59,14 @@ class ClockupApi {
       "/entries",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       getUserTimeEntries
+    );
+
+    // Get children time entries - Retrieve paginated child entries for a parent time entry
+    router.get(
+      "/:entryId/children",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateTimeEntryIdParam,
+      getChildrenTimeEntries
     );
   }
 

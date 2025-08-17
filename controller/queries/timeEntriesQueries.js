@@ -226,3 +226,82 @@ exports.getUserTimeEntriesQuery = (userId) => {
 
   return queryArray;
 };
+
+// Get children entries of a specific parent time entry
+exports.getChildrenTimeEntriesQuery = (parentEntryId) => {
+  let queryArray = [];
+
+  // Match child entries for the specific parent
+  queryArray.push({
+    $match: {
+      parentEntryId: Types.ObjectId.createFromHexString(parentEntryId)
+    }
+  });
+
+  // Sort by creation date (newest first)
+  queryArray.push({
+    $sort: {
+      createdAt: -1
+    }
+  });
+
+  // Project and format the fields
+  queryArray.push({
+    $project: {
+      _id: 1,
+      title: 1,
+      description: 1,
+      startTime: {
+        $dateToString: {
+          format: "%H:%M",
+          date: "$startTime"
+        }
+      },
+      endTime: {
+        $cond: {
+          if: { $ne: ["$endTime", null] },
+          then: {
+            $dateToString: {
+              format: "%H:%M",
+              date: "$endTime"
+            }
+          },
+          else: null
+        }
+      },
+      totalTime: {
+        $cond: {
+          if: { $ne: ["$totalTime", null] },
+          then: {
+            $concat: [
+              {
+                $toString: {
+                  $floor: { $divide: ["$totalTime", 60] }
+                }
+              },
+              ":",
+              {
+                $cond: {
+                  if: { $lt: [{ $mod: ["$totalTime", 60] }, 10] },
+                  then: {
+                    $concat: ["0", { $toString: { $mod: ["$totalTime", 60] } }]
+                  },
+                  else: { $toString: { $mod: ["$totalTime", 60] } }
+                }
+              },
+              ":00"
+            ]
+          },
+          else: "00:00:00"
+        }
+      },
+      daysAdded: 1,
+      isActive: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      parentEntryId: 1
+    }
+  });
+
+  return queryArray;
+};

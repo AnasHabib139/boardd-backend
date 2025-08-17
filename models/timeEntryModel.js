@@ -153,6 +153,8 @@ exports.updateParentEntryAggregates = async (parentEntryId) => {
   // Calculate total time from parent + all children
   let totalTime = parent.totalTime || 0;
   let latestEndTime = parent.endTime;
+  let latestDaysAdded = parent.daysAdded || 0;
+  let latestEntry = parent;
 
   children.forEach(child => {
     if (child.totalTime) {
@@ -160,6 +162,8 @@ exports.updateParentEntryAggregates = async (parentEntryId) => {
     }
     if (child.endTime && (!latestEndTime || child.endTime > latestEndTime)) {
       latestEndTime = child.endTime;
+      latestDaysAdded = child.daysAdded || 0;
+      latestEntry = child;
     }
   });
 
@@ -169,6 +173,7 @@ exports.updateParentEntryAggregates = async (parentEntryId) => {
     {
       totalTime,
       endTime: latestEndTime,
+      daysAdded: latestDaysAdded,
       updatedAt: Date.now(),
     },
     { new: true, runValidators: true }
