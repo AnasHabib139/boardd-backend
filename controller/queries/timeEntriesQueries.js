@@ -5,10 +5,29 @@ exports.getUserTimeEntriesQuery = (userId) => {
   let queryArray = [];
 
   // Match time entries for the specific user that have endTime (completed entries only)
+  // Only return parent entries (parentEntryId is null)
   queryArray.push({
     $match: {
       userId: Types.ObjectId.createFromHexString(userId),
-      endTime: { $exists: true, $ne: null }
+      endTime: { $exists: true, $ne: null },
+      parentEntryId: null // Only parent entries
+    }
+  });
+
+  // Add lookup to count children entries
+  queryArray.push({
+    $lookup: {
+      from: "timeentries",
+      localField: "_id",
+      foreignField: "parentEntryId",
+      as: "children"
+    }
+  });
+
+  // Add children count field
+  queryArray.push({
+    $addFields: {
+      childrenCount: { $size: "$children" }
     }
   });
 
@@ -124,7 +143,8 @@ exports.getUserTimeEntriesQuery = (userId) => {
       updatedAt: 1,
       startDate: 1,
       dayLabel: 1,
-      daysDiff: 1
+      daysDiff: 1,
+      childrenCount: 1
     }
   });
 
@@ -145,7 +165,8 @@ exports.getUserTimeEntriesQuery = (userId) => {
           daysAdded: "$daysAdded",
           isActive: "$isActive",
           createdAt: "$createdAt",
-          updatedAt: "$updatedAt"
+          updatedAt: "$updatedAt",
+          childrenCount: "$childrenCount"
         }
       },
       totalDayTime: { $sum: "$totalTime" }

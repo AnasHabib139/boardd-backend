@@ -1,7 +1,7 @@
 "use strict";
 
 const { Router } = require("express");
-const { startClock, stopClock, editTimeEntry, getUserTimeEntries } = require("../controller/clockup.controller");
+const { startClock, stopClock, editTimeEntry, restartTimeEntry, getUserTimeEntries } = require("../controller/clockup.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
 const { 
@@ -43,6 +43,15 @@ class ClockupApi {
       validateTimeEntryIdParam,
       validateEditTimeEntry,
       editTimeEntry
+    );
+
+    // Restart time entry - Create child entry linked to parent
+    router.post(
+      "/:entryId/restart",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateTimeEntryIdParam,
+      validateStartClock, // Reuse start validation since it needs startTime
+      restartTimeEntry
     );
 
     // Get user time entries - Retrieve paginated time entries for logged-in user

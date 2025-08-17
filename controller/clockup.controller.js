@@ -9,6 +9,7 @@ const {
   updateTimeEntry,
   findTimeEntry,
   getAllTimeEntries,
+  updateParentEntryAggregates,
 } = require("../models/timeEntryModel");
 const {
   handleStartTimeChange,
@@ -122,6 +123,11 @@ exports.stopClock = async (req, res, next) => {
         // totalTime will be calculated automatically by pre-save middleware
       }
     );
+
+    // If this is a child entry, update parent aggregates
+    if (updatedEntry.parentEntryId) {
+      await updateParentEntryAggregates(updatedEntry.parentEntryId);
+    }
 
     return generateResponse(
       {
@@ -270,6 +276,11 @@ exports.editTimeEntry = async (req, res, next) => {
     // Update the time entry
     const updatedEntry = await updateTimeEntry({ _id: entryId }, updateData);
 
+    // If this is a child entry, update parent aggregates
+    if (updatedEntry.parentEntryId) {
+      await updateParentEntryAggregates(updatedEntry.parentEntryId);
+    }
+
     return generateResponse(
       {
         timeEntry: {
@@ -290,6 +301,107 @@ exports.editTimeEntry = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in editTimeEntry:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Restart time entry - Create child entry linked to parent
+ */
+exports.restartTimeEntry = async (req, res, next) => {
+  try {
+    const { entryId } = req.params;
+    const { startTime } = parseBody(req.body);
+    const userId = req?.user?.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Check if user already has an active time entry
+    const activeEntry = await findActiveTimeEntry(userId);
+    if (activeEntry) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "You already have an active time entry. Please stop the current timer before restarting another one.",
+        data: {
+          activeEntry: {
+            _id: activeEntry._id,
+            title: activeEntry.title,
+            description: activeEntry.description,
+            startTime: activeEntry.startTime,
+          }
+        }
+      });
+    }
+
+    // Find the time entry to restart
+    const timeEntry = await findTimeEntry({ _id: entryId, userId });
+    if (!timeEntry) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Time entry not found or you don't have permission to restart it",
+      });
+    }
+
+    // Validate that this is a parent entry (cannot restart child entries)
+    if (timeEntry.parentEntryId) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Cannot restart a child entry. Please restart the parent entry instead.",
+      });
+    }
+
+    // Check if the entry is already active (not stopped)
+    if (timeEntry.isActive && !timeEntry.endTime) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "This time entry is already active. Please stop it first.",
+      });
+    }
+
+    // Create child time entry linked to parent
+    const childTimeEntry = await createTimeEntry({
+      userId,
+      title: timeEntry.title,
+      description: timeEntry.description,
+      startTime: new Date(startTime),
+      createdAt: new Date(startTime),
+      parentEntryId: timeEntry._id, // Link to parent
+    });
+
+    return generateResponse(
+      {
+        timeEntry: {
+          _id: childTimeEntry._id,
+          title: childTimeEntry.title,
+          description: childTimeEntry.description,
+          startTime: childTimeEntry.startTime,
+          totalTime: childTimeEntry.totalTime,
+          isActive: childTimeEntry.isActive,
+          createdAt: childTimeEntry.createdAt,
+          parentEntryId: childTimeEntry.parentEntryId,
+        },
+        parentEntry: {
+          _id: timeEntry._id,
+          title: timeEntry.title,
+          description: timeEntry.description,
+        }
+      },
+      "Time entry restarted successfully",
+      res,
+      STATUS_CODES.CREATED
+    );
+  } catch (error) {
+    console.error("Error in restartTimeEntry:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

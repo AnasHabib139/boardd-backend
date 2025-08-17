@@ -37,6 +37,11 @@ const timeEntrySchema = new Schema({
     type: Number, // Number of days added to end time (0 = same day, 1 = next day, -1 = previous day)
     default: 0
   },
+  parentEntryId: {
+    type: Types.ObjectId,
+    ref: "TimeEntry",
+    default: null // null = parent entry, ObjectId = child entry
+  },
   isActive: { 
     type: Boolean, 
     default: true 
@@ -55,6 +60,8 @@ const timeEntrySchema = new Schema({
 timeEntrySchema.index({ userId: 1, createdAt: -1 });
 timeEntrySchema.index({ userId: 1, isActive: 1 });
 timeEntrySchema.index({ startTime: 1 });
+timeEntrySchema.index({ parentEntryId: 1 });
+timeEntrySchema.index({ userId: 1, parentEntryId: 1 });
 
 // Add pagination plugins
 timeEntrySchema.plugin(mongoosePaginate);
@@ -123,6 +130,43 @@ exports.getAllTimeEntries = async ({ query, page, limit, responseKey = "timeEntr
     limit,
   });
   return { [responseKey]: data, pagination };
+};
+
+// Find children of a parent entry
+exports.findChildEntries = async (parentEntryId) => {
+  return await TimeEntry.find({ parentEntryId });
+};
+
+// Update parent entry with aggregated data from children
+exports.updateParentEntryAggregates = async (parentEntryId) => {
+  const children = await TimeEntry.find({ parentEntryId });
+  const parent = await TimeEntry.findById(parentEntryId);
+  
+  if (!parent) return null;
+
+  // Calculate total time from parent + all children
+  let totalTime = parent.totalTime || 0;
+  let latestEndTime = parent.endTime;
+
+  children.forEach(child => {
+    if (child.totalTime) {
+      totalTime += child.totalTime;
+    }
+    if (child.endTime && (!latestEndTime || child.endTime > latestEndTime)) {
+      latestEndTime = child.endTime;
+    }
+  });
+
+  // Update parent with aggregated data
+  return await TimeEntry.findByIdAndUpdate(
+    parentEntryId,
+    {
+      totalTime,
+      endTime: latestEndTime,
+      updatedAt: Date.now(),
+    },
+    { new: true, runValidators: true }
+  );
 };
 
 exports.TimeEntry = TimeEntry;
