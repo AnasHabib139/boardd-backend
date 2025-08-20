@@ -31,13 +31,17 @@ exports.findChannelTab = (query) => ChannelTab.findOne(query);
 exports.updateChannelTab = (query, obj) =>
   ChannelTab.findOneAndUpdate(query, obj, { new: true });
 
+//delete A CHANNEL TAB
+exports.deleteChannelTab = (query) => ChannelTab.findOneAndDelete(query);
+
 //get all tabs
-exports.getAllTabs = async ({ query, page, limit, responseKey = "data" }) => {
+exports.getAllTabs = async ({ query, page, limit, responseKey = "data", sort = { createdAt: -1 } }) => {
   const { data, pagination } = await getMongooseAggregatePaginatedData({
     model: ChannelTab,
     query,
     page,
     limit,
+    sort,
   });
 
   return { [responseKey]: data, pagination };

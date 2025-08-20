@@ -1,5 +1,6 @@
 // write a query to get all tabs of a channel in which the user is a member
 const { Types } = require("mongoose");
+const { TAB_ORDER } = require("../../utils/constants");
 
 exports.getAllTabsOfMemberInChannelQuery = (channelId, userId) => {
   return [
@@ -34,6 +35,22 @@ exports.getAllTabsOfMemberInChannelQuery = (channelId, userId) => {
       },
     },
     {
+      $addFields: {
+        // Add custom sort order based on tab name
+        sortOrder: {
+          $switch: {
+            branches: [
+              { case: { $eq: ["$tabName", "team management"] }, then: 1 },
+              { case: { $eq: ["$tabName", "client management"] }, then: 2 },
+              { case: { $eq: ["$tabName", "form builder"] }, then: 3 },
+              { case: { $eq: ["$tabName", "work in progress"] }, then: 4 },
+            ],
+            default: 999 // For any non-standard tabs, put them at the end
+          }
+        }
+      }
+    },
+    {
       $project: {
         _id: 1,
         tabName: 1,
@@ -44,6 +61,7 @@ exports.getAllTabsOfMemberInChannelQuery = (channelId, userId) => {
         updatedAt: 1,
         channelName: "$channelInfo.channelName",
         channelDescription: "$channelInfo.channelDescription",
+        sortOrder: 1, // Include sortOrder for controller sorting
       },
     },
   ];

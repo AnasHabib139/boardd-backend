@@ -303,6 +303,25 @@ const getAllTabsOfChannelQueryValidation = Joi.object({
     }),
 });
 
+// Toggle channel tab validation schema
+const toggleChannelTabValidation = Joi.object({
+  channelId: helpers.objectIdValidation.required().messages({
+    "any.required": "Channel ID is required",
+  }),
+
+  tabName: Joi.string()
+    .valid(...Object.values(DEFAULT_TABS))
+    .required()
+    .messages({
+      "any.required": "Tab name is required",
+      "any.only": `Tab name must be one of: ${Object.values(DEFAULT_TABS).join(", ")}`,
+    }),
+
+  isPrivate: Joi.boolean().optional().default(false).messages({
+    "boolean.base": "isPrivate must be a boolean value",
+  }),
+});
+
 // Validation middleware function
 const validateRequest = (schema, source = "body") => {
   return (req, res, next) => {
@@ -373,6 +392,7 @@ module.exports = {
     getAllTabsOfChannelQueryValidation,
     "query"
   ),
+  validateToggleChannelTab: validateRequest(toggleChannelTabValidation),
 
   // Export schemas for testing or custom usage
   schemas: {

@@ -4,6 +4,7 @@ const {
   findChannelTab,
   getAllTabs,
   createChannelTab,
+  deleteChannelTab,
 } = require("../models/channelTabsModel");
 const { generateResponse, parseBody } = require("../utils");
 const mongoose = require("mongoose");
@@ -183,6 +184,7 @@ exports.getAllTabsOfChannel = async (req, res, next) => {
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 10,
       responseKey: "tabs",
+      sort: { sortOrder: 1, createdAt: -1 }, // Sort by custom order first, then by creation date
     });
 
     return generateResponse(
@@ -514,6 +516,139 @@ exports.createSelectedChannelTabs = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to create channel tabs",
+    });
+  }
+};
+
+// Toggle channel tab (activate/deactivate)
+exports.toggleChannelTab = async (req, res, next) => {
+  try {
+    const { channelId, tabName, isPrivate = false } = parseBody(req.body);
+    const userId = req.user.id;
+
+    // Get current user to check their company
+    const currentUser = await findUser({ _id: userId });
+    if (!currentUser) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Find and validate channel
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Security Check: Verify the channel belongs to the user's company
+    if (channel.companyId.toString() !== currentUser.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You can only manage tabs in channels from your own company",
+      });
+    }
+
+    // Check if user is a member of the channel
+    if (!channel.members.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You must be a member of the channel to manage tabs",
+      });
+    }
+
+    // Validate tab name
+    const validTabNames = Object.values(
+      require("../utils/constants").DEFAULT_TABS
+    );
+    if (!validTabNames.includes(tabName)) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: `Invalid tab name. Must be one of: ${validTabNames.join(", ")}`,
+      });
+    }
+
+    // Check if tab already exists
+    const existingTab = await findChannelTab({
+      channelId: channelId,
+      tabName: tabName,
+      isDefault: true,
+    });
+
+    let result;
+    let action;
+
+    if (existingTab) {
+      // Tab exists - DEACTIVATE (delete)
+      result = await deleteChannelTab({
+        _id: existingTab._id,
+      });
+      
+      action = "deactivated";
+      
+      const responseData = {
+        tabId: existingTab._id,
+        tabName: tabName,
+        action: action,
+        isPrivate: existingTab.isPrivate,
+        channelId: channelId,
+      };
+
+      return generateResponse(
+        responseData,
+        `Tab "${tabName}" deactivated successfully`,
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    } else {
+      // Tab doesn't exist - ACTIVATE (create)
+      let tabMembers = [];
+      
+      if (!isPrivate) {
+        // For public tabs, add all channel members
+        tabMembers = [...channel.members];
+      } else {
+        // For private tabs, start with creator as the initial member
+        tabMembers = [userId];
+      }
+
+      const newTab = await createChannelTab({
+        channelId: channelId,
+        tabName: tabName,
+        isDefault: true,
+        isPrivate: isPrivate,
+        members: tabMembers,
+        createdBy: userId,
+        companyId: currentUser.companyId,
+        tabDescription: `Default ${tabName} tab`,
+      });
+
+      action = "activated";
+
+      const responseData = {
+        tabId: newTab._id,
+        tabName: newTab.tabName,
+        action: action,
+        isPrivate: newTab.isPrivate,
+        channelId: channelId,
+        members: newTab.members,
+      };
+
+      return generateResponse(
+        responseData,
+        `Tab "${tabName}" activated successfully`,
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+  } catch (error) {
+    console.error("Error in toggleChannelTab:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to toggle channel tab",
     });
   }
 };

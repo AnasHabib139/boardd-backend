@@ -7,6 +7,7 @@ const {
   getAllTabMembers,
   createNewChannelTab,
   createSelectedChannelTabs,
+  toggleChannelTab,
 } = require("../controller/channelTabsController");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -17,6 +18,7 @@ const {
   validateTabIdParam,
   validateGetAllTabsOfChannelQuery,
   validateGetTabMembersQuery,
+  validateToggleChannelTab,
 } = require("../validation/channelTabsValidation");
 
 class ChannelTabsApi {
@@ -67,6 +69,14 @@ class ChannelTabsApi {
       validateTabIdParam,
       validateGetTabMembersQuery,
       getAllTabMembers
+    );
+
+    // Toggle channel tab (activate/deactivate)
+    router.put(
+      "/toggle",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateToggleChannelTab,
+      toggleChannelTab
     );
   }
 

@@ -85,6 +85,14 @@ exports.DEFAULT_TABS = Object.freeze({
   WORK_IN_PROGRESS: "work in progress",
 });
 
+// Define the desired tab order for sorting
+exports.TAB_ORDER = Object.freeze({
+  "team management": 1,
+  "client management": 2,
+  "form builder": 3,
+  "work in progress": 4,
+});
+
 // Custom field type enum
 exports.CUSTOM_FIELD_TYPES = Object.freeze({
   NUMBER: "number",
