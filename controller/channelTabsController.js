@@ -49,11 +49,11 @@ exports.addMembersToChannelTab = async (req, res, next) => {
       });
     }
 
-    // Check if requesting user is the channel creator
-    if (channel.createdBy.toString() !== requestingUserId.toString()) {
+    // Check if requesting user is a member of the channel
+    if (!channel.members.includes(requestingUserId)) {
       return next({
         statusCode: STATUS_CODES.FORBIDDEN,
-        message: "Only channel creator can add members",
+        message: "You must be a member of the channel to add members",
       });
     }
 
@@ -97,15 +97,6 @@ exports.addMembersToChannelTab = async (req, res, next) => {
             );
           }
 
-          // Check if user is already a member
-          const existingMembers = tab.members || [];
-          if (
-            existingMembers.some((id) => id.toString() === memberId.toString())
-          ) {
-            throw new Error(
-              `User ${user.email} is already a member of this tab`
-            );
-          }
         }
 
         return { tabId, memberids };
@@ -119,7 +110,7 @@ exports.addMembersToChannelTab = async (req, res, next) => {
         ({ tabId, memberids }) => {
           return updateChannelTab(
             { _id: tabId },
-            { $push: { members: { $each: memberids } } }
+            { $addToSet: { members: { $each: memberids } } }
           );
         }
       );
