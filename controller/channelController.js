@@ -10,7 +10,7 @@ const {
 } = require("../models/channelModel");
 const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
-const { createChannelTab } = require("../models/channelTabsModel");
+const { createChannelTab, getAllTabs, updateChannelTab } = require("../models/channelTabsModel");
 const {
   createDefaultTabs,
   getAdminsAndMergeMembers,
@@ -297,6 +297,39 @@ exports.addUserToChannel = async (req, res, next) => {
           { _id: channel._id },
           { $push: { members: { $each: usersToAdd } } }
         );
+
+        // Check if channel has tabs and add users to public tabs
+        const channelTabsQuery = [
+          {
+            $match: {
+              channelId: require("mongoose").Types.ObjectId.createFromHexString(channel._id.toString()),
+            },
+          },
+        ];
+
+        const channelTabsResult = await getAllTabs({
+          query: channelTabsQuery,
+          page: 1,
+          limit: 100, // Get all tabs (assuming reasonable limit)
+          responseKey: "tabs",
+        });
+
+        // If channel has tabs, add users to public tabs
+        if (channelTabsResult.tabs && channelTabsResult.tabs.length > 0) {
+          const publicTabs = channelTabsResult.tabs.filter(tab => !tab.isPrivate);
+          
+          if (publicTabs.length > 0) {
+            // Add users to all public tabs in parallel
+            const tabUpdatePromises = publicTabs.map(tab => 
+              updateChannelTab(
+                { _id: tab._id },
+                { $addToSet: { members: { $each: usersToAdd } } }
+              )
+            );
+
+            await Promise.all(tabUpdatePromises);
+          }
+        }
       } catch (updateError) {
         return next({
           statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
