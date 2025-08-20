@@ -469,6 +469,7 @@ module.exports = {
   validateJoinChannelWithInvite: validateRequest(
     joinChannelWithInviteValidation
   ),
+  validateEditChannel: validateRequest(updateChannelValidation),
 
   // Export schemas for testing or custom usage
   schemas: {

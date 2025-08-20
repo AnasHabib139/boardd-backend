@@ -9,6 +9,7 @@ const {
   getAllChannelsOfUser,
   sendChannelInviteEmails,
   joinChannelWithInvite,
+  editChannel,
 } = require("../controller/channelController");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -20,6 +21,7 @@ const {
   validateGetAllChannelsOfUserQuery,
   validateSendChannelInviteEmails,
   validateJoinChannelWithInvite,
+  validateEditChannel,
 } = require("../validation/channelValidation");
 
 class ChannelApi {
@@ -85,6 +87,14 @@ class ChannelApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
       validateJoinChannelWithInvite,
       joinChannelWithInvite
+    );
+
+    // Edit channel details
+    router.put(
+      "/:channelId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateEditChannel,
+      editChannel
     );
   }
 

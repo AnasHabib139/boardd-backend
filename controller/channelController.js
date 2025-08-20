@@ -6,6 +6,7 @@ const {
   addMemberToChannel,
   findChannel,
   getAllChannelsDetails,
+  updateChannel,
 } = require("../models/channelModel");
 const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
@@ -831,6 +832,65 @@ exports.joinChannelWithInvite = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to join channel",
+    });
+  }
+};
+
+// Edit channel details
+exports.editChannel = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const { channelName, channelDescription } = parseBody(req.body);
+    const userId = req.user.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Validate channel exists
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Check if user is a member of the channel
+    if (!channel.members.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You must be a member of the channel to edit it",
+      });
+    }
+
+    // Prepare update data (only include provided fields)
+    const updateData = {
+      updatedAt: new Date()
+    };
+
+    if (channelName !== undefined) updateData.channelName = channelName;
+    if (channelDescription !== undefined) updateData.channelDescription = channelDescription;
+
+    // Update the channel
+    const updatedChannel = await updateChannel({ _id: channelId }, updateData);
+
+    return generateResponse(
+      updatedChannel,
+      "Channel updated successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in editChannel:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to update channel",
     });
   }
 };
