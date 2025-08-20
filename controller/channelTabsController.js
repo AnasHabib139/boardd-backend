@@ -1,4 +1,4 @@
-const { findChannel } = require("../models/channelModel");
+const { findChannel, addMemberToChannel } = require("../models/channelModel");
 const {
   updateChannelTab,
   findChannelTab,
@@ -19,6 +19,101 @@ const { findUser } = require("../models/userModel");
 const {
   getAdminsAndMergeMembers,
 } = require("./helpers/channelTabs/channelTabs.helper");
+
+exports.removeMembersFromChannelTab = async (req, res, next) => {
+  try {
+    const { channelId, assignments } = parseBody(req.body);
+    const requestingUserId = req.user.id; // Get ID of user making the request
+
+    // Get current user to check their company
+    const currentUser = await findUser({ _id: requestingUserId });
+    if (!currentUser) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    const channel = await findChannel({ _id: channelId });
+    if (!channel)
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+
+    // Security Check: Verify the channel belongs to the user's company
+    if (channel.companyId.toString() !== currentUser.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You can only manage tabs from channels in your own company",
+      });
+    }
+
+    // Check if requesting user is a member of the channel
+    if (!channel.members.includes(requestingUserId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You must be a member of the channel to remove members",
+      });
+    }
+
+    try {
+      // First validate all tabs
+      const validationPromises = assignments.map(async (assignment) => {
+        const { tabId, memberids } = assignment;
+
+        // Validate tab exists
+        const tab = await findChannelTab({ _id: tabId });
+        if (!tab) {
+          throw new Error(`Tab with ID ${tabId} not found`);
+        }
+
+        // Validate each user in memberids exists
+        for (const memberId of memberids) {
+          const user = await findUser({ _id: memberId });
+          if (!user) {
+            throw new Error(`User with ID ${memberId} not found`);
+          }
+        }
+
+        return { tabId, memberids };
+      });
+
+      // Wait for all validations to complete
+      const validatedAssignments = await Promise.all(validationPromises);
+
+      // Remove members from tabs
+      const updatePromises = validatedAssignments.map(
+        ({ tabId, memberids }) => {
+          return updateChannelTab(
+            { _id: tabId },
+            { $pull: { members: { $in: memberids } } }
+          );
+        }
+      );
+
+      // Wait for all updates to complete
+      await Promise.all(updatePromises);
+
+      return generateResponse(
+        null,
+        "Members removed from tabs successfully",
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    } catch (error) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: `Failed to remove members: ${error.message}`,
+      });
+    }
+  } catch (error) {
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
 
 exports.addMembersToChannelTab = async (req, res, next) => {
   try {
@@ -67,7 +162,8 @@ exports.addMembersToChannelTab = async (req, res, next) => {
     }
 
     try {
-      // First validate all tabs and check for duplicates
+      // First validate all tabs and collect all unique member IDs
+      const allMemberIds = new Set();
       const validationPromises = assignments.map(async (assignment) => {
         const { tabId, memberids } = assignment;
 
@@ -97,6 +193,8 @@ exports.addMembersToChannelTab = async (req, res, next) => {
             );
           }
 
+          // Collect all member IDs for channel membership check
+          allMemberIds.add(memberId.toString());
         }
 
         return { tabId, memberids };
@@ -105,7 +203,21 @@ exports.addMembersToChannelTab = async (req, res, next) => {
       // Wait for all validations to complete
       const validatedAssignments = await Promise.all(validationPromises);
 
-      // If we get here, all validations passed, so we can do updates in parallel
+      // Check which users need to be added to the channel
+      const currentChannelMembers = channel.members.map(id => id.toString());
+      const newChannelMembers = Array.from(allMemberIds).filter(
+        memberId => !currentChannelMembers.includes(memberId)
+      );
+
+      // Add new members to the channel if any
+      if (newChannelMembers.length > 0) {
+        await addMemberToChannel(
+          { _id: channelId },
+          { $addToSet: { members: { $each: newChannelMembers } } }
+        );
+      }
+
+      // Now update all tabs with their respective members
       const updatePromises = validatedAssignments.map(
         ({ tabId, memberids }) => {
           return updateChannelTab(
@@ -569,12 +681,11 @@ exports.toggleChannelTab = async (req, res, next) => {
       isDefault: true,
     });
 
-    let result;
     let action;
 
     if (existingTab) {
       // Tab exists - DEACTIVATE (delete)
-      result = await deleteChannelTab({
+      await deleteChannelTab({
         _id: existingTab._id,
       });
       

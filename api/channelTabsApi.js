@@ -3,6 +3,7 @@
 const { Router } = require("express");
 const {
   addMembersToChannelTab,
+  removeMembersFromChannelTab,
   getAllTabsOfChannel,
   getAllTabMembers,
   createNewChannelTab,
@@ -15,6 +16,7 @@ const {
   validateCreateChannelTab,
   validateCreateSelectedChannelTabs,
   validateAddMembersToChannelTab,
+  validateRemoveMembersFromChannelTab,
   validateTabIdParam,
   validateGetAllTabsOfChannelQuery,
   validateGetTabMembersQuery,
@@ -52,6 +54,14 @@ class ChannelTabsApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateAddMembersToChannelTab,
       addMembersToChannelTab
+    );
+
+    // Remove members from channel tab with validation
+    router.post(
+      "/remove-members",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateRemoveMembersFromChannelTab,
+      removeMembersFromChannelTab
     );
 
     // Get all tabs of channel with validation

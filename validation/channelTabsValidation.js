@@ -145,18 +145,34 @@ const addMembersToChannelTabValidation = Joi.object({
 
 // Remove members from channel tab validation schema
 const removeMembersFromChannelTabValidation = Joi.object({
-  tabId: helpers.objectIdValidation.required().messages({
-    "any.required": "Tab ID is required",
+  channelId: helpers.objectIdValidation.required().messages({
+    "any.required": "Channel ID is required",
   }),
 
-  memberIds: Joi.array()
-    .items(helpers.objectIdValidation)
+  assignments: Joi.array()
+    .items(
+      Joi.object({
+        tabId: helpers.objectIdValidation.required().messages({
+          "any.required": "Tab ID is required in assignment",
+        }),
+
+        memberids: Joi.array()
+          .items(helpers.objectIdValidation)
+          .min(1)
+          .required()
+          .messages({
+            "array.min": "At least one member ID is required in assignment",
+            "any.required": "Member IDs are required in assignment",
+            "array.base": "Member IDs must be an array of valid user IDs",
+          }),
+      }).required()
+    )
     .min(1)
     .required()
     .messages({
-      "array.min": "At least one member ID is required",
-      "any.required": "Member IDs are required",
-      "array.base": "Member IDs must be an array of valid user IDs",
+      "array.min": "At least one assignment is required",
+      "any.required": "Assignments are required",
+      "array.base": "Assignments must be an array",
     }),
 });
 
