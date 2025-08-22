@@ -33,8 +33,8 @@ exports.getUserInbox = async (req, res, next) => {
       });
     }
 
-    // For now, only implement 'important' filter
-    if (filter !== 'important') {
+    // For now, only implement 'important' and 'outbox' filters
+    if (filter !== 'important' && filter !== 'outbox') {
       return next({
         statusCode: STATUS_CODES.NOT_IMPLEMENTED,
         message: `Filter '${filter}' is not yet implemented`,
