@@ -1,10 +1,10 @@
 "use strict";
 
 const { Router } = require("express");
-const { getUserInbox } = require("../controller/inbox.controller");
+const { getUserInbox, toggleReadStatus, toggleClearedStatus } = require("../controller/inbox.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
-const { validateInboxQuery } = require("../validation/inboxValidation");
+const { validateInboxQuery, validateTaskIdParam } = require("../validation/inboxValidation");
 
 class InboxApi {
   constructor() {
@@ -21,6 +21,22 @@ class InboxApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateInboxQuery,
       getUserInbox
+    );
+
+    // Toggle read status of inbox entry (read/unread)
+    router.patch(
+      "/:taskId/read",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateTaskIdParam,
+      toggleReadStatus
+    );
+
+    // Toggle cleared status of inbox entry (clear/restore)
+    router.patch(
+      "/:taskId/clear",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateTaskIdParam,
+      toggleClearedStatus
     );
   }
 

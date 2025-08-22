@@ -1,5 +1,10 @@
 const Joi = require("joi");
 
+// ObjectId validation helper
+const objectIdValidation = Joi.string()
+  .pattern(/^[0-9a-fA-F]{24}$/)
+  .message("Must be a valid ObjectId");
+
 // Validation middleware function
 const validateRequest = (schema, source = "body") => {
   return (req, res, next) => {
@@ -57,11 +62,21 @@ const inboxQueryValidation = Joi.object({
   limit: Joi.number().integer().min(1).max(50).default(20),
 });
 
+// Task ID parameter validation
+const taskIdParamValidation = Joi.object({
+  taskId: objectIdValidation.required().messages({
+    "any.required": "Task ID is required",
+    "string.pattern.base": "Task ID must be a valid ObjectId",
+  }),
+});
+
 module.exports = {
   validateInboxQuery: validateRequest(inboxQueryValidation, "query"),
+  validateTaskIdParam: validateRequest(taskIdParamValidation, "params"),
 
   // Export schemas for testing or custom usage
   schemas: {
     inboxQueryValidation,
+    taskIdParamValidation,
   },
 };

@@ -4,7 +4,7 @@ const { parseBody, generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const { getAllTasks } = require("../models/taskModel");
-const { bulkCreateTaskInboxEntries } = require("../models/taskInboxModel");
+const { bulkCreateTaskInboxEntries, findTaskInboxEntry, upsertTaskInboxEntry } = require("../models/taskInboxModel");
 const { getUserInboxTasksQuery } = require("./queries/inboxQueries");
 
 /**
@@ -101,6 +101,120 @@ exports.getUserInbox = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in getUserInbox:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Toggle read status of inbox entry
+ */
+exports.toggleReadStatus = async (req, res, next) => {
+  try {
+    const { taskId } = req.params;
+    const userId = req?.user?.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Find existing inbox entry
+    const existingEntry = await findTaskInboxEntry({
+      userId: userId,
+      taskId: taskId
+    });
+
+    let newReadStatus;
+    if (existingEntry) {
+      // Toggle existing status
+      newReadStatus = !existingEntry.isRead;
+    } else {
+      // Create new entry with read = true
+      newReadStatus = true;
+    }
+
+    // Upsert with toggled status
+    const updatedEntry = await upsertTaskInboxEntry(userId, taskId, {
+      isRead: newReadStatus
+    });
+
+    return generateResponse(
+      {
+        taskId,
+        isRead: updatedEntry.isRead,
+        isCleared: updatedEntry.isCleared,
+        updatedAt: updatedEntry.updatedAt
+      },
+      `Task marked as ${newReadStatus ? 'read' : 'unread'}`,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in toggleReadStatus:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Toggle cleared status of inbox entry
+ */
+exports.toggleClearedStatus = async (req, res, next) => {
+  try {
+    const { taskId } = req.params;
+    const userId = req?.user?.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Find existing inbox entry
+    const existingEntry = await findTaskInboxEntry({
+      userId: userId,
+      taskId: taskId
+    });
+
+    let newClearedStatus;
+    if (existingEntry) {
+      // Toggle existing status
+      newClearedStatus = !existingEntry.isCleared;
+    } else {
+      // Create new entry with cleared = true
+      newClearedStatus = true;
+    }
+
+    // Upsert with toggled status
+    const updatedEntry = await upsertTaskInboxEntry(userId, taskId, {
+      isCleared: newClearedStatus
+    });
+
+    return generateResponse(
+      {
+        taskId,
+        isRead: updatedEntry.isRead,
+        isCleared: updatedEntry.isCleared,
+        updatedAt: updatedEntry.updatedAt
+      },
+      `Task ${newClearedStatus ? 'cleared' : 'restored'} from inbox`,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in toggleClearedStatus:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,
