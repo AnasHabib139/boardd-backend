@@ -118,6 +118,15 @@ exports.getImportantInboxTasksQuery = (userId) => {
         preserveNullAndEmptyArrays: true
       }
     },
+    // Filter out cleared tasks
+    {
+      $match: {
+        $or: [
+          { "inboxEntry.isCleared": { $ne: true } },
+          { "inboxEntry": null }
+        ]
+      }
+    },
     // Add computed fields
     {
       $addFields: {
@@ -370,6 +379,15 @@ exports.getOutboxInboxTasksQuery = (userId) => {
       $unwind: {
         path: "$inboxEntry", 
         preserveNullAndEmptyArrays: true
+      }
+    },
+    // Filter out cleared tasks
+    {
+      $match: {
+        $or: [
+          { "inboxEntry.isCleared": { $ne: true } },
+          { "inboxEntry": null }
+        ]
       }
     },
     // Add computed fields
