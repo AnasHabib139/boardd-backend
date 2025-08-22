@@ -582,6 +582,107 @@ exports.getChildrenTimeEntries = async (req, res, next) => {
 };
 
 /**
+ * Duplicate time entry - Create a copy of time entry
+ * Rules: Parent with children cannot be duplicated, children can be duplicated, parent without children can be duplicated
+ */
+exports.duplicateTimeEntry = async (req, res, next) => {
+  try {
+    const { entryId } = req.params;
+    const userId = req?.user?.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Find the time entry to duplicate
+    const timeEntry = await findTimeEntry({ _id: entryId, userId });
+    if (!timeEntry) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Time entry not found or you don't have permission to duplicate it",
+      });
+    }
+
+    // No need to check for active entries since duplicate won't be active
+
+    // Business rule validation: Parent with children cannot be duplicated
+    if (!timeEntry.parentEntryId) {
+      // This is a parent entry, check if it has children
+      const parentHasChildren = await hasChildren(timeEntry._id);
+      if (parentHasChildren) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "Parent entries with child sessions cannot be duplicated. You can duplicate individual child sessions instead.",
+        });
+      }
+    }
+
+    // Create duplicate entry (copy all time fields exactly)
+    const duplicateData = {
+      userId,
+      title: timeEntry.title || "",
+      description: timeEntry.description || "",
+      startTime: timeEntry.startTime, // Copy exact start time
+      endTime: timeEntry.endTime, // Copy exact end time
+      totalTime: timeEntry.totalTime, // Copy exact total time
+      daysAdded: timeEntry.daysAdded || 0, // Copy days added
+      isActive: false, // Duplicate is not active
+      createdAt: new Date(), // New creation time
+      // For child entries, preserve the parent relationship
+      parentEntryId: timeEntry.parentEntryId || null,
+    };
+
+    const duplicatedEntry = await createTimeEntry(duplicateData);
+
+    // If this is a child entry, update parent aggregates
+    if (duplicatedEntry.parentEntryId) {
+      await updateParentEntryAggregates(duplicatedEntry.parentEntryId);
+    }
+
+    const responseMessage = timeEntry.parentEntryId 
+      ? "Child time entry duplicated successfully"
+      : "Time entry duplicated successfully";
+
+    return generateResponse(
+      {
+        timeEntry: {
+          _id: duplicatedEntry._id,
+          title: duplicatedEntry.title,
+          description: duplicatedEntry.description,
+          startTime: duplicatedEntry.startTime,
+          endTime: duplicatedEntry.endTime,
+          totalTime: duplicatedEntry.totalTime,
+          daysAdded: duplicatedEntry.daysAdded,
+          isActive: duplicatedEntry.isActive,
+          createdAt: duplicatedEntry.createdAt,
+          parentEntryId: duplicatedEntry.parentEntryId,
+        },
+        originalEntry: {
+          _id: timeEntry._id,
+          title: timeEntry.title,
+          description: timeEntry.description,
+          isParent: !timeEntry.parentEntryId,
+        }
+      },
+      responseMessage,
+      res,
+      STATUS_CODES.CREATED
+    );
+  } catch (error) {
+    console.error("Error in duplicateTimeEntry:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
  * Delete time entry - Delete time entry with all children (if parent) or single entry (if child)
  */
 exports.deleteTimeEntry = async (req, res, next) => {

@@ -9,6 +9,7 @@ const {
   getUserTimeEntries,
   getChildrenTimeEntries,
   deleteTimeEntry,
+  duplicateTimeEntry,
 } = require("../controller/clockup.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -75,6 +76,14 @@ class ClockupApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateTimeEntryIdParam,
       getChildrenTimeEntries
+    );
+
+    // Duplicate time entry - Create a copy of time entry and start it
+    router.post(
+      "/:entryId/duplicate",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateTimeEntryIdParam,
+      duplicateTimeEntry
     );
 
     // Delete time entry - Delete time entry with all children (if parent) or single entry (if child)
