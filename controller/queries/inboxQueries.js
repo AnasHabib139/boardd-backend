@@ -596,6 +596,369 @@ exports.getOutboxInboxTasksQuery = (userId) => {
 };
 
 /**
+ * Get user's cleared inbox tasks (isCleared: true from inbox entries)
+ * @param {string} userId - User ID
+ * @returns {Array} Aggregation pipeline
+ */
+exports.getClearedInboxTasksQuery = (userId) => {
+  return [
+    // Start from taskinboxes collection and match cleared entries for user
+    {
+      $match: {
+        userId: Types.ObjectId.createFromHexString(userId),
+        isCleared: true
+      }
+    },
+    // Lookup task details
+    {
+      $lookup: {
+        from: "tasks",
+        localField: "taskId",
+        foreignField: "_id",
+        as: "task"
+      }
+    },
+    {
+      $unwind: {
+        path: "$task",
+        preserveNullAndEmptyArrays: false // Only include if task exists
+      }
+    },
+    // Filter for active tasks only
+    {
+      $match: {
+        "task.isActive": true
+      }
+    },
+    // Lookup project details for channel context
+    {
+      $lookup: {
+        from: "projects",
+        localField: "task.projectId",
+        foreignField: "_id",
+        as: "project",
+        pipeline: [
+          {
+            $lookup: {
+              from: "channeltabs",
+              localField: "tabId", 
+              foreignField: "_id",
+              as: "tab",
+              pipeline: [
+                {
+                  $lookup: {
+                    from: "channels",
+                    localField: "channelId",
+                    foreignField: "_id", 
+                    as: "channel",
+                    pipeline: [
+                      {
+                        $project: {
+                          _id: 1,
+                          channelName: 1
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  $unwind: {
+                    path: "$channel",
+                    preserveNullAndEmptyArrays: true
+                  }
+                }
+              ]
+            }
+          },
+          {
+            $unwind: {
+              path: "$tab",
+              preserveNullAndEmptyArrays: true
+            }
+          }
+        ]
+      }
+    },
+    {
+      $unwind: {
+        path: "$project",
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    // Lookup channel for non-project tasks
+    {
+      $lookup: {
+        from: "channels",
+        localField: "task.channelId",
+        foreignField: "_id",
+        as: "directChannel",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              channelName: 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      $unwind: {
+        path: "$directChannel",
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    // Lookup assignee details for custom title (in case it's an outbox task)
+    {
+      $lookup: {
+        from: "users",
+        localField: "task.assignedTo",
+        foreignField: "_id",
+        as: "assignees",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              email: 1
+            }
+          }
+        ]
+      }
+    },
+    // Add computed fields
+    {
+      $addFields: {
+        // Determine if this was an important or outbox task for custom title
+        isImportantTask: {
+          $cond: {
+            if: { $in: [Types.ObjectId.createFromHexString(userId), { $ifNull: ["$task.assignedTo", []] }] },
+            then: true,
+            else: false
+          }
+        },
+        isOutboxTask: {
+          $eq: ["$task.createdBy", Types.ObjectId.createFromHexString(userId)]
+        },
+        // Custom title based on task type
+        customTitle: {
+          $cond: {
+            // If user is assigned to the task (important task)
+            if: { $in: [Types.ObjectId.createFromHexString(userId), { $ifNull: ["$task.assignedTo", []] }] },
+            then: {
+              $concat: [
+                "\"", { $ifNull: ["$task.title", "Untitled"] }, "\" task at ",
+                {
+                  $ifNull: [
+                    {
+                      $cond: {
+                        if: { $ne: ["$project", null] },
+                        then: "$project.tab.channel.channelName",
+                        else: "$directChannel.channelName"
+                      }
+                    },
+                    "Unknown Channel"
+                  ]
+                }
+              ]
+            },
+            // Otherwise it's an outbox task
+            else: {
+              $cond: {
+                // Check if task has no assignees (unassigned)
+                if: { 
+                  $or: [
+                    { $eq: [{ $ifNull: ["$task.assignedTo", []] }, []] },
+                    { $eq: [{ $size: { $ifNull: ["$task.assignedTo", []] } }, 0] }
+                  ]
+                },
+                then: {
+                  $concat: [
+                    "You created \"", { $ifNull: ["$task.title", "Untitled"] }, "\" at ",
+                    {
+                      $ifNull: [
+                        {
+                          $cond: {
+                            if: { $ne: ["$project", null] },
+                            then: "$project.tab.channel.channelName",
+                            else: "$directChannel.channelName"
+                          }
+                        },
+                        "Unknown Channel"
+                      ]
+                    }
+                  ]
+                },
+                else: {
+                  $cond: {
+                    // Check if assigned to self
+                    if: { $in: [Types.ObjectId.createFromHexString(userId), { $ifNull: ["$task.assignedTo", []] }] },
+                    then: {
+                      $concat: [
+                        "You assigned \"", { $ifNull: ["$task.title", "Untitled"] }, "\" to yourself at ",
+                        {
+                          $ifNull: [
+                            {
+                              $cond: {
+                                if: { $ne: ["$project", null] },
+                                then: "$project.tab.channel.channelName",
+                                else: "$directChannel.channelName"
+                              }
+                            },
+                            "Unknown Channel"
+                          ]
+                        }
+                      ]
+                    },
+                    else: {
+                      $concat: [
+                        "You assigned \"", { $ifNull: ["$task.title", "Untitled"] }, "\" to ",
+                        {
+                          $cond: {
+                            if: { $gt: [{ $size: { $ifNull: ["$assignees", []] } }, 0] },
+                            then: {
+                              $reduce: {
+                                input: "$assignees",
+                                initialValue: "",
+                                in: {
+                                  $concat: [
+                                    "$$value",
+                                    {
+                                      $cond: {
+                                        if: { $eq: ["$$value", ""] },
+                                        then: "",
+                                        else: ", "
+                                      }
+                                    },
+                                    { $ifNull: ["$$this.name", "Unknown User"] }
+                                  ]
+                                }
+                              }
+                            },
+                            else: "Unknown User"
+                          }
+                        },
+                        " at ",
+                        {
+                          $ifNull: [
+                            {
+                              $cond: {
+                                if: { $ne: ["$project", null] },
+                                then: "$project.tab.channel.channelName",
+                                else: "$directChannel.channelName"
+                              }
+                            },
+                            "Unknown Channel"
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        // Check if task is overdue
+        isOverdue: {
+          $cond: {
+            if: {
+              $and: [
+                { $ne: ["$task.dueDate", null] },
+                { $lt: ["$task.dueDate", new Date()] },
+                { $ne: ["$task.status", "completed"] }
+              ]
+            },
+            then: true,
+            else: false
+          }
+        },
+        // Format due date message
+        dueDateMessage: {
+          $cond: {
+            if: { $ne: ["$task.dueDate", null] },
+            then: {
+              $cond: {
+                if: {
+                  $and: [
+                    { $lt: ["$task.dueDate", new Date()] },
+                    { $ne: ["$task.status", "completed"] }
+                  ]
+                },
+                then: {
+                  $concat: [
+                    "Task is overdue due date was ",
+                    {
+                      $dateToString: {
+                        format: "%Y-%m-%d",
+                        date: "$task.dueDate"
+                      }
+                    },
+                    " at ",
+                    {
+                      $dateToString: {
+                        format: "%H:%M",
+                        date: "$task.dueDate"
+                      }
+                    }
+                  ]
+                },
+                else: {
+                  $concat: [
+                    "Task is due on ",
+                    {
+                      $dateToString: {
+                        format: "%Y-%m-%d",
+                        date: "$task.dueDate"
+                      }
+                    },
+                    " at ",
+                    {
+                      $dateToString: {
+                        format: "%H:%M",
+                        date: "$task.dueDate"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            else: "No due date set"
+          }
+        }
+      }
+    },
+    // Project final fields
+    {
+      $project: {
+        _id: "$task._id",
+        title: "$task.title",
+        customTitle: 1,
+        status: "$task.status",
+        priority: "$task.priority",
+        dueDate: "$task.dueDate",
+        isOverdue: 1,
+        dueDateMessage: 1,
+        isRead: 1,
+        isCleared: 1,
+        inboxCreatedAt: "$createdAt",
+        createdAt: "$task.createdAt",
+        isImportantTask: 1,
+        isOutboxTask: 1,
+        needsInboxEntry: { $literal: false }
+      }
+    },
+    // Sort by inbox creation date (newest first), then by task creation date
+    {
+      $sort: {
+        inboxCreatedAt: -1,
+        createdAt: -1
+      }
+    }
+  ];
+};
+
+/**
  * Get user's inbox tasks query with custom formatting (legacy function for compatibility)
  * @param {string} userId - User ID
  * @param {string} filter - Filter type: 'important', 'outbox', 'cleared'
@@ -608,8 +971,7 @@ exports.getUserInboxTasksQuery = (userId, filter = 'important') => {
     case 'outbox':
       return exports.getOutboxInboxTasksQuery(userId);
     case 'cleared':
-      // TODO: Implement cleared filter
-      return exports.getImportantInboxTasksQuery(userId);
+      return exports.getClearedInboxTasksQuery(userId);
     default:
       return exports.getImportantInboxTasksQuery(userId);
   }

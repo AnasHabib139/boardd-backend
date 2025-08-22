@@ -4,7 +4,7 @@ const { parseBody, generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const { getAllTasks } = require("../models/taskModel");
-const { bulkCreateTaskInboxEntries, findTaskInboxEntry, upsertTaskInboxEntry } = require("../models/taskInboxModel");
+const { bulkCreateTaskInboxEntries, findTaskInboxEntry, upsertTaskInboxEntry, findUserTaskInboxEntries } = require("../models/taskInboxModel");
 const { getUserInboxTasksQuery } = require("./queries/inboxQueries");
 
 /**
@@ -33,25 +33,31 @@ exports.getUserInbox = async (req, res, next) => {
       });
     }
 
-    // For now, only implement 'important' and 'outbox' filters
-    if (filter !== 'important' && filter !== 'outbox') {
-      return next({
-        statusCode: STATUS_CODES.NOT_IMPLEMENTED,
-        message: `Filter '${filter}' is not yet implemented`,
+    // All filters are now implemented
+    // No filter restriction needed
+
+    let result;
+
+    if (filter === 'cleared') {
+      // For cleared filter, query from taskinboxes collection
+      const query = getUserInboxTasksQuery(userId, filter);
+      result = await findUserTaskInboxEntries({
+        query,
+        page: parseInt(page) || 1,
+        limit: parseInt(limit) || 20,
+        responseKey: "inboxTasks"
+      });
+    } else {
+      // For important and outbox filters, query from tasks collection
+      const query = getUserInboxTasksQuery(userId, filter);
+      result = await getAllTasks({
+        query,
+        page: parseInt(page) || 1,
+        limit: parseInt(limit) || 20,
+        responseKey: "inboxTasks",
+        sort: { inboxCreatedAt: -1, createdAt: -1 },
       });
     }
-
-    // Get inbox tasks query
-    const query = getUserInboxTasksQuery(userId, filter);
-
-    // Execute query with pagination
-    const result = await getAllTasks({
-      query,
-      page: parseInt(page) || 1,
-      limit: parseInt(limit) || 20,
-      responseKey: "inboxTasks",
-      sort: { inboxCreatedAt: -1, createdAt: -1 },
-    });
 
     // Handle on-demand inbox entry creation
     const tasksNeedingInboxEntries = result.inboxTasks.filter(task => task.needsInboxEntry);
