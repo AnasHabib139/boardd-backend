@@ -16,9 +16,12 @@ class FileServeApi {
     router.get("/:folder/:filename", async (req, res, next) => {
       try {
         const { folder, filename } = req.params;
-        
-        // Construct S3 URL (uploadFiles prefix already included since router is mounted at /uploadFiles)
-        const s3Url = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/uploadFiles/${folder}/${filename}`;
+
+        // URL encode the filename to handle spaces and special characters
+        const encodedFilename = encodeURIComponent(filename);
+
+        // Construct S3 URL (router is mounted at /uploadFiles, so params are folder/filename)
+        const s3Url = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/uploadFiles/${folder}/${encodedFilename}`;
 
         // Redirect to S3 URL
         res.redirect(301, s3Url);
@@ -35,9 +38,12 @@ class FileServeApi {
     router.get("/:folder/:subfolder/:filename", async (req, res, next) => {
       try {
         const { folder, subfolder, filename } = req.params;
-        
-        // Construct S3 URL (uploadFiles prefix already included since router is mounted at /uploadFiles)
-        const s3Url = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/uploadFiles/${folder}/${subfolder}/${filename}`;
+
+        // URL encode the filename to handle spaces and special characters
+        const encodedFilename = encodeURIComponent(filename);
+
+        // Construct S3 URL (router is mounted at /uploadFiles, so params are folder/subfolder/filename)
+        const s3Url = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/uploadFiles/${folder}/${subfolder}/${encodedFilename}`;
 
         // Redirect to S3 URL
         res.redirect(301, s3Url);
