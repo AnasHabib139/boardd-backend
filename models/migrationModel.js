@@ -50,14 +50,19 @@ exports.recordMigration = async (name, version, description) => {
 
 // Record failed migration
 exports.recordFailedMigration = async (name, version, description, error) => {
-  return MigrationModel.create({
-    name,
-    version,
-    description,
-    success: false,
-    error: error.message || error,
-    executedAt: new Date(),
-  });
+  // Use upsert to avoid duplicate key errors
+  return MigrationModel.findOneAndUpdate(
+    { name },
+    {
+      name,
+      version,
+      description,
+      success: false,
+      error: error.message || error,
+      executedAt: new Date(),
+    },
+    { upsert: true, new: true }
+  );
 };
 
 // Get all executed migrations

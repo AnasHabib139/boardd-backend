@@ -9,14 +9,20 @@ const uuid = require("uuid").v4;
 const storage = multer.memoryStorage();
 
 function config() {
-  return {
+  const config = {
     region: process.env.AWS_REGION,
-    endpoint: process.env.AWS_ENDPOINT,
     credentials: {
       accessKeyId: process.env.AWS_ACCESS_KEY,
       secretAccessKey: process.env.AWS_SECRET_KEY,
     },
   };
+
+  // Only add endpoint if it's provided and valid (for custom S3-compatible services)
+  if (process.env.AWS_ENDPOINT && process.env.AWS_ENDPOINT !== "AWS_ENDPOINT") {
+    config.endpoint = process.env.AWS_ENDPOINT;
+  }
+
+  return config;
 }
 
 const fileFilter = (req, file, cb) => {
