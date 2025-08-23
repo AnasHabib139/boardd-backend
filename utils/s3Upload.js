@@ -16,14 +16,42 @@ function config() {
 
 const fileFilter = (req, file, cb) => {
   try {
-    if (file.mimetype.split("/")[0] === "image") {
-      cb(null, true);
+    // Allowed file types
+    const allowedDocTypes = /pdf|docx?|xlsx?|pptx?/;
+    const allowedImageTypes = /jpeg|jpg|png|gif/;
+    const allowedVideoTypes = /mp4|mov|avi|mkv|wmv|flv|webm|m4v|3gp/;
+
+    const ext = require("path").extname(file.originalname).toLowerCase();
+    const fileType = file.mimetype.split("/")[0];
+
+    if (fileType === "image") {
+      // Check image types
+      if (allowedImageTypes.test(ext.substring(1))) {
+        cb(null, true);
+      } else {
+        cb(new Error("Only JPEG, JPG, PNG and GIF images are allowed!"));
+      }
+    } else if (fileType === "video") {
+      // Check video types
+      if (allowedVideoTypes.test(ext.substring(1))) {
+        cb(null, true);
+      } else {
+        cb(new Error("Only MP4, MOV, AVI, MKV, WMV, FLV, WEBM, M4V, and 3GP videos are allowed!"));
+      }
     } else {
-      cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE"), false);
+      // Check document types
+      const isValidExt = allowedDocTypes.test(ext.substring(1));
+      const isValidMime = /application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|application\/vnd\.ms-excel|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-powerpoint|application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation/.test(file.mimetype);
+
+      if (isValidExt && isValidMime) {
+        cb(null, true);
+      } else {
+        cb(new Error("Only PDF, PPT, Excel, and Word documents are allowed!"));
+      }
     }
   } catch (e) {
     console.log(e);
-    // res.json(error("Server Error", e));
+    cb(new Error("File validation error"));
   }
 };
 
@@ -32,56 +60,110 @@ const fileFilter = (req, file, cb) => {
 exports.upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 2000000, files: 4 },
+  limits: { fileSize: 100 * 1024 * 1024, files: 4 }, // 100MB limit for videos
 });
 
 exports.s3Uploadv3 = async (files, base64 = false) => {
   try {
     const s3client = new S3Client(config());
-    let keys = [];
-    let key = ''
+    let uploadResults = [];
     let buf;
-    const params = files.map((file) => {
-      if (base64) {
-         buf = Buffer.from(file.replace(/^data:image\/\w+;base64,/, ""), 'base64')
+
+    for (const file of files) {
+      // Determine file category for path structure
+      const isImage = file.mimetype.startsWith("image/");
+      const isVideo = file.mimetype.startsWith("video/");
+      let category;
+      
+      if (isImage) {
+        category = "images";
+      } else if (isVideo) {
+        category = "videos";
+      } else {
+        category = "documents";
       }
-      key = `uploads/${uuid()}-${base64 ? '.png' : file.originalname}`;
-      return {
+
+      // Generate filename with timestamp
+      const timestamp = Date.now();
+      const originalName = base64 ? 'image.png' : file.originalname;
+      const fileName = `files-${timestamp}-${originalName}`;
+      
+      // Create S3 key maintaining uploadFiles structure for backward compatibility
+      const s3Key = `uploadFiles/${category}/${fileName}`;
+      
+      if (base64) {
+        buf = Buffer.from(file.replace(/^data:image\/\w+;base64,/, ""), 'base64');
+      }
+
+      const uploadParams = {
         Bucket: process.env.AWS_BUCKET_NAME,
-        Key: key,
+        Key: s3Key,
         Body: base64 ? buf : file.buffer,
-        ContentEncoding: 'base64',
-        ContentType: 'image/png'
+        ContentType: file.mimetype || (base64 ? 'image/png' : 'application/octet-stream'),
       };
-    });
 
-    await Promise.all(
-      params.map((param) => s3client.send(new PutObjectCommand(param)).then((v) => { console.log(v); keys.push(param.Key) }))
-    );
-    return keys;
+      try {
+        const result = await s3client.send(new PutObjectCommand(uploadParams));
+        uploadResults.push({
+          key: s3Key,
+          path: `/${s3Key}`, // Return with leading slash for backward compatibility
+          filename: fileName,
+          mimetype: file.mimetype,
+          size: file.size
+        });
+        console.log(`File uploaded successfully: ${s3Key}`);
+      } catch (uploadError) {
+        console.error(`Failed to upload file ${fileName}:`, uploadError);
+        throw uploadError;
+      }
+    }
+
+    return uploadResults;
   } catch (e) {
-    console.log(e);
+    console.error("S3 upload error:", e);
+    throw e;
   }
 };
 
-exports.deleteImage = async (images) => {
+exports.deleteFiles = async (filePaths) => {
   try {
-    if (images.length != 0 && images[0] == null) return;
-    const s3 = new S3Client(config());
+    if (!filePaths || filePaths.length === 0) return [];
+    const s3client = new S3Client(config());
 
-    const params = images.map((file) => {
-      console.log(file);
-      return {
-        Bucket: process.env.AWS_BUCKET_NAME,
-        Key: file,
-      };
-    });
+    const results = {
+      successful: [],
+      failed: []
+    };
 
-    return await Promise.all(
-      params.map((param) => s3.send(new DeleteObjectCommand(param)))
-    );
+    for (const filePath of filePaths) {
+      try {
+        // Convert file path to S3 key (remove leading slash if present)
+        const s3Key = filePath.startsWith('/') ? filePath.slice(1) : filePath;
+        
+        const deleteParams = {
+          Bucket: process.env.AWS_BUCKET_NAME,
+          Key: s3Key,
+        };
+
+        await s3client.send(new DeleteObjectCommand(deleteParams));
+        results.successful.push(filePath);
+        console.log(`File deleted successfully: ${s3Key}`);
+      } catch (deleteError) {
+        console.error(`Failed to delete file ${filePath}:`, deleteError);
+        results.failed.push({
+          path: filePath,
+          error: deleteError.message
+        });
+      }
+    }
+
+    return results;
   } catch (e) {
-    console.log(e);
+    console.error("S3 delete error:", e);
+    throw e;
   }
 };
+
+// Keep old function name for backward compatibility
+exports.deleteImage = exports.deleteFiles;
 

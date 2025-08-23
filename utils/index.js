@@ -31,13 +31,21 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     // Choose destination based on file type
     const isImage = file.mimetype.startsWith("image/");
-    const uploadPath = isImage
-      ? "./uploadFiles/images"
-      : "./uploadFiles/documents";
+    const isVideo = file.mimetype.startsWith("video/");
+    
+    let uploadPath;
+    if (isImage) {
+      uploadPath = "./uploadFiles/images";
+    } else if (isVideo) {
+      uploadPath = "./uploadFiles/videos";
+    } else {
+      uploadPath = "./uploadFiles/documents";
+    }
 
     // Create directories if they don't exist
     fs.mkdirSync("./uploadFiles", { recursive: true });
     fs.mkdirSync("./uploadFiles/images", { recursive: true });
+    fs.mkdirSync("./uploadFiles/videos", { recursive: true });
     fs.mkdirSync("./uploadFiles/documents", { recursive: true });
 
     cb(null, uploadPath);
@@ -48,9 +56,17 @@ const storage = multer.diskStorage({
       file.originalname
     )}`;
     const isImage = file.mimetype.startsWith("image/");
-    const filePath = isImage
-      ? `/uploadFiles/images/${fileName}`
-      : `/uploadFiles/documents/${fileName}`;
+    const isVideo = file.mimetype.startsWith("video/");
+    
+    let filePath;
+    if (isImage) {
+      filePath = `/uploadFiles/images/${fileName}`;
+    } else if (isVideo) {
+      filePath = `/uploadFiles/videos/${fileName}`;
+    } else {
+      filePath = `/uploadFiles/documents/${fileName}`;
+    }
+    
     req.filepath = filePath;
     cb(null, fileName);
   },
@@ -61,9 +77,11 @@ const fileFilter = (req, file, cb) => {
   // Allowed file types
   const allowedDocTypes = /pdf|docx?|xlsx?|pptx?/;
   const allowedImageTypes = /jpeg|jpg|png|gif/;
+  const allowedVideoTypes = /mp4|mov|avi|mkv|wmv|flv|webm|m4v|3gp/;
 
   const ext = path.extname(file.originalname).toLowerCase();
   const isImage = file.mimetype.startsWith("image/");
+  const isVideo = file.mimetype.startsWith("video/");
 
   if (isImage) {
     // Check image types
@@ -71,6 +89,13 @@ const fileFilter = (req, file, cb) => {
       cb(null, true);
     } else {
       cb(new Error("Only JPEG, JPG, PNG and GIF images are allowed!"));
+    }
+  } else if (isVideo) {
+    // Check video types
+    if (allowedVideoTypes.test(ext.substring(1))) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only MP4, MOV, AVI, MKV, WMV, FLV, WEBM, M4V, and 3GP videos are allowed!"));
     }
   } else {
     // Check document types
@@ -93,7 +118,7 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 100 * 1024 * 1024, // 100MB limit (increased for video files)
   },
 });
 

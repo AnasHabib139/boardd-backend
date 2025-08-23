@@ -22,6 +22,7 @@ const AdminApi = require("./adminApi");
 const HomeApi = require("./homeApi");
 const ClockupApi = require("./clockupApi");
 const InboxApi = require("./inboxApi");
+const FileServeApi = require("./fileServeApi");
 // all API routing files import here like above
 
 class API {
@@ -52,6 +53,7 @@ class API {
     this.routeGroups.push(new HomeApi());
     this.routeGroups.push(new ClockupApi());
     this.routeGroups.push(new InboxApi());
+    this.routeGroups.push(new FileServeApi());
     // all routes register here like above
   }
 

@@ -1,11 +1,10 @@
 const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
-const fs = require("fs");
-const path = require("path");
+const { s3Uploadv3, deleteFiles: deleteS3Files } = require("../utils/s3Upload");
 
 /**
- * Upload multiple files
- * @route POST /api/upload/multiple
+ * Upload multiple files to S3
+ * @route POST /api/upload/files
  */
 exports.uploadMultipleFiles = async (req, res, next) => {
   try {
@@ -16,38 +15,38 @@ exports.uploadMultipleFiles = async (req, res, next) => {
       });
     }
 
-    // Get all file paths
-    const filePaths = req.files.map((file) => {
-      const isImage = file.mimetype.startsWith("image/");
-      return `/uploadFiles/${isImage ? "images" : "documents"}/${
-        file.filename
-      }`;
-    });
+    // Upload files to S3
+    const uploadResults = await s3Uploadv3(req.files);
 
-    // Return the file paths
+    // Extract file paths for backward compatibility
+    const filePaths = uploadResults.map(result => result.path);
+
+    // Return the file paths and additional info
     return generateResponse(
-      { filePaths },
-      "Files uploaded successfully",
+      { 
+        filePaths,
+        files: uploadResults.map(result => ({
+          path: result.path,
+          filename: result.filename,
+          mimetype: result.mimetype,
+          size: result.size
+        }))
+      },
+      "Files uploaded successfully to S3",
       res,
       STATUS_CODES.SUCCESS
     );
   } catch (error) {
-    // If there's an error, clean up any uploaded files
-    if (req.files) {
-      req.files.forEach((file) => {
-        fs.unlinkSync(file.path);
-      });
-    }
     console.error("Error in uploadMultipleFiles:", error);
     next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
-      message: error?.message,
+      message: error?.message || "File upload failed",
     });
   }
 };
 
 /**
- * Delete files (can handle both single file path or array of file paths)
+ * Delete files from S3 (can handle both single file path or array of file paths)
  * @route DELETE /api/upload/files
  */
 exports.deleteFiles = async (req, res, next) => {
@@ -65,70 +64,39 @@ exports.deleteFiles = async (req, res, next) => {
     // Convert to array if single file path is provided
     const filePaths = Array.isArray(files) ? files : [files];
 
-    // Track deletion results
-    const results = {
-      successful: [],
-      failed: [],
-    };
-
-    // Process each file
+    // Validate that all paths are within uploadFiles for security
     for (const filePath of filePaths) {
-      try {
-        // Remove the leading slash if present and construct absolute path
-        const relativePath = filePath.startsWith("/")
-          ? filePath.slice(1)
-          : filePath;
-        const absolutePath = path.join(process.cwd(), relativePath);
-
-        // Verify the path is within uploadFiles directory for security
-        const uploadFilesDir = path.join(process.cwd(), "uploadFiles");
-        if (!absolutePath.startsWith(uploadFilesDir)) {
-          results.failed.push({
-            path: filePath,
-            error: "Invalid file path - Security violation",
-          });
-          continue;
-        }
-
-        // Check if file exists
-        if (!fs.existsSync(absolutePath)) {
-          results.failed.push({
-            path: filePath,
-            error: "File not found",
-          });
-          continue;
-        }
-
-        // Delete the file
-        fs.unlinkSync(absolutePath);
-        results.successful.push(filePath);
-      } catch (error) {
-        results.failed.push({
-          path: filePath,
-          error: error.message,
+      const cleanPath = filePath.startsWith("/") ? filePath.slice(1) : filePath;
+      if (!cleanPath.startsWith("uploadFiles/")) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: `Invalid file path: ${filePath}. Only uploadFiles/* paths are allowed.`,
         });
       }
     }
+
+    // Delete files from S3
+    const results = await deleteS3Files(filePaths);
 
     // Generate appropriate response based on results
     if (results.failed.length === 0) {
       return generateResponse(
         results,
-        "All files deleted successfully",
+        "All files deleted successfully from S3",
         res,
         STATUS_CODES.SUCCESS
       );
     } else if (results.successful.length === 0) {
       return generateResponse(
         results,
-        "Failed to delete all files",
+        "Failed to delete all files from S3",
         res,
         STATUS_CODES.BAD_REQUEST
       );
     } else {
       return generateResponse(
         results,
-        "Some files were deleted successfully",
+        "Some files were deleted successfully from S3",
         res,
         STATUS_CODES.SUCCESS
       );
@@ -137,7 +105,7 @@ exports.deleteFiles = async (req, res, next) => {
     console.error("Error in deleteFiles:", error);
     next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
-      message: error?.message,
+      message: error?.message || "File deletion failed",
     });
   }
 };

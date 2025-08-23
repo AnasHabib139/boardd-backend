@@ -5,7 +5,7 @@ const {
   uploadMultipleFiles,
   deleteFiles,
 } = require("../controller/upload.controller");
-const { uploadFiles } = require("../utils");
+const { upload } = require("../utils/s3Upload");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
 
@@ -30,7 +30,7 @@ class UploadApi {
     router.post(
       "/files",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
-      uploadFiles.array("files", 10), // Max 10 files
+      upload.array("files", 10), // Max 10 files
       uploadMultipleFiles
     );
 
