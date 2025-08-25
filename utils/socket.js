@@ -483,6 +483,7 @@ const processTaskUpdate = async (socket, data) => {
     io.to(`task:${taskId}`).emit("task-update-response", {
       success: true,
       taskId,
+      projectId: task.projectId,
       field,
       previousValue,
       newValue: processedValue,
@@ -790,6 +791,7 @@ const processTaskReorder = async (socket, data) => {
     io.to(`task:${taskId}`).emit("task-update-response", {
       success: true,
       taskId,
+      projectId: task.projectId,
       field: "status",
       previousValue: previousStatus,
       newValue: newStatus,
@@ -1141,6 +1143,7 @@ const processTaskMove = async (socket, data) => {
       io.to(`task:${taskId}`).emit("task-update-response", {
         success: true,
         taskId,
+        projectId: task.projectId,
         field: "location",
         previousValue: `${sourceName}`,
         newValue: `${targetName}`,
@@ -1182,6 +1185,7 @@ const processTaskMove = async (socket, data) => {
       io.to(`task:${taskId}`).emit("task-update-response", {
         success: true,
         taskId,
+        projectId: task.projectId,
         field: "location",
         previousValue: `${sourceName}`,
         newValue: `${targetName}`,
