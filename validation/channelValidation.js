@@ -44,13 +44,11 @@ const createChannelValidation = Joi.object({
 
 // Update channel validation schema
 const updateChannelValidation = Joi.object({
-  channelName: Joi.string().trim().min(1).max(100).optional().messages({
-    "string.min": "Channel name must be at least 1 character long",
+  channelName: Joi.string().trim().allow('').max(100).optional().messages({
     "string.max": "Channel name cannot exceed 100 characters",
   }),
 
-  channelDescription: Joi.string().trim().min(1).max(500).optional().messages({
-    "string.min": "Channel description must be at least 1 character long",
+  channelDescription: Joi.string().trim().allow('').max(500).optional().messages({
     "string.max": "Channel description cannot exceed 500 characters",
   }),
 
