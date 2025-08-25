@@ -18,6 +18,7 @@ exports.getAllTabsOfMemberInChannelQuery = (channelId, userId) => {
               : null,
           ],
         },
+        isActive: true, // Only fetch active tabs
       },
     },
     {
@@ -45,10 +46,10 @@ exports.getAllTabsOfMemberInChannelQuery = (channelId, userId) => {
               { case: { $eq: ["$tabName", "form builder"] }, then: 3 },
               { case: { $eq: ["$tabName", "work in progress"] }, then: 4 },
             ],
-            default: 999 // For any non-standard tabs, put them at the end
-          }
-        }
-      }
+            default: 999, // For any non-standard tabs, put them at the end
+          },
+        },
+      },
     },
     {
       $project: {
@@ -56,6 +57,9 @@ exports.getAllTabsOfMemberInChannelQuery = (channelId, userId) => {
         tabName: 1,
         tabDescription: 1,
         channelId: 1,
+        isActive: 1,
+        isPrivate: 1,
+        isDefault: 1,
         // members: 1,
         createdAt: 1,
         updatedAt: 1,
@@ -75,6 +79,7 @@ exports.getAllTabMembersQuery = (tabId) => {
         _id: Types.ObjectId.isValid(tabId)
           ? Types.ObjectId.createFromHexString(tabId)
           : null,
+        isActive: true, // Only fetch active tabs
       },
     },
     {
@@ -136,6 +141,7 @@ exports.getTabMembersPaginatedQuery = (tabId) => {
         _id: Types.ObjectId.isValid(tabId)
           ? Types.ObjectId.createFromHexString(tabId)
           : null,
+        isActive: true, // Only fetch active tabs
       },
     },
     {

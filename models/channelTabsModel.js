@@ -12,6 +12,7 @@ const channelTabSchema = new Schema({
   createdBy: { type: Types.ObjectId, ref: "User", required: true },
   companyId: { type: Types.ObjectId, ref: "Company", required: true },
   isPrivate: { type: Boolean, default: false },
+  isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
@@ -35,7 +36,13 @@ exports.updateChannelTab = (query, obj) =>
 exports.deleteChannelTab = (query) => ChannelTab.findOneAndDelete(query);
 
 //get all tabs
-exports.getAllTabs = async ({ query, page, limit, responseKey = "data", sort = { createdAt: -1 } }) => {
+exports.getAllTabs = async ({
+  query,
+  page,
+  limit,
+  responseKey = "data",
+  sort = { createdAt: -1 },
+}) => {
   const { data, pagination } = await getMongooseAggregatePaginatedData({
     model: ChannelTab,
     query,

@@ -204,9 +204,9 @@ exports.addMembersToChannelTab = async (req, res, next) => {
       const validatedAssignments = await Promise.all(validationPromises);
 
       // Check which users need to be added to the channel
-      const currentChannelMembers = channel.members.map(id => id.toString());
+      const currentChannelMembers = channel.members.map((id) => id.toString());
       const newChannelMembers = Array.from(allMemberIds).filter(
-        memberId => !currentChannelMembers.includes(memberId)
+        (memberId) => !currentChannelMembers.includes(memberId)
       );
 
       // Add new members to the channel if any
@@ -670,11 +670,13 @@ exports.toggleChannelTab = async (req, res, next) => {
     if (!validTabNames.includes(tabName)) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: `Invalid tab name. Must be one of: ${validTabNames.join(", ")}`,
+        message: `Invalid tab name. Must be one of: ${validTabNames.join(
+          ", "
+        )}`,
       });
     }
 
-    // Check if tab already exists
+    // Check if tab already exists (including inactive ones)
     const existingTab = await findChannelTab({
       channelId: channelId,
       tabName: tabName,
@@ -684,31 +686,77 @@ exports.toggleChannelTab = async (req, res, next) => {
     let action;
 
     if (existingTab) {
-      // Tab exists - DEACTIVATE (delete)
-      await deleteChannelTab({
-        _id: existingTab._id,
-      });
-      
-      action = "deactivated";
-      
-      const responseData = {
-        tabId: existingTab._id,
-        tabName: tabName,
-        action: action,
-        isPrivate: existingTab.isPrivate,
-        channelId: channelId,
-      };
+      if (existingTab.isActive) {
+        // Tab exists and is active - DEACTIVATE (soft delete)
+        const updatedTab = await updateChannelTab(
+          { _id: existingTab._id },
+          {
+            isActive: false,
+            updatedAt: new Date(),
+          }
+        );
 
-      return generateResponse(
-        responseData,
-        `Tab "${tabName}" deactivated successfully`,
-        res,
-        STATUS_CODES.SUCCESS
-      );
+        action = "deactivated";
+
+        const responseData = {
+          tabId: updatedTab._id,
+          tabName: tabName,
+          action: action,
+          isPrivate: updatedTab.isPrivate,
+          channelId: channelId,
+        };
+
+        return generateResponse(
+          responseData,
+          `Tab "${tabName}" deactivated successfully`,
+          res,
+          STATUS_CODES.SUCCESS
+        );
+      } else {
+        // Tab exists but is inactive - REACTIVATE
+        let tabMembers = [];
+
+        if (!isPrivate) {
+          // For public tabs, add all channel members
+          tabMembers = [...channel.members];
+        } else {
+          // For private tabs, keep existing members or start with creator
+          tabMembers =
+            existingTab.members.length > 0 ? existingTab.members : [userId];
+        }
+
+        const updatedTab = await updateChannelTab(
+          { _id: existingTab._id },
+          {
+            isActive: true,
+            isPrivate: isPrivate,
+            members: tabMembers,
+            updatedAt: new Date(),
+          }
+        );
+
+        action = "activated";
+
+        const responseData = {
+          tabId: updatedTab._id,
+          tabName: updatedTab.tabName,
+          action: action,
+          isPrivate: updatedTab.isPrivate,
+          channelId: channelId,
+          members: updatedTab.members,
+        };
+
+        return generateResponse(
+          responseData,
+          `Tab "${tabName}" activated successfully`,
+          res,
+          STATUS_CODES.SUCCESS
+        );
+      }
     } else {
       // Tab doesn't exist - ACTIVATE (create)
       let tabMembers = [];
-      
+
       if (!isPrivate) {
         // For public tabs, add all channel members
         tabMembers = [...channel.members];
