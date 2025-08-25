@@ -18,7 +18,11 @@ exports.getAllTabsOfMemberInChannelQuery = (channelId, userId) => {
               : null,
           ],
         },
-        isActive: true, // Only fetch active tabs
+        $or: [
+          { isActive: true }, // Explicitly active tabs
+          { isActive: { $exists: false } }, // Legacy tabs without isActive field
+          { isActive: null }, // Tabs with null isActive
+        ],
       },
     },
     {
@@ -79,7 +83,11 @@ exports.getAllTabMembersQuery = (tabId) => {
         _id: Types.ObjectId.isValid(tabId)
           ? Types.ObjectId.createFromHexString(tabId)
           : null,
-        isActive: true, // Only fetch active tabs
+        $or: [
+          { isActive: true }, // Explicitly active tabs
+          { isActive: { $exists: false } }, // Legacy tabs without isActive field
+          { isActive: null }, // Tabs with null isActive
+        ],
       },
     },
     {
@@ -141,7 +149,11 @@ exports.getTabMembersPaginatedQuery = (tabId) => {
         _id: Types.ObjectId.isValid(tabId)
           ? Types.ObjectId.createFromHexString(tabId)
           : null,
-        isActive: true, // Only fetch active tabs
+        $or: [
+          { isActive: true }, // Explicitly active tabs
+          { isActive: { $exists: false } }, // Legacy tabs without isActive field
+          { isActive: null }, // Tabs with null isActive
+        ],
       },
     },
     {
