@@ -5,6 +5,7 @@ const {
   getAllTabs,
   createChannelTab,
   deleteChannelTab,
+  aggregateChannelTabs,
 } = require("../models/channelTabsModel");
 const { generateResponse, parseBody } = require("../utils");
 const mongoose = require("mongoose");
@@ -799,6 +800,116 @@ exports.toggleChannelTab = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to toggle channel tab",
+    });
+  }
+};
+
+
+/**
+ * Get default channel tabs with presence status
+ */
+exports.getDefaultChannelTabsWithPresence = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const userId = req.user.id;
+    const { DEFAULT_TABS, TAB_ORDER } = require("../utils/constants");
+
+    // Validate channel exists and user has access
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Check if user is a member of the channel
+    if (!channel.members.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You must be a member of the channel to view its tabs",
+      });
+    }
+
+    // Get all default tab names
+    const defaultTabNames = Object.values(DEFAULT_TABS);
+    
+    // Get all channel tabs (both active and inactive)
+    const allChannelTabs = await aggregateChannelTabs([
+      {
+        $match: {
+          channelId: new mongoose.Types.ObjectId(channelId),
+          tabName: { $in: defaultTabNames }
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          tabName: 1,
+          tabDescription: 1,
+          isPrivate: 1,
+          isDefault: 1,
+          isActive: 1
+        }
+      }
+    ]);
+
+    // Create a map for quick lookup
+    const existingTabsMap = new Map();
+    allChannelTabs.forEach(tab => {
+      existingTabsMap.set(tab.tabName, tab);
+    });
+
+    // Build result with all default tabs
+    const tabsWithPresence = defaultTabNames.map(tabName => {
+      const existingTab = existingTabsMap.get(tabName);
+      
+      if (existingTab) {
+        // Tab exists - use isActive to determine isPresent
+        // For backward compatibility: if isActive is undefined, assume true (present)
+        const isPresent = existingTab.isActive !== false; // true if undefined or true, false only if explicitly false
+        
+        return {
+          tabName,
+          isPresent,
+          _id: existingTab._id,
+          tabDescription: existingTab.tabDescription || null,
+          isPrivate: existingTab.isPrivate,
+          isDefault: existingTab.isDefault
+        };
+      } else {
+        // Tab doesn't exist yet - not created
+        return {
+          tabName,
+          isPresent: false,
+          _id: null,
+          tabDescription: null,
+          isPrivate: null,
+          isDefault: true
+        };
+      }
+    });
+
+    // Sort by the defined order
+    tabsWithPresence.sort((a, b) => {
+      const orderA = TAB_ORDER[a.tabName] || 999;
+      const orderB = TAB_ORDER[b.tabName] || 999;
+      return orderA - orderB;
+    });
+
+    const finalResult = tabsWithPresence;
+
+    return generateResponse(
+      finalResult,
+      "Default channel tabs with presence status fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getDefaultChannelTabsWithPresence:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to fetch default channel tabs",
     });
   }
 };

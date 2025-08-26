@@ -9,6 +9,7 @@ const {
   createNewChannelTab,
   createSelectedChannelTabs,
   toggleChannelTab,
+  getDefaultChannelTabsWithPresence,
 } = require("../controller/channelTabsController");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -87,6 +88,13 @@ class ChannelTabsApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateToggleChannelTab,
       toggleChannelTab
+    );
+
+    // Get default channel tabs with presence status
+    router.get(
+      "/default-presence/:channelId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getDefaultChannelTabsWithPresence
     );
   }
 

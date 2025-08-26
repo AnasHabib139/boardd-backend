@@ -53,3 +53,6 @@ exports.getAllTabs = async ({
 
   return { [responseKey]: data, pagination };
 };
+
+//aggregate channel tabs
+exports.aggregateChannelTabs = (query) => ChannelTab.aggregate(query);
