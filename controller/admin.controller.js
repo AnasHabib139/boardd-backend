@@ -1,7 +1,7 @@
 "use strict";
 
 const { STATUS_CODES } = require("../utils/constants");
-const { generateResponse } = require("../utils");
+const { generateResponse, extractDomainFromEmail } = require("../utils");
 const {
   findUser,
   getAllUsers,
@@ -233,21 +233,43 @@ exports.toggleUserSeat = async (req, res, next) => {
       });
     }
 
+    // Get company details to check domain
+    const company = await findCompany({ _id: admin.companyId });
+    if (!company) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Company not found",
+      });
+    }
+
+    // Determine if target user is company user or guest user
+    const targetUserDomain = extractDomainFromEmail(targetUser.email);
+    const adminDomain = extractDomainFromEmail(admin.email);
+    const companyDomain = company.domain;
+    
+    // User is a company user if their domain matches company domain or admin domain
+    const isCompanyUser = targetUserDomain === companyDomain || targetUserDomain === adminDomain;
+    
+    // Determine slot type to use
+    const slotType = isCompanyUser ? "company" : "guest";
+
     let responseData;
     let responseMessage;
 
     if (!targetUser.isActive) {
       // User is inactive -> Approve (activate user)
 
-      // Find an available slot (not reserved and not used)
+      // Find an available slot of the appropriate type
       const availableSlot = await findAvailableInviteSlot({
         companyId: admin.companyId,
+        inviteType: slotType
       });
 
       if (!availableSlot) {
+        const slotTypeDisplay = isCompanyUser ? "company" : "guest";
         return next({
           statusCode: STATUS_CODES.BAD_REQUEST,
-          message: "No available seats to approve this user",
+          message: `No available ${slotTypeDisplay} seats to approve this user`,
         });
       }
 
@@ -266,21 +288,24 @@ exports.toggleUserSeat = async (req, res, next) => {
         },
         action: "approved",
         slot: availableSlot.slot,
+        slotType: slotType,
       };
-      responseMessage = "User seat approved successfully";
+      responseMessage = `User ${slotType} seat approved successfully`;
     } else {
       // User is active -> Disapprove (deactivate user)
 
-      // Find a used slot to free up
+      // Find a used slot of the appropriate type to free up
       const usedSlot = await findInviteSlot({
         companyId: admin.companyId,
         used: true,
+        inviteType: slotType
       });
 
       if (!usedSlot) {
+        const slotTypeDisplay = isCompanyUser ? "company" : "guest";
         return next({
           statusCode: STATUS_CODES.BAD_REQUEST,
-          message: "No used slots found to free up",
+          message: `No used ${slotTypeDisplay} slots found to free up`,
         });
       }
 
@@ -299,8 +324,9 @@ exports.toggleUserSeat = async (req, res, next) => {
         },
         action: "disapproved",
         slot: usedSlot.slot,
+        slotType: slotType,
       };
-      responseMessage = "User seat removed successfully";
+      responseMessage = `User ${slotType} seat removed successfully`;
     }
 
     return generateResponse(
