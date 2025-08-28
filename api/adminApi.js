@@ -8,6 +8,7 @@ const {
   toggleUserSeat,
   initiateOwnershipTransfer,
   confirmOwnershipTransfer,
+  changeUserRole,
 } = require("../controller/admin.controller");
 const { ROLES } = require("../utils/constants");
 const Auth = require("../middlewares/Auth");
@@ -56,6 +57,13 @@ class AdminAPI {
       "/confirm-ownership-transfer",
       validateConfirmOwnershipTransfer,
       confirmOwnershipTransfer
+    );
+
+    // Change user role
+    router.put(
+      "/change-role",
+      Auth([ROLES.ADMIN]),
+      changeUserRole
     );
   }
 

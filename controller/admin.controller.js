@@ -550,3 +550,144 @@ exports.confirmOwnershipTransfer = async (req, res, next) => {
     });
   }
 };
+
+/**
+ * Change user role with domain-based validation
+ */
+exports.changeUserRole = async (req, res, next) => {
+  try {
+    const { userId, role } = req.body;
+    const adminId = req.user.id;
+    
+    // Validate required fields
+    if (!userId || !role) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "User ID and role are required",
+      });
+    }
+
+    // Validate role is valid
+    const { ROLES } = require("../utils/constants");
+    if (!Object.values(ROLES).includes(role)) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Invalid role. Must be admin, employee, or guest",
+      });
+    }
+
+    // Get admin user
+    const admin = await findUser({ _id: adminId });
+    if (!admin) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Admin user not found",
+      });
+    }
+
+    // Get target user
+    const targetUser = await findUser({ _id: userId });
+    if (!targetUser) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Verify user belongs to admin's company
+    if (targetUser.companyId.toString() !== admin.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You can only manage users from your own company",
+      });
+    }
+
+    // Get company details to check domain
+    const company = await findCompany({ _id: admin.companyId });
+    if (!company) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Company not found",
+      });
+    }
+
+    // Domain-based validation logic
+    const targetUserDomain = extractDomainFromEmail(targetUser.email);
+    const companyDomain = company.domain;
+    const isSameDomain = targetUserDomain === companyDomain;
+
+    // Validation rules:
+    // 1. Cannot make employee -> guest
+    // 2. Cannot make guest -> employee or admin
+    // 3. Same domain users can only be admin/employee
+    // 4. Different domain users can only be guest
+
+    if (targetUser.role === ROLES.EMPLOYEE && role === ROLES.GUEST) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Cannot change employee to guest",
+      });
+    }
+
+    if (targetUser.role === ROLES.GUEST && (role === ROLES.EMPLOYEE || role === ROLES.ADMIN)) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Cannot change guest to employee or admin",
+      });
+    }
+
+    if (isSameDomain && role === ROLES.GUEST) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Users from company domain cannot be assigned guest role",
+      });
+    }
+
+    if (!isSameDomain && (role === ROLES.ADMIN || role === ROLES.EMPLOYEE)) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Users from external domains can only be assigned guest role",
+      });
+    }
+
+    // If role is same, no need to update
+    if (targetUser.role === role) {
+      return generateResponse(
+        {
+          userId: targetUser._id,
+          name: targetUser.name,
+          email: targetUser.email,
+          role: targetUser.role,
+        },
+        "User already has the specified role",
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+
+    // Update user role
+    const updatedUser = await updateUser(
+      { _id: userId },
+      { role, updatedAt: new Date() }
+    );
+
+    return generateResponse(
+      {
+        userId: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        previousRole: targetUser.role,
+        newRole: role,
+      },
+      `User role changed from ${targetUser.role} to ${role} successfully`,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in changeUserRole:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to change user role",
+    });
+  }
+};
