@@ -21,7 +21,10 @@ const {
   formatDuration,
   getWeekRange,
 } = require("./helpers/timeHelper");
-const { getUserTimeEntriesQuery, getChildrenTimeEntriesQuery } = require("./queries/timeEntriesQueries");
+const {
+  getUserTimeEntriesQuery,
+  getChildrenTimeEntriesQuery,
+} = require("./queries/timeEntriesQueries");
 
 /**
  * Start clock - Begin time tracking
@@ -192,7 +195,8 @@ exports.editTimeEntry = async (req, res, next) => {
       if (parentHasChildren) {
         return next({
           statusCode: STATUS_CODES.BAD_REQUEST,
-          message: "Parent entries with child sessions cannot edit time fields. Only title and description can be modified.",
+          message:
+            "Parent entries with child sessions cannot edit time fields. Only title and description can be modified.",
         });
       }
     }
@@ -356,15 +360,16 @@ exports.restartTimeEntry = async (req, res, next) => {
     if (activeEntry) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "You already have an active time entry. Please stop the current timer before restarting another one.",
+        message:
+          "You already have an active time entry. Please stop the current timer before restarting another one.",
         data: {
           activeEntry: {
             _id: activeEntry._id,
             title: activeEntry.title,
             description: activeEntry.description,
             startTime: activeEntry.startTime,
-          }
-        }
+          },
+        },
       });
     }
 
@@ -373,7 +378,8 @@ exports.restartTimeEntry = async (req, res, next) => {
     if (!timeEntry) {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Time entry not found or you don't have permission to restart it",
+        message:
+          "Time entry not found or you don't have permission to restart it",
       });
     }
 
@@ -381,7 +387,8 @@ exports.restartTimeEntry = async (req, res, next) => {
     if (timeEntry.parentEntryId) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Cannot restart a child entry. Please restart the parent entry instead.",
+        message:
+          "Cannot restart a child entry. Please restart the parent entry instead.",
       });
     }
 
@@ -427,7 +434,7 @@ exports.restartTimeEntry = async (req, res, next) => {
           _id: timeEntry._id,
           title: timeEntry.title,
           description: timeEntry.description,
-        }
+        },
       },
       "Time entry restarted successfully",
       res,
@@ -460,7 +467,7 @@ exports.getUserTimeEntries = async (req, res, next) => {
     }
 
     // Validate week filter if provided
-    const validFilters = ['this_week', 'last_week'];
+    const validFilters = ["this_week", "last_week"];
     if (filter && !validFilters.includes(filter)) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
@@ -485,13 +492,13 @@ exports.getUserTimeEntries = async (req, res, next) => {
     // Add filter context to response
     const responseData = {
       ...result,
-      filterApplied: filter || 'all',
+      filterApplied: filter || "all",
     };
 
     if (weekRange) {
       responseData.weekRange = {
-        start: weekRange.start.toISOString().split('T')[0],
-        end: weekRange.end.toISOString().split('T')[0]
+        start: weekRange.start.toISOString().split("T")[0],
+        end: weekRange.end.toISOString().split("T")[0],
       };
     }
 
@@ -533,7 +540,8 @@ exports.getChildrenTimeEntries = async (req, res, next) => {
     if (!parentEntry) {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Parent time entry not found or you don't have permission to view it",
+        message:
+          "Parent time entry not found or you don't have permission to view it",
       });
     }
 
@@ -541,7 +549,8 @@ exports.getChildrenTimeEntries = async (req, res, next) => {
     if (parentEntry.parentEntryId) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Cannot get children of a child entry. Please use the parent entry ID.",
+        message:
+          "Cannot get children of a child entry. Please use the parent entry ID.",
       });
     }
 
@@ -553,7 +562,7 @@ exports.getChildrenTimeEntries = async (req, res, next) => {
       query,
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 20,
-      responseKey: "childrenEntries"
+      responseKey: "childrenEntries",
     });
 
     return generateResponse(
@@ -566,7 +575,7 @@ exports.getChildrenTimeEntries = async (req, res, next) => {
           startTime: parentEntry.startTime,
           endTime: parentEntry.endTime,
           totalTime: parentEntry.totalTime,
-        }
+        },
       },
       "Children time entries retrieved successfully",
       res,
@@ -604,7 +613,8 @@ exports.duplicateTimeEntry = async (req, res, next) => {
     if (!timeEntry) {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Time entry not found or you don't have permission to duplicate it",
+        message:
+          "Time entry not found or you don't have permission to duplicate it",
       });
     }
 
@@ -617,7 +627,8 @@ exports.duplicateTimeEntry = async (req, res, next) => {
       if (parentHasChildren) {
         return next({
           statusCode: STATUS_CODES.BAD_REQUEST,
-          message: "Parent entries with child sessions cannot be duplicated. You can duplicate individual child sessions instead.",
+          message:
+            "Parent entries with child sessions cannot be duplicated. You can duplicate individual child sessions instead.",
         });
       }
     }
@@ -644,7 +655,7 @@ exports.duplicateTimeEntry = async (req, res, next) => {
       await updateParentEntryAggregates(duplicatedEntry.parentEntryId);
     }
 
-    const responseMessage = timeEntry.parentEntryId 
+    const responseMessage = timeEntry.parentEntryId
       ? "Child time entry duplicated successfully"
       : "Time entry duplicated successfully";
 
@@ -667,7 +678,7 @@ exports.duplicateTimeEntry = async (req, res, next) => {
           title: timeEntry.title,
           description: timeEntry.description,
           isParent: !timeEntry.parentEntryId,
-        }
+        },
       },
       responseMessage,
       res,
@@ -704,7 +715,8 @@ exports.deleteTimeEntry = async (req, res, next) => {
     if (!timeEntry) {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Time entry not found or you don't have permission to delete it",
+        message:
+          "Time entry not found or you don't have permission to delete it",
       });
     }
 
@@ -712,13 +724,14 @@ exports.deleteTimeEntry = async (req, res, next) => {
     if (timeEntry.isActive && !timeEntry.endTime) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Cannot delete an active time entry. Please stop the timer first.",
+        message:
+          "Cannot delete an active time entry. Please stop the timer first.",
       });
     }
 
     // Delete the entry (and children if it's a parent)
     const deleteResult = await deleteTimeEntryWithChildren(entryId);
-    
+
     if (!deleteResult) {
       return next({
         statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
@@ -732,8 +745,10 @@ exports.deleteTimeEntry = async (req, res, next) => {
     }
 
     const isParent = !timeEntry.parentEntryId;
-    const message = isParent 
-      ? `Time entry and ${deleteResult.totalDeleted - 1} child entries deleted successfully`
+    const message = isParent
+      ? `Time entry and ${
+          deleteResult.totalDeleted - 1
+        } child entries deleted successfully`
       : "Time entry deleted successfully";
 
     return generateResponse(
@@ -743,8 +758,8 @@ exports.deleteTimeEntry = async (req, res, next) => {
           title: deleteResult.deletedEntry.title,
           description: deleteResult.deletedEntry.description,
           isParent,
-          totalDeleted: deleteResult.totalDeleted
-        }
+          totalDeleted: deleteResult.totalDeleted,
+        },
       },
       message,
       res,

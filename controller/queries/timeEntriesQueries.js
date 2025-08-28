@@ -163,12 +163,12 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
   // Sort entries by creation time (newest first) before grouping
   queryArray.push({
     $sort: {
-      startDate: 1, // Keep days in order
+      startDate: 1, // Keep days in order for grouping
       createdAt: -1, // Within each day, newest entries first
     },
   });
 
-  // Group by day
+  // Group by day (entries will maintain the sorted order)
   queryArray.push({
     $group: {
       _id: "$startDate",
