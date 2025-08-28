@@ -8,14 +8,14 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
   const matchCriteria = {
     userId: Types.ObjectId.createFromHexString(userId),
     endTime: { $exists: true, $ne: null },
-    parentEntryId: null // Only parent entries
+    parentEntryId: null, // Only parent entries
   };
 
   // Add week range filtering if provided
   if (weekRange) {
     matchCriteria.startTime = {
       $gte: weekRange.start,
-      $lte: weekRange.end
+      $lte: weekRange.end,
     };
   }
 
@@ -23,7 +23,7 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
   // Only return parent entries (parentEntryId is null)
   // Filter by week range if provided
   queryArray.push({
-    $match: matchCriteria
+    $match: matchCriteria,
   });
 
   // Add lookup to count children entries
@@ -32,15 +32,15 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
       from: "timeentries",
       localField: "_id",
       foreignField: "parentEntryId",
-      as: "children"
-    }
+      as: "children",
+    },
   });
 
   // Add children count field
   queryArray.push({
     $addFields: {
-      childrenCount: { $size: "$children" }
-    }
+      childrenCount: { $size: "$children" },
+    },
   });
 
   // Add date grouping fields
@@ -49,35 +49,35 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
       startDate: {
         $dateToString: {
           format: "%Y-%m-%d",
-          date: "$startTime"
-        }
+          date: "$startTime",
+        },
       },
       daysDiff: {
         $dateDiff: {
-          startDate: { 
+          startDate: {
             $dateFromString: {
               dateString: {
                 $dateToString: {
                   format: "%Y-%m-%d",
-                  date: "$startTime"
-                }
-              }
-            }
+                  date: "$startTime",
+                },
+              },
+            },
           },
           endDate: {
             $dateFromString: {
               dateString: {
                 $dateToString: {
                   format: "%Y-%m-%d",
-                  date: new Date()
-                }
-              }
-            }
+                  date: new Date(),
+                },
+              },
+            },
           },
-          unit: "day"
-        }
-      }
-    }
+          unit: "day",
+        },
+      },
+    },
   });
 
   // Add day label
@@ -92,17 +92,17 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
             { case: { $eq: ["$daysDiff", -3] }, then: "3 days ago" },
             { case: { $eq: ["$daysDiff", -4] }, then: "4 days ago" },
             { case: { $eq: ["$daysDiff", -5] }, then: "5 days ago" },
-            { case: { $eq: ["$daysDiff", -6] }, then: "6 days ago" }
+            { case: { $eq: ["$daysDiff", -6] }, then: "6 days ago" },
           ],
           default: {
             $dateToString: {
               format: "%B %d, %Y",
-              date: "$startTime"
-            }
-          }
-        }
-      }
-    }
+              date: "$startTime",
+            },
+          },
+        },
+      },
+    },
   });
 
   // Project and format the individual entry fields
@@ -114,14 +114,14 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
       startTime: {
         $dateToString: {
           format: "%H:%M",
-          date: "$startTime"
-        }
+          date: "$startTime",
+        },
       },
       endTime: {
         $dateToString: {
           format: "%H:%M",
-          date: "$endTime"
-        }
+          date: "$endTime",
+        },
       },
       totalTime: {
         $cond: {
@@ -130,24 +130,24 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
             $concat: [
               {
                 $toString: {
-                  $floor: { $divide: ["$totalTime", 60] }
-                }
+                  $floor: { $divide: ["$totalTime", 60] },
+                },
               },
               ":",
               {
                 $cond: {
                   if: { $lt: [{ $mod: ["$totalTime", 60] }, 10] },
                   then: {
-                    $concat: ["0", { $toString: { $mod: ["$totalTime", 60] } }]
+                    $concat: ["0", { $toString: { $mod: ["$totalTime", 60] } }],
                   },
-                  else: { $toString: { $mod: ["$totalTime", 60] } }
-                }
+                  else: { $toString: { $mod: ["$totalTime", 60] } },
+                },
               },
-              ":00"
-            ]
+              ":00",
+            ],
           },
-          else: "00:00:00"
-        }
+          else: "00:00:00",
+        },
       },
       daysAdded: 1,
       isActive: 1,
@@ -156,8 +156,16 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
       startDate: 1,
       dayLabel: 1,
       daysDiff: 1,
-      childrenCount: 1
-    }
+      childrenCount: 1,
+    },
+  });
+
+  // Sort entries by creation time (newest first) before grouping
+  queryArray.push({
+    $sort: {
+      startDate: 1, // Keep days in order
+      createdAt: -1, // Within each day, newest entries first
+    },
   });
 
   // Group by day
@@ -178,11 +186,11 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
           isActive: "$isActive",
           createdAt: "$createdAt",
           updatedAt: "$updatedAt",
-          childrenCount: "$childrenCount"
-        }
+          childrenCount: "$childrenCount",
+        },
       },
-      totalDayTime: { $sum: "$totalTime" }
-    }
+      totalDayTime: { $sum: "$totalTime" },
+    },
   });
 
   // Format total day time
@@ -195,33 +203,36 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
             $concat: [
               {
                 $toString: {
-                  $floor: { $divide: ["$totalDayTime", 60] }
-                }
+                  $floor: { $divide: ["$totalDayTime", 60] },
+                },
               },
               ":",
               {
                 $cond: {
                   if: { $lt: [{ $mod: ["$totalDayTime", 60] }, 10] },
                   then: {
-                    $concat: ["0", { $toString: { $mod: ["$totalDayTime", 60] } }]
+                    $concat: [
+                      "0",
+                      { $toString: { $mod: ["$totalDayTime", 60] } },
+                    ],
                   },
-                  else: { $toString: { $mod: ["$totalDayTime", 60] } }
-                }
+                  else: { $toString: { $mod: ["$totalDayTime", 60] } },
+                },
               },
-              ":00"
-            ]
+              ":00",
+            ],
           },
-          else: "00:00:00"
-        }
-      }
-    }
+          else: "00:00:00",
+        },
+      },
+    },
   });
 
   // Sort by date (newest first)
   queryArray.push({
     $sort: {
-      daysDiff: 1
-    }
+      daysDiff: 1,
+    },
   });
 
   // Final projection
@@ -232,8 +243,8 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
       dayLabel: 1,
       totalDayTime: "$totalDayTimeFormatted",
       entriesCount: { $size: "$entries" },
-      entries: 1
-    }
+      entries: 1,
+    },
   });
 
   return queryArray;
@@ -246,15 +257,15 @@ exports.getChildrenTimeEntriesQuery = (parentEntryId) => {
   // Match child entries for the specific parent
   queryArray.push({
     $match: {
-      parentEntryId: Types.ObjectId.createFromHexString(parentEntryId)
-    }
+      parentEntryId: Types.ObjectId.createFromHexString(parentEntryId),
+    },
   });
 
   // Sort by creation date (newest first)
   queryArray.push({
     $sort: {
-      createdAt: -1
-    }
+      createdAt: -1,
+    },
   });
 
   // Project and format the fields
@@ -266,8 +277,8 @@ exports.getChildrenTimeEntriesQuery = (parentEntryId) => {
       startTime: {
         $dateToString: {
           format: "%H:%M",
-          date: "$startTime"
-        }
+          date: "$startTime",
+        },
       },
       endTime: {
         $cond: {
@@ -275,11 +286,11 @@ exports.getChildrenTimeEntriesQuery = (parentEntryId) => {
           then: {
             $dateToString: {
               format: "%H:%M",
-              date: "$endTime"
-            }
+              date: "$endTime",
+            },
           },
-          else: null
-        }
+          else: null,
+        },
       },
       totalTime: {
         $cond: {
@@ -288,31 +299,31 @@ exports.getChildrenTimeEntriesQuery = (parentEntryId) => {
             $concat: [
               {
                 $toString: {
-                  $floor: { $divide: ["$totalTime", 60] }
-                }
+                  $floor: { $divide: ["$totalTime", 60] },
+                },
               },
               ":",
               {
                 $cond: {
                   if: { $lt: [{ $mod: ["$totalTime", 60] }, 10] },
                   then: {
-                    $concat: ["0", { $toString: { $mod: ["$totalTime", 60] } }]
+                    $concat: ["0", { $toString: { $mod: ["$totalTime", 60] } }],
                   },
-                  else: { $toString: { $mod: ["$totalTime", 60] } }
-                }
+                  else: { $toString: { $mod: ["$totalTime", 60] } },
+                },
               },
-              ":00"
-            ]
+              ":00",
+            ],
           },
-          else: "00:00:00"
-        }
+          else: "00:00:00",
+        },
       },
       daysAdded: 1,
       isActive: 1,
       createdAt: 1,
       updatedAt: 1,
-      parentEntryId: 1
-    }
+      parentEntryId: 1,
+    },
   });
 
   return queryArray;
