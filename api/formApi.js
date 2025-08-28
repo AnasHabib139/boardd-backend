@@ -11,6 +11,7 @@ const {
   shareForm,
   getFormsByFolder,
   submitFormResponse,
+  generateFormToken,
 } = require("../controller/formController");
 const Auth = require("../middlewares/Auth");
 const OptionalAuth = require("../middlewares/OptionalAuth");
@@ -133,6 +134,9 @@ class FormApi {
       validateShareForm,
       shareForm
     );
+
+    // Generate anonymous token for link access (public access - no auth required)
+    router.get("/:formId/token", generateFormToken);
 
     // Submit form response (public access - no auth required)
     router.post("/:formId/submit", submitFormResponse);

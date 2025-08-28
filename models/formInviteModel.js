@@ -12,30 +12,34 @@ const formInviteSchema = new Schema({
   invitedEmail: { type: String, required: true, lowercase: true },
   invitedName: { type: String, required: true }, // Name of the person invited
   inviteToken: { type: String, unique: true, default: uuidv4 }, // Unique token for tracking
-  
+
   // Email tracking (simplified)
   emailSent: { type: Boolean, default: false },
   emailSentAt: { type: Date },
-  
+
   // Response tracking
   hasResponded: { type: Boolean, default: false },
   respondedAt: { type: Date },
   responseId: { type: Types.ObjectId, ref: "FormResponse" }, // Link to actual response
-  
+
   // Invitation settings
   customMessage: { type: String, maxlength: 500 },
-  shareMethod: { type: String, enum: ["email", "link"], default: "email" },
-  
+  shareMethod: {
+    type: String,
+    enum: ["email", "link", "anonymous"],
+    default: "email",
+  },
+
   // Status tracking (simplified)
   status: {
     type: String,
     enum: ["pending", "responded"],
-    default: "pending"
+    default: "pending",
   },
   isActive: { type: Boolean, default: true },
-  
+
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
 });
 
 // Indexes for performance
@@ -53,7 +57,7 @@ formInviteSchema.index({ formId: 1, status: 1 });
 // Pre-save middleware to update timestamps
 formInviteSchema.pre("save", function (next) {
   this.updatedAt = new Date();
-  
+
   // Update status based on response
   if (this.hasResponded && this.status !== "responded") {
     this.status = "responded";
@@ -61,7 +65,7 @@ formInviteSchema.pre("save", function (next) {
       this.respondedAt = new Date();
     }
   }
-  
+
   next();
 });
 
@@ -76,7 +80,7 @@ exports.createFormInvite = (obj) => FormInviteModel.create(obj);
 
 exports.findFormInvite = (query) => FormInviteModel.findOne(query);
 
-exports.findManyFormInvites = (query, options = {}) => 
+exports.findManyFormInvites = (query, options = {}) =>
   FormInviteModel.find(query, null, options);
 
 exports.updateFormInvite = (query, update, options = {}) =>
@@ -99,11 +103,11 @@ exports.findInviteByToken = (inviteToken) =>
 exports.markAsResponded = async (inviteToken, responseId) => {
   return FormInviteModel.findOneAndUpdate(
     { inviteToken, isActive: true },
-    { 
-      hasResponded: true, 
+    {
+      hasResponded: true,
       respondedAt: new Date(),
       responseId,
-      status: "responded"
+      status: "responded",
     },
     { new: true }
   );
@@ -118,8 +122,10 @@ exports.getFormInviteStats = async (formId) => {
         _id: null,
         totalInvites: { $sum: 1 },
         totalResponses: { $sum: { $cond: ["$hasResponded", 1, 0] } },
-        pendingResponses: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } }
-      }
+        pendingResponses: {
+          $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+        },
+      },
     },
     {
       $project: {
@@ -131,19 +137,26 @@ exports.getFormInviteStats = async (formId) => {
           $cond: [
             { $eq: ["$totalInvites", 0] },
             0,
-            { $multiply: [{ $divide: ["$totalResponses", "$totalInvites"] }, 100] }
-          ]
-        }
-      }
-    }
+            {
+              $multiply: [
+                { $divide: ["$totalResponses", "$totalInvites"] },
+                100,
+              ],
+            },
+          ],
+        },
+      },
+    },
   ]);
-  
-  return stats[0] || {
-    totalInvites: 0,
-    totalResponses: 0,
-    pendingResponses: 0,
-    responseRate: 0
-  };
+
+  return (
+    stats[0] || {
+      totalInvites: 0,
+      totalResponses: 0,
+      pendingResponses: 0,
+      responseRate: 0,
+    }
+  );
 };
 
 // Get invitation list for dashboard (with response status)
@@ -152,7 +165,9 @@ exports.getFormInvitesForDashboard = async (formId) => {
     .populate("invitedBy", "name email")
     .populate("responseId", "submittedAt")
     .sort({ createdAt: -1 })
-    .select("invitedName invitedEmail hasResponded respondedAt status createdAt customMessage shareMethod");
+    .select(
+      "invitedName invitedEmail hasResponded respondedAt status createdAt customMessage shareMethod"
+    );
 };
 
 // Export model for aggregations

@@ -1789,23 +1789,9 @@ exports.shareForm = async (req, res, next) => {
 
     const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
 
-    // Create a general form invite for the link sharing (without specific email)
-    let generalInvite = null;
-    if (shareType === "link" || shareType === "both") {
-      generalInvite = await createFormInvite({
-        formId,
-        invitedBy: userId,
-        invitedEmail: "general@link.share", // Placeholder for link sharing
-        invitedName: "Link Share",
-        customMessage: message,
-        shareMethod: "link",
-      });
-    }
-
-    // Generate shareable link with token
-    const shareLink = generalInvite
-      ? `${baseUrl}/form/${formId}?token=${generalInvite.inviteToken}`
-      : `${baseUrl}/shared/form/${formId}`;
+    // Generate shareable link without token for link sharing
+    // Users will get tokens dynamically via /api/forms/:formId/token
+    const shareLink = `${baseUrl}/form/${formId}`;
 
     // Prepare response
     const response = {
@@ -1942,6 +1928,52 @@ exports.shareForm = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to share form",
+    });
+  }
+};
+
+/**
+ * Generate anonymous token for link access
+ */
+exports.generateFormToken = async (req, res, next) => {
+  try {
+    const { formId } = req.params;
+
+    // Validate form exists and is active
+    const form = await findForm({ _id: formId, isActive: true });
+    if (!form) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Form not found",
+      });
+    }
+
+    // Generate anonymous invite for this user session
+    const anonymousInvite = await createFormInvite({
+      formId,
+      invitedBy: form.createdBy, // Use form creator as invitedBy
+      invitedEmail: `anonymous-${Date.now()}-${Math.random()
+        .toString(36)
+        .substr(2, 9)}@link.share`,
+      invitedName: "Anonymous User",
+      customMessage: null,
+      shareMethod: "anonymous",
+    });
+
+    return generateResponse(
+      {
+        token: anonymousInvite.inviteToken,
+        formId: formId,
+      },
+      "Anonymous token generated successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in generateFormToken:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to generate form token",
     });
   }
 };
