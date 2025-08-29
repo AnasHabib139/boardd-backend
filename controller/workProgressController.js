@@ -18,11 +18,6 @@ const calculateDateRange = (duration) => {
   const currentYear = today.getFullYear();
   const currentMonth = today.getMonth();
   
-  // End date is always the last day of current month
-  const endDate = new Date(currentYear, currentMonth + 1, 0); // Last day of current month
-  endDate.setHours(23, 59, 59, 999);
-
-  let startDate;
   let monthsBack;
 
   switch (duration) {
@@ -52,10 +47,18 @@ const calculateDateRange = (duration) => {
   }
 
   // Start date is the 1st of the starting month
-  startDate = new Date(currentYear, currentMonth - monthsBack, 1);
+  const startDate = new Date(currentYear, currentMonth - monthsBack, 1);
   startDate.setHours(0, 0, 0, 0);
 
-  return { startDate, endDate };
+  // End date is the last day of the current month
+  const endDate = new Date(currentYear, currentMonth + 1, 0); // Last day of current month
+  endDate.setHours(23, 59, 59, 999);
+
+  // Actual end date for filtering data (today's date to exclude future dates)
+  const actualEndDate = new Date(today);
+  actualEndDate.setHours(23, 59, 59, 999);
+
+  return { startDate, endDate, actualEndDate };
 };
 
 // Helper function to format date consistently (YYYY-MM-DD in local timezone)
@@ -212,16 +215,16 @@ exports.getContributions = async (req, res, next) => {
     }
 
     // Calculate date range based on duration
-    const { startDate, endDate } = calculateDateRange(duration);
+    const { startDate, endDate, actualEndDate } = calculateDateRange(duration);
 
-    // Get contributions data
-    const query = getContributionsQuery(channelId, startDate, endDate);
+    // Get contributions data (use actualEndDate to exclude future dates)
+    const query = getContributionsQuery(channelId, startDate, actualEndDate);
     const contributions = await ActivityModel.aggregate(query);
 
-    // Generate complete date range with missing dates filled
+    // Generate complete date range with missing dates filled (but only up to today)
     const completeContributions = generateCompleteDateRange(
       startDate,
-      endDate,
+      actualEndDate,
       contributions
     );
 
@@ -232,7 +235,7 @@ exports.getContributions = async (req, res, next) => {
     const responseData = {
       duration,
       startDate: formatDateLocal(startDate),
-      endDate: formatDateLocal(endDate),
+      endDate: formatDateLocal(actualEndDate), // Show actual end date (today) not full month end
       clientProgress: {
         totalContributions: summary.totalClientContributions,
         dailyData: completeContributions.map((day) => ({
@@ -313,10 +316,10 @@ exports.getActivities = async (req, res, next) => {
     }
 
     // Calculate date range based on duration
-    const { startDate, endDate } = calculateDateRange(duration);
+    const { startDate, endDate, actualEndDate } = calculateDateRange(duration);
 
-    // Get activities data with pagination using getAllActivities
-    const query = getActivitiesQuery(channelId, startDate, endDate);
+    // Get activities data with pagination using getAllActivities (use actualEndDate to exclude future dates)
+    const query = getActivitiesQuery(channelId, startDate, actualEndDate);
 
     const result = await getAllActivities({
       query,
@@ -329,7 +332,7 @@ exports.getActivities = async (req, res, next) => {
     const responseData = {
       duration,
       startDate: formatDateLocal(startDate),
-      endDate: formatDateLocal(endDate),
+      endDate: formatDateLocal(actualEndDate), // Show actual end date (today) not full month end
       activities: result.activities,
       pagination: result.pagination,
       context: {
