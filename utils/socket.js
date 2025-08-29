@@ -16,6 +16,7 @@ const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
 const { findUser } = require("../models/userModel");
 const { createNotification } = require("../models/notificationModel");
+const { findUserMutePreferences } = require("../models/userMutePreferencesModel");
 const { generateActivityMessage, deleteFileFromDisk } = require("../utils");
 const { ACTION_TYPE, TASK_STATUS, TASK_PRIORITY } = require("./constants");
 
@@ -1297,8 +1298,46 @@ exports.initSocket = (server) => {
         socket.join(`user:${userId}`);
       }
 
-      // Join the current channel room (covers all tabs and open tasks)
-      if (channelId) {
+      // Check if user is muted before joining channel room
+      if (channelId && userId) {
+        try {
+          const mutePrefs = await findUserMutePreferences({ userId });
+          const now = new Date();
+          
+          // Check if user is currently muted and mute hasn't expired
+          if (mutePrefs && mutePrefs.isMuted && mutePrefs.muteUntil && mutePrefs.muteUntil > now) {
+            console.log(`User ${userId} is muted - not joining channel room ${channelId}`);
+            
+            // Emit mute status to the user
+            socket.emit("mute-status", {
+              isMuted: true,
+              muteUntil: mutePrefs.muteUntil.toISOString(),
+              message: "You are currently muted from notifications",
+              channelId
+            });
+            return;
+          }
+          
+          // If mute has expired, clear it automatically
+          if (mutePrefs && mutePrefs.isMuted && mutePrefs.muteUntil && mutePrefs.muteUntil <= now) {
+            const { updateUserMutePreferences } = require("../models/userMutePreferencesModel");
+            await updateUserMutePreferences(
+              { userId },
+              {
+                isMuted: false,
+                muteUntil: null,
+                mutedChannels: [],
+                updatedAt: new Date(),
+              }
+            );
+            console.log(`Auto-unmuted expired user ${userId}`);
+          }
+        } catch (error) {
+          console.error(`Error checking mute preferences for user ${userId}:`, error);
+          // Continue with normal flow if there's an error
+        }
+
+        // Join the current channel room (covers all tabs and open tasks)
         console.log(`Socket ${socket.id} joining channel room: ${channelId}`);
         socket.join(`channel:${channelId}`);
         

@@ -1,0 +1,65 @@
+const Joi = require("joi");
+
+// Mute notifications validation schema
+const muteNotificationsValidation = Joi.object({
+  duration: Joi.string()
+    .valid("30min", "1hour", "2hours", "4hours", "8hours")
+    .required()
+    .messages({
+      "any.only": "Duration must be one of: 30min, 1hour, 2hours, 4hours, 8hours",
+      "any.required": "Duration is required",
+    }),
+});
+
+// Validation middleware function
+const validateRequest = (schema, source = "body") => {
+  return (req, res, next) => {
+    const dataToValidate =
+      source === "query"
+        ? req.query
+        : source === "params"
+        ? req.params
+        : req.body;
+
+    const { error, value } = schema.validate(dataToValidate, {
+      abortEarly: false,
+      allowUnknown: false,
+      stripUnknown: true,
+    });
+
+    if (error) {
+      const errors = error.details.map((detail) => ({
+        field: detail.path.join("."),
+        message: detail.message,
+        value: detail.context.value,
+      }));
+
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: errors,
+        statusCode: 400,
+      });
+    }
+
+    // Replace the original data with validated data
+    if (source === "query") {
+      req.query = value;
+    } else if (source === "params") {
+      req.params = value;
+    } else {
+      req.body = value;
+    }
+
+    next();
+  };
+};
+
+module.exports = {
+  validateMuteNotifications: validateRequest(muteNotificationsValidation),
+  
+  // Export schemas for testing or custom usage
+  schemas: {
+    muteNotificationsValidation,
+  },
+};

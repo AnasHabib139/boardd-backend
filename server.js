@@ -9,6 +9,7 @@ const { notFound, errorHandler } = require("./middlewares/errorHandling");
 const { log } = require("./middlewares/log");
 const { initSocket } = require("./utils/socket");
 const migrationRunner = require("./utils/migrationRunner");
+const { initializeCronJobs } = require("./utils/cronJobs");
 require("dotenv").config();
 const PORT = process.env.PORT;
 
@@ -36,6 +37,9 @@ const server = http.createServer(app);
 
 // Initialize Socket.io
 const io = initSocket(server);
+
+// Make io available to controllers
+app.set('io', io);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true, limit: "30mb" }));
@@ -96,6 +100,9 @@ initializeApp()
     server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}/`);
       console.log(`🔌 Socket.io initialized and listening for connections`);
+      
+      // Initialize cron jobs after server starts
+      initializeCronJobs(io);
     });
   })
   .catch((error) => {

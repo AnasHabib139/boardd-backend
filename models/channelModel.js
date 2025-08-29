@@ -35,6 +35,9 @@ exports.addMemberToChannel = (query, obj) =>
 exports.updateChannel = (query, update, options = {}) =>
   Channel.findOneAndUpdate(query, update, { new: true, ...options });
 
+// get many channels
+exports.findManyChannels = (query) => Channel.find(query);
+
 // get all channels
 exports.getAllChannelsDetails = async ({
   query,
