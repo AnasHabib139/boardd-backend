@@ -1,8 +1,12 @@
 const Joi = require("joi");
 const { helpers } = require("./authValidation");
 
-// Create channel validation schema
+// Create/Update channel validation schema
 const createChannelValidation = Joi.object({
+  channelId: helpers.objectIdValidation.optional().messages({
+    "string.pattern.base": "Channel ID must be a valid ObjectId",
+  }),
+
   channelName: Joi.string().trim().min(1).max(100).required().messages({
     "string.empty": "Channel name is required",
     "string.min": "Channel name must be at least 1 character long",

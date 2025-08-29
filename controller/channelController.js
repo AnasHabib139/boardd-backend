@@ -28,11 +28,49 @@ const Mailer = require("../utils/mailer");
 const { generateChannelInviteEmail } = require("../utils/emailTemplates");
 exports.createChannel = async (req, res, next) => {
   try {
-    const { channelName, channelDescription, isPrivate } = parseBody(req.body);
+    const { channelId, channelName, channelDescription, isPrivate } = parseBody(req.body);
 
     const userId = req.user.id;
     const user = await findUser({ _id: userId });
 
+    // Check if this is an update operation
+    if (channelId) {
+      // Update existing channel
+      const existingChannel = await findChannel({ _id: channelId });
+      if (!existingChannel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Channel not found",
+        });
+      }
+
+      // Check if user has permission to update (is member or admin)
+      if (!existingChannel.members.includes(userId) && existingChannel.createdBy.toString() !== userId) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You don't have permission to update this channel",
+        });
+      }
+
+      // Update channel
+      const updatedChannel = await updateChannel(
+        { _id: channelId },
+        {
+          channelName,
+          channelDescription,
+          isPrivate,
+        }
+      );
+
+      return generateResponse(
+        updatedChannel,
+        "Channel updated successfully",
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+
+    // Create new channel
     // Get all company admins and merge with creator (avoiding duplicates)
     const allMembers = await getAdminsAndMergeMembers(user.companyId, [userId]);
 
@@ -46,18 +84,23 @@ exports.createChannel = async (req, res, next) => {
       members: allMembers,
     });
 
-    // create default tabs with admins included
-    // const defaultTabs = await createDefaultTabs(
-    //   channel._id,
-    //   userId,
-    //   user.companyId
-    // );
-    // // create default tabs with promise.all
-    // await Promise.all(defaultTabs.map((tab) => createChannelTab(tab)));
+    // Create default "task management" tab and add all admins to it
+    const taskManagementTab = await createChannelTab({
+      channelId: channel._id,
+      tabName: "task management",
+      isDefault: true,
+      members: allMembers, // Add all admins (same as channel members)
+      createdBy: userId,
+      companyId: user.companyId,
+      isPrivate: false,
+    });
 
     return generateResponse(
-      channel,
-      "Channel created successfully",
+      {
+        ...channel.toObject(),
+        defaultTab: taskManagementTab,
+      },
+      "Channel created successfully with default tab",
       res,
       STATUS_CODES.CREATED
     );
