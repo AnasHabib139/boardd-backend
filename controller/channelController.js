@@ -10,7 +10,11 @@ const {
 } = require("../models/channelModel");
 const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
-const { createChannelTab, getAllTabs, updateChannelTab } = require("../models/channelTabsModel");
+const {
+  createChannelTab,
+  getAllTabs,
+  updateChannelTab,
+} = require("../models/channelTabsModel");
 const {
   createDefaultTabs,
   getAdminsAndMergeMembers,
@@ -21,14 +25,14 @@ const {
 } = require("./queries/channelQueries");
 const { findCompany } = require("../models/companyModel");
 // Import required functions
-const {
-  findInviteSlot,
-} = require("../models/inviteSlotModel");
+const { findInviteSlot } = require("../models/inviteSlotModel");
 const Mailer = require("../utils/mailer");
 const { generateChannelInviteEmail } = require("../utils/emailTemplates");
 exports.createChannel = async (req, res, next) => {
   try {
-    const { channelId, channelName, channelDescription, isPrivate } = parseBody(req.body);
+    const { channelId, channelName, channelDescription, isPrivate } = parseBody(
+      req.body
+    );
 
     const userId = req.user.id;
     const user = await findUser({ _id: userId });
@@ -45,7 +49,10 @@ exports.createChannel = async (req, res, next) => {
       }
 
       // Check if user has permission to update (is member or admin)
-      if (!existingChannel.members.includes(userId) && existingChannel.createdBy.toString() !== userId) {
+      if (
+        !existingChannel.members.includes(userId) &&
+        existingChannel.createdBy.toString() !== userId
+      ) {
         return next({
           statusCode: STATUS_CODES.FORBIDDEN,
           message: "You don't have permission to update this channel",
@@ -71,9 +78,7 @@ exports.createChannel = async (req, res, next) => {
     }
 
     // Create new channel
-    // Get all company admins and merge with creator (avoiding duplicates)
-    const allMembers = await getAdminsAndMergeMembers(user.companyId, [userId]);
-
+    // Add only the creator to the channel
     const channel = await createChannel({
       channelName,
       channelDescription,
@@ -81,23 +86,30 @@ exports.createChannel = async (req, res, next) => {
       isPrivate,
       createdBy: userId,
       channelToken: generateJoinToken(),
-      members: allMembers,
+      members: [userId], // Only add creator
     });
 
-    // Create default "task management" tab and add all admins to it
+    // Create default "team management" tab and add only creator to it
     const taskManagementTab = await createChannelTab({
       channelId: channel._id,
-      tabName: "task management",
+      tabName: "team management",
       isDefault: true,
-      members: allMembers, // Add all admins (same as channel members)
+      members: [userId], // Only add creator
       createdBy: userId,
       companyId: user.companyId,
       isPrivate: false,
     });
 
+    // Add the tab ID to the channel's tabs array
+    await updateChannel(
+      { _id: channel._id },
+      { $push: { tabs: taskManagementTab._id } }
+    );
+
     return generateResponse(
       {
         ...channel.toObject(),
+        tabs: [taskManagementTab._id], // Include the tab ID in response
         defaultTab: taskManagementTab,
       },
       "Channel created successfully with default tab",
@@ -249,9 +261,10 @@ exports.addUserToChannel = async (req, res, next) => {
 
     // Determine if this is a self-join scenario
     // Self-join: user is adding only their own email and is not a channel member
-    const isSelfJoin = nonDemoEmails.length === 1 && 
-                       nonDemoEmails[0].toLowerCase() === requestingUser.email.toLowerCase() &&
-                       !channel?.members?.includes(requestingUserId);
+    const isSelfJoin =
+      nonDemoEmails.length === 1 &&
+      nonDemoEmails[0].toLowerCase() === requestingUser.email.toLowerCase() &&
+      !channel?.members?.includes(requestingUserId);
 
     // Permission check: either user is a channel member OR it's a self-join
     if (!isSelfJoin && !channel?.members?.includes(requestingUserId)) {
@@ -345,7 +358,9 @@ exports.addUserToChannel = async (req, res, next) => {
         const channelTabsQuery = [
           {
             $match: {
-              channelId: require("mongoose").Types.ObjectId.createFromHexString(channel._id.toString()),
+              channelId: require("mongoose").Types.ObjectId.createFromHexString(
+                channel._id.toString()
+              ),
             },
           },
         ];
@@ -359,11 +374,13 @@ exports.addUserToChannel = async (req, res, next) => {
 
         // If channel has tabs, add users to public tabs
         if (channelTabsResult.tabs && channelTabsResult.tabs.length > 0) {
-          const publicTabs = channelTabsResult.tabs.filter(tab => !tab.isPrivate);
-          
+          const publicTabs = channelTabsResult.tabs.filter(
+            (tab) => !tab.isPrivate
+          );
+
           if (publicTabs.length > 0) {
             // Add users to all public tabs in parallel
-            const tabUpdatePromises = publicTabs.map(tab => 
+            const tabUpdatePromises = publicTabs.map((tab) =>
               updateChannelTab(
                 { _id: tab._id },
                 { $addToSet: { members: { $each: usersToAdd } } }
@@ -421,7 +438,7 @@ exports.addUserToChannel = async (req, res, next) => {
       // Partial success - some added, some failed
       const demoNote =
         demoEmailsFound.length > 0 ? " (demo users were filtered out)" : "";
-      const baseMessage = isSelfJoin 
+      const baseMessage = isSelfJoin
         ? `You joined the channel successfully, but ${errors.length} other users failed to be added`
         : `${addedUsers.length} users added successfully. ${errors.length} users failed to be added`;
       const message = `${baseMessage}${demoNote}.`;
@@ -594,7 +611,7 @@ exports.sendChannelInviteEmails = async (req, res, next) => {
     };
 
     const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-    
+
     // Generate simple invite link using channel ID (assuming users have accounts)
     const inviteLink = `${baseUrl}/channel/invite?channelId=${channel._id}`;
 
@@ -617,7 +634,7 @@ exports.sendChannelInviteEmails = async (req, res, next) => {
 
         // Check if user exists (but don't require it)
         const existingUser = await findUser({ email });
-        
+
         // If user exists, do validation checks
         if (existingUser) {
           // Check if user is already a channel member
@@ -639,7 +656,10 @@ exports.sendChannelInviteEmails = async (req, res, next) => {
           }
 
           // For company domain users, ensure they're part of the company
-          if (isCompanyDomain && existingUser.companyId.toString() !== channel.companyId.toString()) {
+          if (
+            isCompanyDomain &&
+            existingUser.companyId.toString() !== channel.companyId.toString()
+          ) {
             results.failed.push({
               email,
               reason: "User is not a member of the company",
@@ -673,9 +693,13 @@ exports.sendChannelInviteEmails = async (req, res, next) => {
         // Determine invite type based on user status and domain
         let inviteType;
         if (isCompanyDomain) {
-          inviteType = existingUser ? "company_existing_user" : "company_new_user";
+          inviteType = existingUser
+            ? "company_existing_user"
+            : "company_new_user";
         } else {
-          inviteType = existingUser ? "external_existing_user" : "external_new_user";
+          inviteType = existingUser
+            ? "external_existing_user"
+            : "external_new_user";
         }
 
         results.successful.push({
@@ -947,11 +971,12 @@ exports.editChannel = async (req, res, next) => {
 
     // Prepare update data (only include provided fields)
     const updateData = {
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
     if (channelName !== undefined) updateData.channelName = channelName;
-    if (channelDescription !== undefined) updateData.channelDescription = channelDescription;
+    if (channelDescription !== undefined)
+      updateData.channelDescription = channelDescription;
 
     // Update the channel
     const updatedChannel = await updateChannel({ _id: channelId }, updateData);

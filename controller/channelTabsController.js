@@ -1,4 +1,4 @@
-const { findChannel, addMemberToChannel } = require("../models/channelModel");
+const { findChannel, addMemberToChannel, updateChannel } = require("../models/channelModel");
 const {
   updateChannelTab,
   findChannelTab,
@@ -512,21 +512,17 @@ exports.createSelectedChannelTabs = async (req, res, next) => {
 
     const existingTabNames = existingTabs.tabs.map((tab) => tab.tabName);
 
-    // Filter out tabs that already exist
+    // Separate tabs to create vs tabs to update
     const tabsToCreate = tabs.filter(
       (tab) => !existingTabNames.includes(tab.tabName)
     );
-    const duplicateTabs = tabs.filter((tab) =>
+    const tabsToUpdate = tabs.filter((tab) =>
       existingTabNames.includes(tab.tabName)
     );
 
     const createdTabs = [];
+    const updatedTabs = [];
     const errors = [];
-
-    // Add errors for duplicate tabs
-    duplicateTabs.forEach((tab) => {
-      errors.push(`Tab "${tab.tabName}" already exists in this channel`);
-    });
 
     // Process only new tabs
     for (const tabData of tabsToCreate) {
@@ -536,10 +532,10 @@ exports.createSelectedChannelTabs = async (req, res, next) => {
         let tabMembers = [];
 
         if (isPrivate) {
-          // For private tabs: Add admins + specific users from request
+          // For private tabs: Add all admins + specific users from request
           tabMembers = await getAdminsAndMergeMembers(
             channel.companyId,
-            privateMembers
+            privateMembers || []
           );
         } else {
           // For public tabs: Add all channel members
@@ -568,12 +564,59 @@ exports.createSelectedChannelTabs = async (req, res, next) => {
       }
     }
 
+    // Process existing tabs - add all channel members to them
+    for (const tabData of tabsToUpdate) {
+      try {
+        const { tabName, isPrivate, members: privateMembers = [] } = tabData;
+        
+        // Find the existing tab
+        const existingTab = existingTabs.tabs.find(tab => tab.tabName === tabName);
+        if (!existingTab) continue;
+
+        let membersToAdd = [];
+
+        if (isPrivate) {
+          // For private tabs: Add all admins + specific users from request
+          membersToAdd = await getAdminsAndMergeMembers(
+            channel.companyId,
+            privateMembers || []
+          );
+        } else {
+          // For public tabs: Add all channel members
+          membersToAdd = channel.members || [];
+        }
+
+        // Update the existing tab with new members (use $addToSet to avoid duplicates)
+        const updatedTab = await updateChannelTab(
+          { _id: existingTab._id },
+          { $addToSet: { members: { $each: membersToAdd } } }
+        );
+        
+        updatedTabs.push(updatedTab);
+      } catch (tabError) {
+        console.error(`Error updating tab ${tabData?.tabName}:`, tabError);
+        errors.push(
+          `Failed to update tab ${tabData?.tabName}: ${tabError.message}`
+        );
+      }
+    }
+
+    // Add created tab IDs to the channel's tabs array
+    if (createdTabs.length > 0) {
+      const tabIdsToAdd = createdTabs.map(tab => tab._id);
+      await updateChannel(
+        { _id: channelId },
+        { $push: { tabs: { $each: tabIdsToAdd } } }
+      );
+    }
+
     // Prepare response
     const response = {
       createdTabs,
+      updatedTabs,
       totalCreated: createdTabs.length,
+      totalUpdated: updatedTabs.length,
       totalRequested: tabs.length,
-      alreadyExisted: duplicateTabs.length,
       existingTabNames: existingTabNames,
     };
 
@@ -582,29 +625,29 @@ exports.createSelectedChannelTabs = async (req, res, next) => {
     }
 
     // Determine response status and message
-    if (createdTabs.length === 0 && duplicateTabs.length > 0) {
-      // All tabs already exist
-      return generateResponse(
-        response,
-        `All requested tabs already exist in this channel`,
-        res,
-        STATUS_CODES.CONFLICT
-      );
-    } else if (createdTabs.length === 0) {
-      // No tabs created due to errors
+    if (createdTabs.length === 0 && updatedTabs.length === 0) {
+      // No tabs created or updated due to errors
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Failed to create any tabs",
+        message: "Failed to create or update any tabs",
         errors,
       });
-    } else if (duplicateTabs.length > 0) {
-      // Partial success - some created, some already existed
-      const message = `${createdTabs.length} new tabs created successfully. ${duplicateTabs.length} tabs already existed.`;
+    } else if (createdTabs.length === 0 && updatedTabs.length > 0) {
+      // Only existing tabs were updated
+      return generateResponse(
+        response,
+        `${updatedTabs.length} existing tabs updated with new members`,
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    } else if (updatedTabs.length > 0) {
+      // Mixed success - some created, some updated
+      const message = `${createdTabs.length} new tabs created and ${updatedTabs.length} existing tabs updated successfully`;
       return generateResponse(
         response,
         message,
         res,
-        STATUS_CODES.PARTIAL_CONTENT
+        STATUS_CODES.CREATED
       );
     } else {
       // All tabs created successfully
