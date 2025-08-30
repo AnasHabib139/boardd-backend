@@ -10,6 +10,7 @@ const {
   getNextPosition,
   addMemberToCard,
   removeMemberFromCard,
+  updateTeamCardWithTimestamp,
 } = require("../models/teamCardModel");
 const { getTeamCardsWithMembersQuery, getMemberTasksQuery } = require("./queries/teamCardsQueries");
 const { getAllTasks } = require("../models/taskModel");
@@ -286,6 +287,92 @@ exports.getTeamCards = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message || "Failed to fetch team cards",
+    });
+  }
+};
+
+/**
+ * Edit team card (admin only)
+ */
+exports.editTeamCard = async (req, res, next) => {
+  try {
+    const { cardId } = req.params;
+    const { title, isActive } = parseBody(req.body);
+    const userId = req.user.id;
+
+    // Find team card
+    const teamCard = await findTeamCard({ _id: cardId, isActive: true });
+    if (!teamCard) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Team card not found",
+      });
+    }
+
+    // Get user info
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Check if user is admin (only admins can edit team cards)
+    if (user.role !== "admin") {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "Only admins can edit team cards",
+      });
+    }
+
+    // Check if user is from the same company as the team card
+    if (user.companyId.toString() !== teamCard.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You can only edit team cards from your company",
+      });
+    }
+
+    // Prepare update data
+    const updateData = {};
+    
+    // Update title if provided
+    if (title !== undefined) {
+      updateData.title = title;
+    }
+
+    // Update isActive if provided
+    if (isActive !== undefined) {
+      updateData.isActive = isActive;
+    }
+
+    // Update the team card
+    const updatedCard = await updateTeamCardWithTimestamp(
+      { _id: cardId },
+      updateData
+    );
+
+    // Build response message
+    const changes = [];
+    if (title !== undefined) changes.push("title updated");
+    if (isActive !== undefined) changes.push(`card ${isActive ? "activated" : "deactivated"}`);
+
+    const responseMessage = changes.length > 0 
+      ? `Team card updated successfully: ${changes.join(", ")}`
+      : "Team card updated successfully";
+
+    return generateResponse(
+      updatedCard,
+      responseMessage,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in editTeamCard:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to edit team card",
     });
   }
 };

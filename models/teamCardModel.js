@@ -54,6 +54,15 @@ exports.findTeamCard = (query) => TeamCard.findOne(query);
 exports.updateTeamCard = (query, obj, options = { new: true }) =>
   TeamCard.findOneAndUpdate(query, obj, options);
 
+// Update team card with timestamp
+exports.updateTeamCardWithTimestamp = (query, updateData, options = { new: true }) => {
+  const updateWithTimestamp = {
+    ...updateData,
+    updatedAt: new Date(),
+  };
+  return TeamCard.findOneAndUpdate(query, updateWithTimestamp, options);
+};
+
 // Get all team cards
 exports.getAllTeamCards = async ({
   query,

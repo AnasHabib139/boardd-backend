@@ -7,6 +7,7 @@ const {
   removeMemberFromCard,
   getTeamCards,
   getMemberProfile,
+  editTeamCard,
 } = require("../controller/teamCard.controller");
 const Auth = require("../middlewares/Auth");
 const OptionalAuth = require("../middlewares/OptionalAuth");
@@ -17,6 +18,7 @@ const {
   validateRemoveTeamCardMember,
   validateTeamCardIdParam,
   validateMemberProfile,
+  validateEditTeamCard,
 } = require("../validation/teamCardValidation");
 
 class TeamCardApi {
@@ -41,6 +43,15 @@ class TeamCardApi {
       "/",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       getTeamCards
+    );
+
+    // Edit team card (admin only)
+    router.put(
+      "/:cardId",
+      Auth([ROLES.ADMIN]),
+      validateTeamCardIdParam,
+      validateEditTeamCard,
+      editTeamCard
     );
 
     // Add member to team card (admin only)

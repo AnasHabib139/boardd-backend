@@ -77,6 +77,25 @@ const removeTeamCardMemberSchema = Joi.object({
     }),
 });
 
+// Validation for editing team card
+const editTeamCardSchema = Joi.object({
+  title: Joi.string()
+    .min(1)
+    .max(100)
+    .optional()
+    .messages({
+      "string.min": "Title must be at least 1 character long",
+      "string.max": "Title cannot exceed 100 characters",
+    }),
+  isActive: Joi.boolean()
+    .optional()
+    .messages({
+      "boolean.base": "isActive must be a boolean value",
+    }),
+}).min(1).messages({
+  "object.min": "At least one field must be provided for update",
+});
+
 // Validation for team card ID parameter
 const teamCardIdParamSchema = Joi.object({
   cardId: Joi.string()
@@ -147,6 +166,18 @@ const memberIdParamSchema = Joi.object({
 // Middleware to validate team card ID parameter
 exports.validateTeamCardIdParam = (req, res, next) => {
   const { error } = teamCardIdParamSchema.validate(req.params);
+  if (error) {
+    return next({
+      statusCode: STATUS_CODES.BAD_REQUEST,
+      message: error.details[0].message,
+    });
+  }
+  next();
+};
+
+// Middleware to validate edit team card request
+exports.validateEditTeamCard = (req, res, next) => {
+  const { error } = editTeamCardSchema.validate(req.body);
   if (error) {
     return next({
       statusCode: STATUS_CODES.BAD_REQUEST,
