@@ -5,6 +5,10 @@ const {
   findExpiredMutePreferences, 
   updateUserMutePreferences 
 } = require("../models/userMutePreferencesModel");
+const {
+  findExpiredStatuses,
+  updateUserStatus
+} = require("../models/userStatusModel");
 
 // Helper function to add user back to socket rooms
 const addUserToSocketRooms = async (userId, mutedChannels, io) => {
@@ -85,6 +89,47 @@ const autoUnmuteExpiredUsers = async (io) => {
   }
 };
 
+// Auto-clear expired user statuses
+const autoClearExpiredStatuses = async () => {
+  try {
+    console.log('Running status auto-clear check...');
+    
+    const expiredStatuses = await findExpiredStatuses();
+    
+    if (expiredStatuses.length === 0) {
+      console.log('No expired user statuses found');
+      return;
+    }
+    
+    console.log(`Found ${expiredStatuses.length} expired user statuses`);
+    
+    for (const status of expiredStatuses) {
+      try {
+        // Clear the expired status
+        await updateUserStatus(
+          { userId: status.userId },
+          {
+            statusType: null,
+            statusMessage: null,
+            statusEmoji: null,
+            expiresAt: null,
+            isActive: false,
+            updatedAt: new Date(),
+          }
+        );
+        
+        console.log(`Auto-cleared expired status for user: ${status.userId}, status was: ${status.statusType}`);
+      } catch (error) {
+        console.error(`Error auto-clearing status for user ${status.userId}:`, error);
+      }
+    }
+    
+    console.log('Status auto-clear check completed');
+  } catch (error) {
+    console.error('Error in auto-clear status cron job:', error);
+  }
+};
+
 // Initialize cron jobs
 const initializeCronJobs = (io) => {
   // Check for expired mute preferences every minute
@@ -95,18 +140,31 @@ const initializeCronJobs = (io) => {
     timezone: "UTC"
   });
 
-  // Start the cron job
+  // Check for expired user statuses every 10 minutes
+  const autoClearStatusJob = cron.schedule('*/10 * * * *', () => {
+    autoClearExpiredStatuses();
+  }, {
+    scheduled: false,
+    timezone: "UTC"
+  });
+
+  // Start the cron jobs
   autoUnmuteJob.start();
+  autoClearStatusJob.start();
   console.log('✅ Auto-unmute cron job initialized (runs every minute)');
+  console.log('✅ Auto-clear status cron job initialized (runs every 10 minutes)');
 
   return {
     autoUnmuteJob,
-    // Method to manually trigger auto-unmute (useful for testing)
-    triggerAutoUnmute: () => autoUnmuteExpiredUsers(io)
+    autoClearStatusJob,
+    // Method to manually trigger jobs (useful for testing)
+    triggerAutoUnmute: () => autoUnmuteExpiredUsers(io),
+    triggerAutoClearStatus: () => autoClearExpiredStatuses()
   };
 };
 
 module.exports = {
   initializeCronJobs,
-  autoUnmuteExpiredUsers
+  autoUnmuteExpiredUsers,
+  autoClearExpiredStatuses
 };
