@@ -127,24 +127,44 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
         $cond: {
           if: { $ne: ["$totalTime", null] },
           then: {
-            $concat: [
-              {
-                $toString: {
-                  $floor: { $divide: ["$totalTime", 60] },
-                },
+            $let: {
+              vars: {
+                totalMinutes: "$totalTime",
+                hours: { $floor: { $divide: ["$totalTime", 60] } },
+                minutes: { $floor: { $mod: ["$totalTime", 60] } },
+                seconds: { $floor: { $multiply: [{ $mod: ["$totalTime", 1] }, 60] } }
               },
-              ":",
-              {
-                $cond: {
-                  if: { $lt: [{ $mod: ["$totalTime", 60] }, 10] },
-                  then: {
-                    $concat: ["0", { $toString: { $mod: ["$totalTime", 60] } }],
+              in: {
+                $concat: [
+                  // Hours (pad with zero if < 10)
+                  {
+                    $cond: {
+                      if: { $lt: ["$$hours", 10] },
+                      then: { $concat: ["0", { $toString: "$$hours" }] },
+                      else: { $toString: "$$hours" }
+                    }
                   },
-                  else: { $toString: { $mod: ["$totalTime", 60] } },
-                },
-              },
-              ":00",
-            ],
+                  ":",
+                  // Minutes (pad with zero if < 10)
+                  {
+                    $cond: {
+                      if: { $lt: ["$$minutes", 10] },
+                      then: { $concat: ["0", { $toString: "$$minutes" }] },
+                      else: { $toString: "$$minutes" }
+                    }
+                  },
+                  ":",
+                  // Seconds (pad with zero if < 10)
+                  {
+                    $cond: {
+                      if: { $lt: ["$$seconds", 10] },
+                      then: { $concat: ["0", { $toString: "$$seconds" }] },
+                      else: { $toString: "$$seconds" }
+                    }
+                  }
+                ]
+              }
+            }
           },
           else: "00:00:00",
         },
