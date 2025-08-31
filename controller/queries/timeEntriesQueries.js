@@ -111,18 +111,8 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
       _id: 1,
       title: 1,
       description: 1,
-      startTime: {
-        $dateToString: {
-          format: "%H:%M",
-          date: "$startTime",
-        },
-      },
-      endTime: {
-        $dateToString: {
-          format: "%H:%M",
-          date: "$endTime",
-        },
-      },
+      startTime: "$startTime",
+      endTime: "$endTime",
       totalTime: {
         $cond: {
           if: { $ne: ["$totalTime", null] },

@@ -5,9 +5,11 @@ const moment = require('moment');
 /**
  * Time Helper using moment.js for simplified and accurate time calculations
  * 
- * IMPORTANT: User input time (e.g., "13:15") is treated as UTC time directly
- * No timezone conversion is performed - simple mapping "13:15" -> "13:15:00.000Z"
- * Database stores and works with UTC timestamps
+ * UPDATED TIMEZONE HANDLING:
+ * - Frontend sends ISO timestamps with timezone info (e.g., "2024-01-15T05:00:00+05:00")
+ * - Backend stores UTC timestamps in database
+ * - Display formatting converts UTC back to user's local time on frontend
+ * - No server-side timezone conversion needed - ISO strings handle everything
  */
 
 /**

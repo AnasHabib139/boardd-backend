@@ -43,6 +43,14 @@ exports.startClock = async (req, res, next) => {
       });
     }
 
+    // Validate startTime is a valid ISO string
+    if (!startTime || isNaN(Date.parse(startTime))) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "startTime must be a valid ISO timestamp (e.g., '2024-01-15T05:00:00+05:00')",
+      });
+    }
+
     // Check if user already has an active time entry
     const activeEntry = await findActiveTimeEntry(userId);
     if (activeEntry) {
@@ -109,6 +117,14 @@ exports.stopClock = async (req, res, next) => {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
         message: "User not found",
+      });
+    }
+
+    // Validate endTime is a valid ISO string
+    if (!endTime || isNaN(Date.parse(endTime))) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "endTime must be a valid ISO timestamp (e.g., '2024-01-15T17:30:00+05:00')",
       });
     }
 
@@ -186,6 +202,21 @@ exports.editTimeEntry = async (req, res, next) => {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
         message: "Time entry not found or you don't have permission to edit it",
+      });
+    }
+
+    // Validate ISO timestamps if provided
+    if (startTime && isNaN(Date.parse(startTime))) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "startTime must be a valid ISO timestamp",
+      });
+    }
+
+    if (endTime && isNaN(Date.parse(endTime))) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "endTime must be a valid ISO timestamp",
       });
     }
 
