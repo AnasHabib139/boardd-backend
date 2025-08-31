@@ -19,6 +19,8 @@ const getMuteDurationMs = (duration) => {
     "2hours": 2 * 60 * 60 * 1000, // 2 hours
     "4hours": 4 * 60 * 60 * 1000, // 4 hours
     "8hours": 8 * 60 * 60 * 1000, // 8 hours
+    "24hours": 24 * 60 * 60 * 1000, // 24 hours (1 day)
+    "168hours": 168 * 60 * 60 * 1000, // 168 hours (1 week)
   };
   return durations[duration] || durations["1hour"]; // Default to 1 hour
 };
@@ -30,10 +32,13 @@ const getTimeRemaining = (muteUntil) => {
 
   if (diff <= 0) return "Expired";
 
-  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
 
-  if (hours > 0) {
+  if (days > 0) {
+    return `${days}d ${hours}h`;
+  } else if (hours > 0) {
     return `${hours}h ${minutes}m`;
   }
   return `${minutes}m`;

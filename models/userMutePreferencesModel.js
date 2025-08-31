@@ -15,7 +15,7 @@ const userMutePreferencesSchema = new Schema({
   },
   muteDuration: {
     type: String,
-    enum: ["30min", "1hour", "2hours", "4hours", "8hours"],
+    enum: ["30min", "1hour", "2hours", "4hours", "8hours", "24hours", "168hours"],
   },
   muteUntil: {
     type: Date,

@@ -3,10 +3,10 @@ const Joi = require("joi");
 // Mute notifications validation schema
 const muteNotificationsValidation = Joi.object({
   duration: Joi.string()
-    .valid("30min", "1hour", "2hours", "4hours", "8hours")
+    .valid("30min", "1hour", "2hours", "4hours", "8hours", "24hours", "168hours")
     .required()
     .messages({
-      "any.only": "Duration must be one of: 30min, 1hour, 2hours, 4hours, 8hours",
+      "any.only": "Duration must be one of: 30min, 1hour, 2hours, 4hours, 8hours, 24hours, 168hours",
       "any.required": "Duration is required",
     }),
 });
