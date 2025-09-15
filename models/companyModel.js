@@ -37,10 +37,11 @@ const CompanySchema = new Schema(
     domain: { type: String, required: true, unique: true }, // e.g. workspin.net
     adminUser: { type: Types.ObjectId, ref: "User" },
     joinToken: { type: String, required: true, unique: true }, // e.g. 32-byte hex
-    generalQuestions: { type: generalQuestionsSchema, required: true },
+    generalQuestions: { type: generalQuestionsSchema, required: false },
     channelPreference: [
-      { type: String, required: true, enum: Object.values(CHANNEL_PREFERENCE) },
+      { type: String, required: false, enum: Object.values(CHANNEL_PREFERENCE) },
     ],
+    howDidYouHearAboutUs: { type: String, required: false, maxlength: 200 },
     isActive: { type: Boolean, default: true },
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },

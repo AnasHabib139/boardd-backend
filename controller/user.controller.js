@@ -47,8 +47,7 @@ exports.signup = async (req, res, next) => {
       password,
       accountName,
       role,
-      generalQuestions,
-      channelPreference,
+      howDidYouHearAboutUs,
     } = parseBody(req.body);
 
     // Check if user exists
@@ -84,8 +83,7 @@ exports.signup = async (req, res, next) => {
       name: accountName,
       domain,
       joinToken: generateJoinToken(),
-      generalQuestions,
-      channelPreference,
+      howDidYouHearAboutUs,
       adminUser: user._id,
     });
 

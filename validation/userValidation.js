@@ -34,32 +34,9 @@ const signupValidation = Joi.object({
       "string.empty": "Role is required",
     }),
 
-  generalQuestions: Joi.object()
-    .pattern(
-      Joi.string(),
-      Joi.alternatives().try(
-        Joi.string(),
-        Joi.array().items(Joi.string()),
-        Joi.boolean()
-      )
-    )
-    .required()
-    .messages({
-      "object.base": "General questions must be an object",
-      "any.required": "General questions are required",
-    }),
-
-  channelPreference: Joi.array()
-    .items(Joi.string().valid(...Object.values(CHANNEL_PREFERENCE)))
-    .min(1)
-    .required()
-    .messages({
-      "array.min": "At least one channel preference is required",
-      "any.only": `Channel preference must be one of: ${Object.values(
-        CHANNEL_PREFERENCE
-      ).join(", ")}`,
-      "any.required": "Channel preference is required",
-    }),
+  howDidYouHearAboutUs: Joi.string().trim().max(200).optional().messages({
+    "string.max": "How did you hear about us cannot exceed 200 characters",
+  }),
 });
 
 // Login validation schemas
