@@ -79,18 +79,24 @@ exports.PRIVACY = Object.freeze({
 });
 
 exports.DEFAULT_TABS = Object.freeze({
-  TEAM_MANAGEMENT: "team management",
+  TASK_MANAGEMENT: "task management",
   CLIENT_MANAGEMENT: "client management",
-  FORM_BUILDER: "form builder",
-  WORK_IN_PROGRESS: "work in progress",
+  FORMS: "forms",
+  PROGRESS: "progress",
+  TEAM_CHAT: "team chat",
+  FILES: "files",
+  CLIENT_CHAT: "client chat",
 });
 
 // Define the desired tab order for sorting
 exports.TAB_ORDER = Object.freeze({
-  "team management": 1,
-  "client management": 2,
-  "form builder": 3,
-  "work in progress": 4,
+  "task management": 1,
+  "team chat": 2,
+  "client chat": 3,
+  "client management": 4,
+  files: 5,
+  forms: 6,
+  progress: 7,
 });
 
 // Custom field type enum

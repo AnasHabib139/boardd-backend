@@ -89,10 +89,10 @@ exports.createChannel = async (req, res, next) => {
       members: [userId], // Only add creator
     });
 
-    // Create default "team management" tab and add only creator to it
+    // Create default "task management" tab and add only creator to it
     const taskManagementTab = await createChannelTab({
       channelId: channel._id,
-      tabName: "team management",
+      tabName: "task management",
       isDefault: true,
       members: [userId], // Only add creator
       createdBy: userId,

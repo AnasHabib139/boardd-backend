@@ -41,15 +41,13 @@ exports.getAllTabsOfMemberInChannelQuery = (channelId, userId) => {
     },
     {
       $addFields: {
-        // Add custom sort order based on tab name
+        // Add custom sort order based on tab name using TAB_ORDER constants
         sortOrder: {
           $switch: {
-            branches: [
-              { case: { $eq: ["$tabName", "team management"] }, then: 1 },
-              { case: { $eq: ["$tabName", "client management"] }, then: 2 },
-              { case: { $eq: ["$tabName", "form builder"] }, then: 3 },
-              { case: { $eq: ["$tabName", "work in progress"] }, then: 4 },
-            ],
+            branches: Object.entries(TAB_ORDER).map(([tabName, order]) => ({
+              case: { $eq: ["$tabName", tabName] },
+              then: order
+            })),
             default: 999, // For any non-standard tabs, put them at the end
           },
         },

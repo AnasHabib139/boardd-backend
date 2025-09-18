@@ -48,7 +48,7 @@ exports.createDefaultTabs = async (channelId, userId, companyId) => {
     },
     {
       channelId: channelId,
-      tabName: DEFAULT_TABS.TEAM_MANAGEMENT,
+      tabName: DEFAULT_TABS.TASK_MANAGEMENT,
       isDefault: true,
       members: allMembers,
       createdBy: userId,
