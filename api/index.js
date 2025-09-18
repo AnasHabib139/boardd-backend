@@ -24,6 +24,7 @@ const ClockupApi = require("./clockupApi");
 const InboxApi = require("./inboxApi");
 const NotificationApi = require("./notificationApi");
 const UserStatusApi = require("./userStatusApi");
+const ChannelGroupApi = require("./channelGroupApi");
 // FileServeApi is now mounted directly in server.js at /uploadFiles
 // const FileServeApi = require("./fileServeApi");
 // all API routing files import here like above
@@ -58,6 +59,7 @@ class API {
     this.routeGroups.push(new InboxApi());
     this.routeGroups.push(new NotificationApi());
     this.routeGroups.push(new UserStatusApi());
+    this.routeGroups.push(new ChannelGroupApi());
     // FileServeApi is now mounted directly in server.js
     // this.routeGroups.push(new FileServeApi());
     // all routes register here like above
