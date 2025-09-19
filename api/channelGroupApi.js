@@ -1,7 +1,7 @@
 "use strict";
 
 const { Router } = require("express");
-const { createChannelGroup, assignChannelsToGroup } = require("../controller/channelGroupController");
+const { createChannelGroup, assignChannelsToGroup, getAllChannelGroups } = require("../controller/channelGroupController");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
 const { validateCreateChannelGroup, validateAssignChannelsToGroup } = require("../validation/channelGroupValidation");
@@ -29,6 +29,13 @@ class ChannelGroupApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateAssignChannelsToGroup,
       assignChannelsToGroup
+    );
+
+    // Get all channel groups with pagination
+    router.get(
+      "/",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getAllChannelGroups
     );
   }
 

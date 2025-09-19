@@ -292,7 +292,7 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
       },
     },
 
-    // Lookup task counts for progress calculation (minimal lookup)
+    // Lookup task counts and attachment counts for progress calculation
     {
       $lookup: {
         from: "tasks",
@@ -309,6 +309,29 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
             $group: {
               _id: "$status",
               count: { $sum: 1 },
+            },
+          },
+        ],
+      },
+    },
+
+    // Lookup all tasks to calculate attachment counts
+    {
+      $lookup: {
+        from: "tasks",
+        localField: "_id",
+        foreignField: "projectId",
+        as: "allProjectTasks",
+        pipeline: [
+          {
+            $match: {
+              isActive: true,
+            },
+          },
+          {
+            $project: {
+              attachments: { $ifNull: ["$attachments", []] }, // Default to empty array if null/undefined
+              links: { $ifNull: ["$links", []] }, // Default to empty array if null/undefined
             },
           },
         ],
@@ -333,6 +356,25 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
               },
             },
           },
+        },
+        // Calculate file and link attachment counts using separate fields
+        fileAttached: {
+          $reduce: {
+            input: "$allProjectTasks",
+            initialValue: 0,
+            in: {
+              $add: ["$$value", { $size: "$$this.attachments" }]
+            }
+          }
+        },
+        linksAttached: {
+          $reduce: {
+            input: "$allProjectTasks",
+            initialValue: 0,
+            in: {
+              $add: ["$$value", { $size: "$$this.links" }]
+            }
+          }
         },
       },
     },
@@ -396,6 +438,8 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
         progress: {
           $round: ["$progress", 1], // Round to 1 decimal place
         },
+        fileAttached: 1,
+        linksAttached: 1,
         // Context path for overview
         contextPath: {
           $concat: [

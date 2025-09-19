@@ -3,8 +3,16 @@
 const { parseBody, generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
-const { createChannelGroup, findChannelGroup, updateChannelGroup } = require("../models/channelGroupModel");
+const {
+  createChannelGroup,
+  findChannelGroup,
+  updateChannelGroup,
+  getAllChannelGroups,
+} = require("../models/channelGroupModel");
 const { findManyChannels } = require("../models/channelModel");
+const {
+  getAllChannelGroupsQuery,
+} = require("./queries/channelGroupQueries");
 
 /**
  * Create a new channel group
@@ -90,15 +98,16 @@ exports.assignChannelsToGroup = async (req, res, next) => {
     }
 
     // Validate that all channels exist and belong to the same company
-    const channels = await findManyChannels({ 
+    const channels = await findManyChannels({
       _id: { $in: channelIds },
-      companyId: user.companyId 
+      companyId: user.companyId,
     });
 
     if (channels.length !== channelIds.length) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "One or more channels not found or don't belong to your company",
+        message:
+          "One or more channels not found or don't belong to your company",
       });
     }
 
@@ -118,6 +127,56 @@ exports.assignChannelsToGroup = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in assignChannelsToGroup:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Get all channel groups of user's company with populated channel information
+ */
+exports.getAllChannelGroups = async (req, res, next) => {
+  try {
+    const { page, limit } = req.query;
+    const userId = req.user.id;
+
+    // Get user info
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    if (!user.companyId) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "User must be associated with a company",
+      });
+    }
+
+    // Get the aggregation query filtered by user's channel membership
+    const query = getAllChannelGroupsQuery(user.companyId.toString(), userId);
+
+    // Fetch channel groups with pagination
+    const result = await getAllChannelGroups({
+      query,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 10,
+      responseKey: "channelGroups",
+    });
+
+    return generateResponse(
+      result,
+      "Channel groups fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getAllChannelGroups:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

@@ -62,6 +62,7 @@ const taskSchema = new Schema({
   type: { type: String, default: "task" },
   isActive: { type: Boolean, default: true },
   attachments: [{ type: String }],
+  links: [{ type: String }],
   customFields: [customFieldSchema], // Add custom fields array
   checklist: { type: [checklistItemSchema], default: [] },
 
