@@ -2,134 +2,304 @@ const { Types } = require("mongoose");
 
 /**
  * Get all channel groups of a company with populated channel information filtered by user's channel membership
+ * Plus create a runtime "Unassigned Channels" group for channels not in any group
  * @param {string} companyId - Company ID
  * @param {string} userId - User ID to filter by channel membership
  * @returns {Array} Aggregation pipeline
  */
 exports.getAllChannelGroupsQuery = (companyId, userId) => {
   return [
-    // Match channel groups by companyId
     {
-      $match: {
-        companyId: Types.ObjectId.createFromHexString(companyId),
-        isActive: true,
-        isArchived: false,
-      },
-    },
+      $facet: {
+        // Get all channel groups with user's channels
+        channelGroups: [
+          // Match channel groups by companyId
+          {
+            $match: {
+              companyId: Types.ObjectId.createFromHexString(companyId),
+              isActive: true,
+              isArchived: false,
+            },
+          },
 
-    // Lookup all channels information first
-    {
-      $lookup: {
-        from: "channels",
-        localField: "channelIds",
-        foreignField: "_id",
-        as: "allChannels",
-        pipeline: [
+          // Lookup all channels information first
+          {
+            $lookup: {
+              from: "channels",
+              localField: "channelIds",
+              foreignField: "_id",
+              as: "allChannels",
+              pipeline: [
+                {
+                  $project: {
+                    _id: 1,
+                    channelName: 1,
+                    channelDescription: 1,
+                    createdAt: 1,
+                    members: 1, // Include members for filtering
+                  },
+                },
+              ],
+            },
+          },
+
+          // Filter channels where user is a member
+          {
+            $addFields: {
+              userChannels: {
+                $filter: {
+                  input: "$allChannels",
+                  cond: {
+                    $in: [Types.ObjectId.createFromHexString(userId), "$$this.members"]
+                  }
+                }
+              }
+            }
+          },
+
+          // Only include groups that have at least one channel the user is a member of
+          {
+            $match: {
+              "userChannels.0": { $exists: true }, // At least one channel exists where user is member
+            },
+          },
+
+          // Clean up channels field (remove members for response)
+          {
+            $addFields: {
+              channels: {
+                $map: {
+                  input: "$userChannels",
+                  as: "channel",
+                  in: {
+                    _id: "$$channel._id",
+                    channelName: "$$channel.channelName",
+                    channelDescription: "$$channel.channelDescription",
+                    createdAt: "$$channel.createdAt",
+                  }
+                }
+              }
+            }
+          },
+
+          // Lookup creator information
+          {
+            $lookup: {
+              from: "users",
+              localField: "createdBy",
+              foreignField: "_id",
+              as: "creator",
+              pipeline: [
+                {
+                  $project: {
+                    _id: 1,
+                    name: 1,
+                    email: 1,
+                  },
+                },
+              ],
+            },
+          },
+
+          // Unwind creator (should be single user)
+          {
+            $unwind: {
+              path: "$creator",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+
+          // Add computed fields
+          {
+            $addFields: {
+              channelCount: { $size: "$channels" },
+            },
+          },
+
+          // Add isRuntimeGroup field for real groups
+          {
+            $addFields: {
+              isRuntimeGroup: false, // Mark as real group
+            },
+          },
+
+          // Project final structure for real groups
           {
             $project: {
               _id: 1,
-              channelName: 1,
-              channelDescription: 1,
+              title: 1,
+              companyId: 1,
+              isActive: 1,
+              isArchived: 1,
               createdAt: 1,
-              members: 1, // Include members for filtering
+              updatedAt: 1,
+              creator: 1,
+              channelCount: 1,
+              channels: 1,
+              isRuntimeGroup: 1,
             },
           },
         ],
-      },
-    },
 
-    // Filter channels where user is a member
-    {
-      $addFields: {
-        userChannels: {
-          $filter: {
-            input: "$allChannels",
-            cond: {
-              $in: [Types.ObjectId.createFromHexString(userId), "$$this.members"]
+        // Get unassigned channels (channels user is member of but not in any group)
+        unassignedChannels: [
+          // Start with a dummy document to use facet
+          { $limit: 1 },
+
+          // Get all channels where user is a member
+          {
+            $lookup: {
+              from: "channels",
+              pipeline: [
+                {
+                  $match: {
+                    companyId: Types.ObjectId.createFromHexString(companyId),
+                    members: Types.ObjectId.createFromHexString(userId),
+                  },
+                },
+                {
+                  $project: {
+                    _id: 1,
+                    channelName: 1,
+                    channelDescription: 1,
+                    createdAt: 1,
+                  },
+                },
+              ],
+              as: "userChannels",
+            },
+          },
+
+          // Get all channels that are assigned to groups
+          {
+            $lookup: {
+              from: "channelgroups",
+              pipeline: [
+                {
+                  $match: {
+                    companyId: Types.ObjectId.createFromHexString(companyId),
+                    isActive: true,
+                    isArchived: false,
+                  },
+                },
+                {
+                  $unwind: "$channelIds",
+                },
+                {
+                  $group: {
+                    _id: null,
+                    assignedChannelIds: { $addToSet: "$channelIds" },
+                  },
+                },
+              ],
+              as: "assignedChannels",
+            },
+          },
+
+          // Filter out channels that are already in groups
+          {
+            $addFields: {
+              assignedChannelIds: {
+                $ifNull: [
+                  { $arrayElemAt: ["$assignedChannels.assignedChannelIds", 0] },
+                  []
+                ]
+              },
+              unassignedChannels: {
+                $filter: {
+                  input: "$userChannels",
+                  cond: {
+                    $not: {
+                      $in: ["$$this._id", {
+                        $ifNull: [
+                          { $arrayElemAt: ["$assignedChannels.assignedChannelIds", 0] },
+                          []
+                        ]
+                      }]
+                    }
+                  }
+                }
+              }
             }
-          }
-        }
-      }
-    },
+          },
 
-    // Only include groups that have at least one channel the user is a member of
-    {
-      $match: {
-        "userChannels.0": { $exists: true }, // At least one channel exists where user is member
-      },
-    },
-
-    // Clean up channels field (remove members for response)
-    {
-      $addFields: {
-        channels: {
-          $map: {
-            input: "$userChannels",
-            as: "channel",
-            in: {
-              _id: "$$channel._id",
-              channelName: "$$channel.channelName",
-              channelDescription: "$$channel.channelDescription",
-              createdAt: "$$channel.createdAt",
-            }
-          }
-        }
-      }
-    },
-
-    // Lookup creator information
-    {
-      $lookup: {
-        from: "users",
-        localField: "createdBy",
-        foreignField: "_id",
-        as: "creator",
-        pipeline: [
+          // Project the unassigned channels
           {
             $project: {
-              _id: 1,
-              name: 1,
-              email: 1,
+              unassignedChannels: 1,
             },
           },
         ],
       },
     },
 
-    // Unwind creator (should be single user)
-    {
-      $unwind: {
-        path: "$creator",
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-
-    // Add computed fields
+    // Combine the results
     {
       $addFields: {
-        channelCount: { $size: "$channels" },
-      },
+        // Create runtime "Unassigned Channels" group if there are unassigned channels
+        unassignedGroup: {
+          $let: {
+            vars: {
+              unassignedChannels: { $arrayElemAt: ["$unassignedChannels.unassignedChannels", 0] }
+            },
+            in: {
+              $cond: {
+                if: { $gt: [{ $size: { $ifNull: ["$$unassignedChannels", []] } }, 0] },
+                then: {
+                  _id: "unassigned",
+                  title: "Unassigned Channels",
+                  companyId: Types.ObjectId.createFromHexString(companyId),
+                  isActive: true,
+                  isArchived: false,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                  creator: null,
+                  channelCount: { $size: { $ifNull: ["$$unassignedChannels", []] } },
+                  channels: { $ifNull: ["$$unassignedChannels", []] },
+                  isRuntimeGroup: true, // Mark as runtime group
+                },
+                else: null
+              }
+            }
+          }
+        }
+      }
     },
 
-    // Project final structure
+    // Combine all groups
     {
-      $project: {
-        _id: 1,
-        title: 1,
-        companyId: 1,
-        isActive: 1,
-        isArchived: 1,
-        createdAt: 1,
-        updatedAt: 1,
-        creator: 1,
-        channelCount: 1,
-        channels: 1,
-      },
+      $addFields: {
+        allGroups: {
+          $concatArrays: [
+            "$channelGroups",
+            {
+              $cond: {
+                if: { $ne: ["$unassignedGroup", null] },
+                then: ["$unassignedGroup"],
+                else: []
+              }
+            }
+          ]
+        }
+      }
     },
 
-    // Sort by creation date (newest first)
+    // Unwind to get individual groups
+    {
+      $unwind: "$allGroups"
+    },
+
+    // Replace root with group data
+    {
+      $replaceRoot: {
+        newRoot: "$allGroups"
+      }
+    },
+
+    // Sort by type (real groups first, then unassigned) and creation date
     {
       $sort: {
+        isRuntimeGroup: 1, // Real groups first (false = 0, true = 1)
         createdAt: -1,
       },
     },
