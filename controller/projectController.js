@@ -8,8 +8,8 @@ const { parseBody, generateResponse, formatDate } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { emitTaskEvent } = require("../utils/socket");
 const {
-  getProjectsOfTabQuery,
   getProjectsOverviewQuery,
+  getProjectsListQuery,
   getTasksCalendarQuery,
   getOpenTasksQuery,
 } = require("./queries/projectQueries");
@@ -215,7 +215,7 @@ exports.getProjectsOfTab = async (req, res, next) => {
       responseKey = "projects"; // Same key but different data structure
     } else {
       // Default to detailed list view
-      query = getProjectsOfTabQuery(channelId, tabId);
+      query = getProjectsListQuery(channelId, tabId);
     }
 
     // Fetch projects with pagination
@@ -552,6 +552,245 @@ exports.getProjectsOverview = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in getProjectsOverview:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Get projects list of a tab with detailed task information
+ * Returns full project data with tasks and includes open tasks when not searching
+ */
+exports.getProjectsList = async (req, res, next) => {
+  try {
+    const { channelId, tabId } = req.params;
+    const { page, limit, search } = req.query;
+    const userId = req.user.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Validate channel exists and user has access
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Check if user is a member of the channel
+    if (!channel.members.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this channel",
+      });
+    }
+
+    // Validate tab exists and belongs to the channel
+    const tab = await findChannelTab({ _id: tabId, channelId: channelId });
+    if (!tab) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Tab not found in this channel",
+      });
+    }
+
+    // Check if user is a member of the tab (if tab has specific members)
+    if (
+      tab.members &&
+      tab.members.length > 0 &&
+      !tab.members.includes(userId)
+    ) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this tab",
+      });
+    }
+
+    // Get list query with search
+    const query = getProjectsListQuery(channelId, tabId, search);
+
+    // Determine sorting based on search
+    let sortOptions;
+    if (search && search.trim()) {
+      // Sort by search relevance (pinned first, then searchScore desc, then createdAt desc)
+      sortOptions = { isPinned: -1, searchScore: -1, createdAt: -1 };
+    } else {
+      // Default sorting (pinned first, then createdAt desc)
+      sortOptions = { isPinned: -1, createdAt: -1 };
+    }
+
+    // Fetch projects with pagination and sorting
+    const result = await getAllProjects({
+      query,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 10,
+      responseKey: "projects",
+      sort: sortOptions,
+    });
+
+    // Sort tasks by orderIndex within each status category for each project
+    if (result.projects) {
+      result.projects = result.projects.map((project) => {
+        // Helper function to sort tasks with orderIndex fallback
+        const sortTasksByOrderIndex = (tasks, status) => {
+          return tasks.sort((a, b) => {
+            const aOrder =
+              a.orderIndex?.[status] || new Date(a.createdAt).getTime();
+            const bOrder =
+              b.orderIndex?.[status] || new Date(b.createdAt).getTime();
+            return aOrder - bOrder;
+          });
+        };
+
+        return {
+          ...project,
+          todoTasks: sortTasksByOrderIndex(project.todoTasks || [], "todo"),
+          inProgressTasks: sortTasksByOrderIndex(
+            project.inProgressTasks || [],
+            "in_progress"
+          ),
+          completedTasks: sortTasksByOrderIndex(
+            project.completedTasks || [],
+            "completed"
+          ),
+        };
+      });
+    }
+
+    // Only fetch and include open tasks if not searching
+    let openProject = null;
+    if (!search || !search.trim()) {
+      const { getAllTasks } = require("../models/taskModel");
+      const openTasksQuery = getOpenTasksQuery(channelId);
+      
+      try {
+        const openTasksResult = await getAllTasks({
+          query: openTasksQuery,
+          page: 1,
+          limit: 1000, // Get all open tasks
+          responseKey: "openTasks",
+        });
+        
+        const openTasks = openTasksResult.openTasks || [];
+
+        if (openTasks.length > 0) {
+          // Process open tasks by status for better organization
+          const processOpenTasks = (tasks) => {
+            const sortTasksByOrderIndex = (tasks, status) => {
+              return tasks.sort((a, b) => {
+                const aOrder = a.orderIndex?.[status] || new Date(a.createdAt).getTime();
+                const bOrder = b.orderIndex?.[status] || new Date(b.createdAt).getTime();
+                return aOrder - bOrder;
+              });
+            };
+
+            const todoTasks = sortTasksByOrderIndex(
+              tasks.filter(t => t.status === "todo"),
+              "todo"
+            );
+            const inProgressTasks = sortTasksByOrderIndex(
+              tasks.filter(t => t.status === "in_progress"),
+              "in_progress"
+            );
+            const completedTasks = sortTasksByOrderIndex(
+              tasks.filter(t => t.status === "completed"),
+              "completed"
+            );
+
+            return {
+              todoTasks,
+              inProgressTasks,
+              completedTasks,
+              taskStats: {
+                total: tasks.length,
+                todo: todoTasks.length,
+                inProgress: inProgressTasks.length,
+                completed: completedTasks.length,
+                overdue: tasks.filter(t => t.isOverdue).length,
+              },
+              progress: tasks.length > 0 
+                ? Math.round((completedTasks.length / tasks.length) * 100 * 10) / 10
+                : 0,
+            };
+          };
+
+          const processedOpenTasks = processOpenTasks(openTasks);
+          openProject = {
+            _id: "open",
+            name: "Open",
+            description: "Tasks without specific project",
+            status: "active",
+            startDate: null,
+            endDate: null,
+            priority: "medium",
+            color: "#808080",
+            isPinned: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            creator: null,
+            channel: {
+              _id: channel._id,
+              channelName: channel.channelName,
+            },
+            tab: {
+              _id: tab._id,
+              tabName: tab.tabName,
+            },
+            todoTasks: processedOpenTasks.todoTasks,
+            inProgressTasks: processedOpenTasks.inProgressTasks,
+            completedTasks: processedOpenTasks.completedTasks,
+            taskStats: processedOpenTasks.taskStats,
+            progress: processedOpenTasks.progress,
+            fileAttached: openTasks.reduce((sum, task) => sum + (task.fileCount || 0), 0),
+            linksAttached: openTasks.reduce((sum, task) => sum + (task.linkCount || 0), 0),
+            contextPath: `${channel.channelName} / ${tab.tabName}`,
+            isOverdue: false,
+            daysUntilDue: null,
+          };
+        }
+      } catch (error) {
+        console.error("Error fetching open tasks:", error);
+      }
+    }
+
+    // Include open project in the projects list if it exists
+    const allProjects = openProject 
+      ? [openProject, ...result.projects]
+      : result.projects;
+
+    return generateResponse(
+      {
+        ...result,
+        projects: allProjects,
+        view: "list",
+        search: search || null,
+        context: {
+          channel: {
+            id: channel._id,
+            name: channel.channelName,
+          },
+          tab: {
+            id: tab._id,
+            name: tab.tabName,
+          },
+        },
+      },
+      "Projects list fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getProjectsList:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

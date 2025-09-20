@@ -11,15 +11,16 @@ const createChannelGroupValidation = Joi.object({
 
 // Assign channels to group validation schema
 const assignChannelsToGroupValidation = Joi.object({
-  channelIds: Joi.array()
-    .items(Joi.string().regex(/^[0-9a-fA-F]{24}$/))
-    .min(1)
+  channelIds: Joi.alternatives()
+    .try(
+      Joi.array().items(Joi.string().regex(/^[0-9a-fA-F]{24}$/)),
+      Joi.allow(null)
+    )
     .required()
     .messages({
-      "array.min": "At least one channel ID is required",
-      "array.base": "Channel IDs must be an array",
+      "alternatives.match": "Channel IDs must be an array of valid ObjectIds or null",
       "string.pattern.base": "Each channel ID must be a valid MongoDB ObjectId",
-      "any.required": "Channel IDs are required",
+      "any.required": "Channel IDs field is required (can be empty array or null to empty the group)",
     }),
   channelGroupId: Joi.string()
     .regex(/^[0-9a-fA-F]{24}$/)

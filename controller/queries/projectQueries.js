@@ -601,13 +601,14 @@ exports.getOpenTasksQuery = (channelId) => {
 };
 
 /**
- * Get detailed projects of a tab with tasks
+ * Get detailed projects of a tab with tasks (list view)
  * @param {string} channelId - Channel ID
  * @param {string} tabId - Tab ID
+ * @param {string} search - Optional search term for project name
  * @returns {Array} Aggregation pipeline
  */
-exports.getProjectsOfTabQuery = (channelId, tabId) => {
-  return [
+exports.getProjectsListQuery = (channelId, tabId, search = null) => {
+  const pipeline = [
     // Match projects by channelId and tabId
     {
       $match: {
@@ -616,6 +617,18 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
         status: "active", // Only active projects
       },
     },
+  ];
+
+  // Add search filter if search term is provided
+  if (search && search.trim()) {
+    pipeline.push({
+      $match: {
+        name: { $regex: search.trim(), $options: "i" }
+      }
+    });
+  }
+
+  pipeline.push(
 
     // Lookup company details for context path
     {
@@ -746,6 +759,28 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
               preserveNullAndEmptyArrays: true,
             },
           },
+          // Add computed fields including attachment counts
+          {
+            $addFields: {
+              // Add attachment and link counts
+              fileCount: { $size: { $ifNull: ["$attachments", []] } },
+              linkCount: { $size: { $ifNull: ["$links", []] } },
+              // Computed fields for UI
+              isOverdue: {
+                $cond: {
+                  if: {
+                    $and: [
+                      { $ne: ["$dueDate", null] },
+                      { $lt: ["$dueDate", new Date()] },
+                      { $ne: ["$status", "completed"] },
+                    ],
+                  },
+                  then: true,
+                  else: false,
+                },
+              },
+            },
+          },
           // Project task fields - OPTIMIZED FOR LIST VIEW
           {
             $project: {
@@ -780,20 +815,10 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
                 name: "$taskCreator.name",
                 email: "$taskCreator.email",
               },
-              // Computed fields for UI
-              isOverdue: {
-                $cond: {
-                  if: {
-                    $and: [
-                      { $ne: ["$dueDate", null] },
-                      { $lt: ["$dueDate", new Date()] },
-                      { $ne: ["$status", "completed"] },
-                    ],
-                  },
-                  then: true,
-                  else: false,
-                },
-              },
+              // Include computed fields
+              isOverdue: 1,
+              fileCount: 1,
+              linkCount: 1,
             },
           },
           // Sort tasks by their status-specific orderIndex (handled in controller)
@@ -873,9 +898,43 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
             },
           ],
         },
+        // Calculate total attachment and link counts for project
+        fileAttached: {
+          $reduce: {
+            input: "$allTasks",
+            initialValue: 0,
+            in: {
+              $add: ["$$value", "$$this.fileCount"]
+            }
+          }
+        },
+        linksAttached: {
+          $reduce: {
+            input: "$allTasks",
+            initialValue: 0,
+            in: {
+              $add: ["$$value", "$$this.linkCount"]
+            }
+          }
+        },
+        // Add default value for isPinned if missing
+        isPinned: { $ifNull: ["$isPinned", false] },
       },
     },
+  );
 
+  // Add search score calculation if search is provided
+  if (search && search.trim()) {
+    pipeline.push({
+      $addFields: {
+        searchScore: {
+          $subtract: [100, { $strLenCP: "$name" }]
+        }
+      }
+    });
+  }
+
+  pipeline.push(
     // Unwind arrays to get single objects
     {
       $unwind: {
@@ -899,13 +958,6 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
       $unwind: {
         path: "$tab",
         preserveNullAndEmptyArrays: true,
-      },
-    },
-
-    // Add default value for isPinned if missing
-    {
-      $addFields: {
-        isPinned: { $ifNull: ["$isPinned", false] },
       },
     },
 
@@ -933,6 +985,8 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
         progress: {
           $round: ["$progress", 1], // Round to 1 decimal place
         },
+        fileAttached: 1,
+        linksAttached: 1,
         // Context path for projects: company/project
         contextPath: {
           $concat: [
@@ -969,7 +1023,11 @@ exports.getProjectsOfTabQuery = (channelId, tabId) => {
             else: null,
           },
         },
+        // Include searchScore if it exists
+        ...(search && search.trim() ? { searchScore: 1 } : {}),
       },
-    },
-  ];
+    }
+  );
+
+  return pipeline;
 };

@@ -5,6 +5,7 @@ const {
   CreateProject,
   getProjectsOfTab,
   getProjectsOverview,
+  getProjectsList,
   getProjectById,
   toggleProjectPin,
   toggleProjectStatus,
@@ -51,6 +52,14 @@ class ProjectAPI {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.VIEWER]),
       validateGetProjectsQuery,
       getProjectsOverview
+    );
+
+    // Get projects list of a specific tab
+    router.get(
+      "/list/tab/:channelId/:tabId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.VIEWER]),
+      validateGetProjectsQuery,
+      getProjectsList
     );
 
     // Get project by ID

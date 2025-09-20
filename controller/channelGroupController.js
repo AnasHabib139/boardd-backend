@@ -97,31 +97,42 @@ exports.assignChannelsToGroup = async (req, res, next) => {
       });
     }
 
-    // Validate that all channels exist and belong to the same company
-    const channels = await findManyChannels({
-      _id: { $in: channelIds },
-      companyId: user.companyId,
-    });
-
-    if (channels.length !== channelIds.length) {
-      return next({
-        statusCode: STATUS_CODES.BAD_REQUEST,
-        message:
-          "One or more channels not found or don't belong to your company",
+    // Handle null or empty channelIds (to empty the group)
+    let validatedChannelIds = [];
+    
+    if (channelIds && channelIds.length > 0) {
+      // Validate that all channels exist and belong to the same company
+      const channels = await findManyChannels({
+        _id: { $in: channelIds },
+        companyId: user.companyId,
       });
+
+      if (channels.length !== channelIds.length) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message:
+            "One or more channels not found or don't belong to your company",
+        });
+      }
+      
+      validatedChannelIds = channelIds;
     }
 
-    // Update the channel group with new channel IDs
+    // Update the channel group with new channel IDs (empty array if null/empty)
     const updatedChannelGroup = await updateChannelGroup(
       { _id: channelGroupId },
-      { channelIds: channelIds }
+      { channelIds: validatedChannelIds }
     );
+
+    const message = validatedChannelIds.length > 0 
+      ? "Channels assigned to group successfully"
+      : "Channel group emptied successfully";
 
     return generateResponse(
       {
         channelGroup: updatedChannelGroup,
       },
-      "Channels assigned to group successfully",
+      message,
       res,
       STATUS_CODES.SUCCESS
     );
