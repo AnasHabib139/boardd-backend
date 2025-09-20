@@ -8,6 +8,8 @@ const {
   getActiveSessions,
   revokeSession,
 } = require("../controller/auth.controller");
+const { forgotPassword } = require("../controller/forgotPasswordController");
+const { validateForgotPassword } = require("../validation/forgotPasswordValidation");
 const { ROLES } = require("../utils/constants");
 const Auth = require("../middlewares/Auth");
 
@@ -22,6 +24,9 @@ class AuthAPI {
 
     // POST /auth/refresh-token - No auth required (uses refresh token from cookie)
     router.post("/refresh-token", refreshToken);
+
+    // POST /auth/forgot-password - No auth required (public endpoint)
+    router.post("/forgot-password", validateForgotPassword, forgotPassword);
 
     // POST /auth/logout - Requires authentication
     router.post("/logout", Auth([ROLES.ADMIN, ROLES.EMPLOYEE]), logout);
