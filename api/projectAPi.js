@@ -4,6 +4,7 @@ const { Router } = require("express");
 const {
   CreateProject,
   getProjectsOfTab,
+  getProjectsOverview,
   getProjectById,
   toggleProjectPin,
   toggleProjectStatus,
@@ -42,6 +43,14 @@ class ProjectAPI {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.VIEWER]),
       validateGetProjectsQuery,
       getProjectsOfTab
+    );
+
+    // Get projects overview of a specific tab
+    router.get(
+      "/overview/tab/:channelId/:tabId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.VIEWER]),
+      validateGetProjectsQuery,
+      getProjectsOverview
     );
 
     // Get project by ID

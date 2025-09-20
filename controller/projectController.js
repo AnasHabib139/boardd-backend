@@ -451,6 +451,114 @@ exports.getProjectsOfTab = async (req, res, next) => {
   }
 };
 
+/**
+ * Get projects overview of a tab
+ * Returns minimal project data with search functionality
+ */
+exports.getProjectsOverview = async (req, res, next) => {
+  try {
+    const { channelId, tabId } = req.params;
+    const { page, limit, search } = req.query;
+    const userId = req.user.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Validate channel exists and user has access
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Check if user is a member of the channel
+    if (!channel.members.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this channel",
+      });
+    }
+
+    // Validate tab exists and belongs to the channel
+    const tab = await findChannelTab({ _id: tabId, channelId: channelId });
+    if (!tab) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Tab not found in this channel",
+      });
+    }
+
+    // Check if user is a member of the tab (if tab has specific members)
+    if (
+      tab.members &&
+      tab.members.length > 0 &&
+      !tab.members.includes(userId)
+    ) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this tab",
+      });
+    }
+
+    // Get overview query with search
+    const query = getProjectsOverviewQuery(channelId, tabId, search);
+
+    // Determine sorting based on search
+    let sortOptions;
+    if (search) {
+      // Sort by search relevance (searchScore desc, then createdAt desc)
+      sortOptions = { searchScore: -1, createdAt: -1 };
+    } else {
+      // Default sorting (createdAt desc)
+      sortOptions = { createdAt: -1 };
+    }
+
+    // Fetch projects with pagination and sorting
+    const result = await getAllProjects({
+      query,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 10,
+      responseKey: "projects",
+      sort: sortOptions,
+    });
+
+    return generateResponse(
+      {
+        ...result,
+        view: "overview",
+        search: search || null,
+        context: {
+          channel: {
+            id: channel._id,
+            name: channel.channelName,
+          },
+          tab: {
+            id: tab._id,
+            name: tab.tabName,
+          },
+        },
+      },
+      "Projects overview fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getProjectsOverview:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
 // Helper function to handle calendar view
 const handleCalendarView = async (req, res, next, params) => {
   try {

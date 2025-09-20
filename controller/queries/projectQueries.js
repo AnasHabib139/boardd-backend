@@ -242,10 +242,11 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate) => {
  * Get projects overview of a tab (minimal data)
  * @param {string} channelId - Channel ID
  * @param {string} tabId - Tab ID
+ * @param {string} search - Optional search term for project name
  * @returns {Array} Aggregation pipeline
  */
-exports.getProjectsOverviewQuery = (channelId, tabId) => {
-  return [
+exports.getProjectsOverviewQuery = (channelId, tabId, search = null) => {
+  const pipeline = [
     // Match projects by channelId and tabId
     {
       $match: {
@@ -254,6 +255,18 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
         status: "active", // Only active projects
       },
     },
+  ];
+
+  // Add search filter if search term is provided
+  if (search && search.trim()) {
+    pipeline.push({
+      $match: {
+        name: { $regex: search.trim(), $options: "i" }
+      }
+    });
+  }
+
+  pipeline.push(
 
     // Lookup company details for context path
     {
@@ -418,10 +431,22 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
         isPinned: { $ifNull: ["$isPinned", false] },
       },
     },
+  );
 
+  // Add search score calculation if search is provided
+  if (search && search.trim()) {
+    pipeline.push({
+      $addFields: {
+        searchScore: {
+          $subtract: [100, { $strLenCP: "$name" }]
+        }
+      }
+    });
+  }
+
+  pipeline.push({
     // Project final overview structure
-    {
-      $project: {
+    $project: {
         _id: 1,
         name: 1,
         description: 1,
@@ -448,9 +473,12 @@ exports.getProjectsOverviewQuery = (channelId, tabId) => {
             "$name",
           ],
         },
-      },
-    },
-  ];
+        // Include searchScore if it exists
+        ...(search && search.trim() ? { searchScore: 1 } : {}),
+    }
+  });
+
+  return pipeline;
 };
 
 /**
