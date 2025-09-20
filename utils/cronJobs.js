@@ -9,6 +9,7 @@ const {
   findExpiredStatuses,
   updateUserStatus
 } = require("../models/userStatusModel");
+const { PasswordReset } = require("../models/passwordResetModel");
 
 // Helper function to add user back to socket rooms
 const addUserToSocketRooms = async (userId, mutedChannels, io) => {
@@ -130,6 +131,52 @@ const autoClearExpiredStatuses = async () => {
   }
 };
 
+// Auto-cleanup expired password reset codes (runs every 5 minutes)
+const cleanupExpiredPasswordResets = async () => {
+  try {
+    console.log('Running password reset cleanup check...');
+    
+    // Delete all expired unused codes
+    const expiredResult = await PasswordReset.deleteMany({
+      expiresAt: { $lt: new Date() },
+      isUsed: false
+    });
+    
+    if (expiredResult.deletedCount > 0) {
+      console.log(`Deleted ${expiredResult.deletedCount} expired password reset codes`);
+    } else {
+      console.log('No expired password reset codes found');
+    }
+    
+    console.log('Password reset cleanup check completed');
+  } catch (error) {
+    console.error('Error in password reset cleanup cron job:', error);
+  }
+};
+
+// Auto-cleanup old used password reset codes (runs daily)
+const cleanupUsedPasswordResets = async () => {
+  try {
+    console.log('Running used password reset cleanup check...');
+    
+    // Delete used codes older than 24 hours
+    const usedResult = await PasswordReset.deleteMany({
+      isUsed: true,
+      updatedAt: { $lt: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+    });
+    
+    if (usedResult.deletedCount > 0) {
+      console.log(`Deleted ${usedResult.deletedCount} old used password reset codes`);
+    } else {
+      console.log('No old used password reset codes found');
+    }
+    
+    console.log('Used password reset cleanup check completed');
+  } catch (error) {
+    console.error('Error in used password reset cleanup cron job:', error);
+  }
+};
+
 // Initialize cron jobs
 const initializeCronJobs = (io) => {
   // Check for expired mute preferences every minute
@@ -148,23 +195,49 @@ const initializeCronJobs = (io) => {
     timezone: "UTC"
   });
 
+  // Cleanup expired password reset codes every 5 minutes
+  const passwordResetCleanupJob = cron.schedule('*/5 * * * *', () => {
+    cleanupExpiredPasswordResets();
+  }, {
+    scheduled: false,
+    timezone: "UTC"
+  });
+
+  // Cleanup used password reset codes daily at 2 AM UTC
+  const usedPasswordResetCleanupJob = cron.schedule('0 2 * * *', () => {
+    cleanupUsedPasswordResets();
+  }, {
+    scheduled: false,
+    timezone: "UTC"
+  });
+
   // Start the cron jobs
   autoUnmuteJob.start();
   autoClearStatusJob.start();
+  passwordResetCleanupJob.start();
+  usedPasswordResetCleanupJob.start();
   console.log('✅ Auto-unmute cron job initialized (runs every minute)');
   console.log('✅ Auto-clear status cron job initialized (runs every 10 minutes)');
+  console.log('✅ Password reset cleanup cron job initialized (runs every 5 minutes)');
+  console.log('✅ Used password reset cleanup cron job initialized (runs daily at 2 AM UTC)');
 
   return {
     autoUnmuteJob,
     autoClearStatusJob,
+    passwordResetCleanupJob,
+    usedPasswordResetCleanupJob,
     // Method to manually trigger jobs (useful for testing)
     triggerAutoUnmute: () => autoUnmuteExpiredUsers(io),
-    triggerAutoClearStatus: () => autoClearExpiredStatuses()
+    triggerAutoClearStatus: () => autoClearExpiredStatuses(),
+    triggerPasswordResetCleanup: () => cleanupExpiredPasswordResets(),
+    triggerUsedPasswordResetCleanup: () => cleanupUsedPasswordResets()
   };
 };
 
 module.exports = {
   initializeCronJobs,
   autoUnmuteExpiredUsers,
-  autoClearExpiredStatuses
+  autoClearExpiredStatuses,
+  cleanupExpiredPasswordResets,
+  cleanupUsedPasswordResets
 };
