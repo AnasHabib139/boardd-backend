@@ -57,10 +57,13 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
             }
           },
 
-          // Only include groups that have at least one channel the user is a member of
+          // Only include groups where user is associated (either member of channels OR created the group)
           {
             $match: {
-              "userChannels.0": { $exists: true }, // At least one channel exists where user is member
+              $or: [
+                { "userChannels.0": { $exists: true } }, // User is a member of at least one channel in the group
+                { "createdBy": Types.ObjectId.createFromHexString(userId) } // User created the group
+              ]
             },
           },
 
