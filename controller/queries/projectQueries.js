@@ -6,9 +6,10 @@ const { Types } = require("mongoose");
  * @param {string} tabId - Tab ID
  * @param {string} userId - Current user ID
  * @param {Date} currentDate - Date for the month being viewed
+ * @param {string} search - Optional search term for task title
  * @returns {Array} Aggregation pipeline
  */
-exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate) => {
+exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate, search = null) => {
   // Calculate start and end of the month
   const monthStart = new Date(
     currentDate.getFullYear(),
@@ -61,6 +62,8 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate) => {
                       $gte: monthStart,
                       $lte: monthEnd,
                     },
+                    // Add search condition for task title if provided
+                    ...(search && search.trim() ? { title: { $regex: search.trim(), $options: "i" } } : {}),
                   },
                 },
                 // Sort by dueDate
@@ -123,6 +126,8 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate) => {
                       $gte: monthStart,
                       $lte: monthEnd,
                     },
+                    // Add search condition for task title if provided
+                    ...(search && search.trim() ? { title: { $regex: search.trim(), $options: "i" } } : {}),
                   },
                 },
                 // Sort by dueDate
@@ -206,12 +211,12 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate) => {
       },
     },
 
-    // Filter out overdue tasks from calendar
-    {
-      $match: {
-        isOverdue: false,
-      },
-    },
+    // Note: Calendar shows all tasks for the month (including overdue)
+    // {
+    //   $match: {
+    //     isOverdue: false,
+    //   },
+    // },
 
     // Project the final lightweight task structure
     {

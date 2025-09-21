@@ -1,9 +1,8 @@
 const { findChannel } = require("../models/channelModel");
 const { findChannelTab } = require("../models/channelTabsModel");
-const { createProject, getAllProjects, findProject, updateProject, deleteProject } = require("../models/projectModel");
+const { createProject, getAllProjects, getAllProjectsWithoutPagination, findProject, updateProject, deleteProject } = require("../models/projectModel");
 const { findUser } = require("../models/userModel");
 const { findCompany } = require("../models/companyModel");
-const ProjectModel = require("../models/projectModel");
 const { parseBody, generateResponse, formatDate } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { emitTaskEvent } = require("../utils/socket");
@@ -794,6 +793,135 @@ exports.getProjectsList = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,
+    });
+  }
+};
+
+/**
+ * Get tasks for calendar view of a tab
+ * Returns tasks for the current month with optional search on task title
+ */
+exports.getProjectsCalendar = async (req, res, next) => {
+  try {
+    const { channelId, tabId } = req.params;
+    const { currentDate, search } = req.query;
+    const userId = req.user.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Validate channel exists and user has access
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Check if user is a member of the channel
+    if (!channel.members.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this channel",
+      });
+    }
+
+    // Validate tab exists and belongs to the channel
+    const tab = await findChannelTab({ _id: tabId, channelId: channelId });
+    if (!tab) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Tab not found in this channel",
+      });
+    }
+
+    // Check if user is a member of the tab (if tab has specific members)
+    if (
+      tab.members &&
+      tab.members.length > 0 &&
+      !tab.members.includes(userId)
+    ) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this tab",
+      });
+    }
+
+    // Parse and validate the current date
+    let parsedCurrentDate;
+    if (currentDate) {
+      parsedCurrentDate = new Date(currentDate);
+      if (isNaN(parsedCurrentDate.getTime())) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "Invalid date format provided",
+        });
+      }
+    } else {
+      // Default to current date if not provided
+      parsedCurrentDate = new Date();
+    }
+
+    // Get calendar query for tasks with search
+    const query = getTasksCalendarQuery(channelId, tabId, userId, parsedCurrentDate, search);
+
+    // Execute query without pagination to get all tasks for the month
+    const tasks = await getAllProjectsWithoutPagination(query);
+
+    // Calculate month boundaries for context
+    const year = parsedCurrentDate.getFullYear();
+    const month = parsedCurrentDate.getMonth();
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
+
+    // Prepare calendar response
+    const responseData = {
+      tasks: tasks || [],
+      view: "calendar",
+      search: search || null,
+      totalTasks: tasks ? tasks.length : 0,
+      monthInfo: {
+        currentDate: parsedCurrentDate.toISOString().split("T")[0],
+        month: month + 1, // 1-based month
+        year,
+        monthStart: monthStart.toISOString().split("T")[0],
+        monthEnd: monthEnd.toISOString().split("T")[0],
+        monthName: monthStart.toLocaleDateString("en-US", { month: "long" }),
+      },
+      context: {
+        channel: {
+          id: channel._id,
+          name: channel.channelName,
+        },
+        tab: {
+          id: tab._id,
+          name: tab.tabName,
+        },
+      },
+    };
+
+    const message = search 
+      ? `Calendar tasks for ${monthStart.toLocaleDateString("en-US", { month: "long", year: "numeric" })} matching "${search}" fetched successfully`
+      : `Calendar tasks for ${monthStart.toLocaleDateString("en-US", { month: "long", year: "numeric" })} fetched successfully`;
+
+    return generateResponse(
+      responseData,
+      message,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getProjectsCalendar:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to fetch calendar data",
     });
   }
 };
