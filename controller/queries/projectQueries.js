@@ -304,6 +304,7 @@ exports.getProjectsOverviewQuery = (channelId, tabId, search = null) => {
               _id: 1,
               name: 1,
               email: 1,
+              profileImage: { $ifNull: ["$image", null] },
             },
           },
         ],
@@ -487,6 +488,284 @@ exports.getProjectsOverviewQuery = (channelId, tabId, search = null) => {
 };
 
 /**
+ * Get project board view with tasks organized by status
+ * @param {string} projectId - Project ID
+ * @returns {Array} Aggregation pipeline
+ */
+exports.getProjectBoardQuery = (projectId) => {
+  return [
+    // Match the specific project
+    {
+      $match: {
+        _id: Types.ObjectId.createFromHexString(projectId),
+        status: "active", // Only active projects
+      },
+    },
+
+    // Lookup project creator details
+    {
+      $lookup: {
+        from: "users",
+        localField: "createdBy",
+        foreignField: "_id",
+        as: "creator",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              email: 1,
+              profileImage: { $ifNull: ["$image", null] },
+            },
+          },
+        ],
+      },
+    },
+
+    // Lookup all tasks for this project
+    {
+      $lookup: {
+        from: "tasks",
+        localField: "_id",
+        foreignField: "projectId",
+        as: "allTasks",
+        pipeline: [
+          {
+            $match: {
+              isActive: true, // Only active tasks
+            },
+          },
+          // Lookup task assignees
+          {
+            $lookup: {
+              from: "users",
+              localField: "assignedTo",
+              foreignField: "_id",
+              as: "assignees",
+              pipeline: [
+                {
+                  $project: {
+                    _id: 1,
+                    name: 1,
+                    email: 1,
+                    profileImage: { $ifNull: ["$image", null] },
+                  },
+                },
+              ],
+            },
+          },
+          // Lookup task creator
+          {
+            $lookup: {
+              from: "users",
+              localField: "createdBy",
+              foreignField: "_id",
+              as: "taskCreator",
+              pipeline: [
+                {
+                  $project: {
+                    _id: 1,
+                    name: 1,
+                    email: 1,
+                    profileImage: { $ifNull: ["$image", null] },
+                  },
+                },
+              ],
+            },
+          },
+          // Unwind task creator
+          {
+            $unwind: {
+              path: "$taskCreator",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          // Add computed fields including attachment counts and cover
+          {
+            $addFields: {
+              // Add attachment and link counts
+              fileCount: { $size: { $ifNull: ["$attachments", []] } },
+              linkCount: { $size: { $ifNull: ["$links", []] } },
+              // Add cover (first link) - get the first element of links array
+              cover: { $arrayElemAt: [{ $ifNull: ["$links", []] }, 0] },
+              // Computed fields for UI
+              isOverdue: {
+                $cond: {
+                  if: {
+                    $and: [
+                      { $ne: ["$dueDate", null] },
+                      { $lt: ["$dueDate", new Date()] },
+                      { $ne: ["$status", "completed"] },
+                    ],
+                  },
+                  then: true,
+                  else: false,
+                },
+              },
+            },
+          },
+          // Project task fields for board view
+          {
+            $project: {
+              _id: 1,
+              title: 1,
+              description: 1,
+              status: 1,
+              priority: 1,
+              dueDate: 1,
+              strokeColor: 1,
+              isActive: 1,
+              orderIndex: 1,
+              version: { $ifNull: ["$version", 0] },
+              createdAt: 1,
+              updatedAt: 1,
+              // Task creator with profile image
+              createdBy: {
+                _id: "$taskCreator._id",
+                name: "$taskCreator.name",
+                email: "$taskCreator.email",
+                profileImage: "$taskCreator.profileImage",
+              },
+              // Assignees with profile images
+              assignees: 1,
+              // Computed fields
+              isOverdue: 1,
+              fileCount: 1,
+              linkCount: 1,
+              cover: 1,
+            },
+          },
+          // Sort tasks by their status-specific orderIndex
+          {
+            $sort: {
+              createdAt: -1, // Fallback sort by creation date
+            },
+          },
+        ],
+      },
+    },
+
+    // Separate tasks by status
+    {
+      $addFields: {
+        todoTasks: {
+          $filter: {
+            input: "$allTasks",
+            cond: { $eq: ["$$this.status", "todo"] },
+          },
+        },
+        inProgressTasks: {
+          $filter: {
+            input: "$allTasks",
+            cond: { $eq: ["$$this.status", "in_progress"] },
+          },
+        },
+        completedTasks: {
+          $filter: {
+            input: "$allTasks",
+            cond: { $eq: ["$$this.status", "completed"] },
+          },
+        },
+      },
+    },
+
+    // Calculate task statistics
+    {
+      $addFields: {
+        taskStats: {
+          total: { $size: "$allTasks" },
+          todo: { $size: "$todoTasks" },
+          inProgress: { $size: "$inProgressTasks" },
+          completed: { $size: "$completedTasks" },
+          overdue: {
+            $size: {
+              $filter: {
+                input: "$allTasks",
+                cond: { $eq: ["$$this.isOverdue", true] },
+              },
+            },
+          },
+        },
+        // Calculate project progress
+        progress: {
+          $cond: [
+            { $eq: [{ $size: "$allTasks" }, 0] },
+            0,
+            {
+              $multiply: [
+                {
+                  $divide: [
+                    { $size: "$completedTasks" },
+                    { $size: "$allTasks" },
+                  ],
+                },
+                100,
+              ],
+            },
+          ],
+        },
+        // Calculate total attachment and link counts for project
+        fileAttached: {
+          $reduce: {
+            input: "$allTasks",
+            initialValue: 0,
+            in: {
+              $add: ["$$value", "$$this.fileCount"]
+            }
+          }
+        },
+        linksAttached: {
+          $reduce: {
+            input: "$allTasks",
+            initialValue: 0,
+            in: {
+              $add: ["$$value", "$$this.linkCount"]
+            }
+          }
+        },
+        // Add default value for isPinned if missing
+        isPinned: { $ifNull: ["$isPinned", false] },
+      },
+    },
+
+    // Unwind creator
+    {
+      $unwind: {
+        path: "$creator",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // Project final board structure
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        description: 1,
+        status: 1,
+        startDate: 1,
+        endDate: 1,
+        priority: 1,
+        color: 1,
+        isPinned: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        creator: 1,
+        todoTasks: 1,
+        inProgressTasks: 1,
+        completedTasks: 1,
+        taskStats: 1,
+        progress: {
+          $round: ["$progress", 1], // Round to 1 decimal place
+        },
+        fileAttached: 1,
+        linksAttached: 1,
+      },
+    },
+  ];
+};
+
+/**
  * Get non-project tasks (Open category) for a channel
  * @param {string} channelId - Channel ID
  * @returns {Array} Aggregation pipeline
@@ -666,6 +945,7 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
               _id: 1,
               name: 1,
               email: 1,
+              profileImage: { $ifNull: ["$image", null] },
             },
           },
         ],
@@ -735,6 +1015,7 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
                     name: 1,
                     email: 1,
                     isDemo: 1,
+                    profileImage: { $ifNull: ["$image", null] },
                   },
                 },
               ],
@@ -753,6 +1034,7 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
                     _id: 1,
                     name: 1,
                     email: 1,
+                    profileImage: { $ifNull: ["$image", null] },
                   },
                 },
               ],
@@ -811,6 +1093,7 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
                     _id: "$$assignee._id",
                     name: "$$assignee.name",
                     email: "$$assignee.email",
+                    profileImage: "$$assignee.profileImage",
                   },
                 },
               },
@@ -819,6 +1102,7 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
                 _id: "$taskCreator._id",
                 name: "$taskCreator.name",
                 email: "$taskCreator.email",
+                profileImage: "$taskCreator.profileImage",
               },
               // Include computed fields
               isOverdue: 1,

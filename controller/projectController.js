@@ -9,6 +9,7 @@ const { emitTaskEvent } = require("../utils/socket");
 const {
   getProjectsOverviewQuery,
   getProjectsListQuery,
+  getProjectBoardQuery,
   getTasksCalendarQuery,
   getOpenTasksQuery,
 } = require("./queries/projectQueries");
@@ -922,6 +923,135 @@ exports.getProjectsCalendar = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to fetch calendar data",
+    });
+  }
+};
+
+/**
+ * Get project board view with tasks organized by status
+ * Returns project data with tasks separated into todo, in_progress, and completed
+ */
+exports.getProjectBoard = async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.user.id;
+
+    // Validate project ID format
+    if (!projectId || projectId.length !== 24) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Invalid project ID format",
+      });
+    }
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Get board query for the specific project
+    const query = getProjectBoardQuery(projectId);
+
+    // Execute query to get project with tasks
+    const result = await getAllProjectsWithoutPagination(query);
+
+    // Check if project exists
+    if (!result || result.length === 0) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Project not found",
+      });
+    }
+
+    const project = result[0];
+
+    // Find the actual project to get channelId and tabId for validation
+    const fullProject = await findProject({ _id: projectId });
+    if (!fullProject) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Project not found",
+      });
+    }
+
+    // Validate user has access to this project (via channel membership)
+    const channel = await findChannel({ _id: fullProject.channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Check if user is a member of the channel
+    if (!channel.members.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this channel",
+      });
+    }
+
+    // Validate tab access if tab has specific members
+    const tab = await findChannelTab({ _id: fullProject.tabId });
+    if (tab && tab.members && tab.members.length > 0 && !tab.members.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this tab",
+      });
+    }
+
+    // Sort tasks by orderIndex within each status category
+    const sortTasksByOrderIndex = (tasks, status) => {
+      return tasks.sort((a, b) => {
+        const aOrder =
+          a.orderIndex?.[status] || new Date(a.createdAt).getTime();
+        const bOrder =
+          b.orderIndex?.[status] || new Date(b.createdAt).getTime();
+        return aOrder - bOrder;
+      });
+    };
+
+    // Organize and sort tasks
+    const organizedProject = {
+      ...project,
+      todoTasks: sortTasksByOrderIndex(project.todoTasks || [], "todo"),
+      inProgressTasks: sortTasksByOrderIndex(
+        project.inProgressTasks || [],
+        "in_progress"
+      ),
+      completedTasks: sortTasksByOrderIndex(
+        project.completedTasks || [],
+        "completed"
+      ),
+    };
+
+    // Prepare response data
+    const responseData = {
+      project: organizedProject,
+      view: "board",
+      context: {
+        channel: {
+          id: channel._id,
+          name: channel.channelName,
+        },
+      },
+    };
+
+    return generateResponse(
+      responseData,
+      "Project board fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getProjectBoard:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to fetch project board",
     });
   }
 };

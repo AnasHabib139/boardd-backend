@@ -7,6 +7,7 @@ const {
   getProjectsOverview,
   getProjectsList,
   getProjectsCalendar,
+  getProjectBoard,
   getProjectById,
   toggleProjectPin,
   toggleProjectStatus,
@@ -68,6 +69,13 @@ class ProjectAPI {
       "/calendar/tab/:channelId/:tabId",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.VIEWER]),
       getProjectsCalendar
+    );
+
+    // Get project board view with tasks
+    router.get(
+      "/board/:projectId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.VIEWER]),
+      getProjectBoard
     );
 
     // Get project by ID
