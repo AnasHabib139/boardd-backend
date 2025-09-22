@@ -22,6 +22,7 @@ const {
 const {
   getAllMembersInChannelQuery,
   getAllChannelsOfUserQuery,
+  getArchivedChannelsQuery,
 } = require("./queries/channelQueries");
 const { findCompany } = require("../models/companyModel");
 // Import required functions
@@ -992,6 +993,223 @@ exports.editChannel = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to update channel",
+    });
+  }
+};
+
+// Toggle channel archive status
+exports.toggleChannelArchive = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const userId = req.user.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Validate channel exists
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Security check: user must be from same company
+    if (channel.companyId.toString() !== user.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You can only archive channels from your own company",
+      });
+    }
+
+    // Check if user is a member of the channel
+    if (!channel.members.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You must be a member of the channel to archive it",
+      });
+    }
+
+    // Toggle archive status - handle case where isArchived doesn't exist on older channels
+    const currentArchiveStatus = channel.isArchived || false;
+    const newArchiveStatus = !currentArchiveStatus;
+
+    // Update the channel
+    const updatedChannel = await updateChannel(
+      { _id: channelId },
+      {
+        isArchived: newArchiveStatus,
+        updatedAt: new Date(),
+      }
+    );
+
+    const action = newArchiveStatus ? "archived" : "unarchived";
+    return generateResponse(
+      {
+        channel: updatedChannel,
+        isArchived: newArchiveStatus,
+        action,
+      },
+      `Channel ${action} successfully`,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in toggleChannelArchive:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to toggle channel archive status",
+    });
+  }
+};
+
+// Get archived channels for user
+exports.getArchivedChannels = async (req, res, next) => {
+  try {
+    const { page, limit } = req.query;
+    const userId = req.user.id;
+
+    const query = getArchivedChannelsQuery(userId);
+    const channels = await getAllChannelsDetails({
+      query,
+      page: page ? parseInt(page) : 1,
+      limit: limit ? parseInt(limit) : 10,
+      responseKey: "channels",
+    });
+
+    return generateResponse(
+      channels,
+      "Archived channels fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getArchivedChannels:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to fetch archived channels",
+    });
+  }
+};
+
+// Leave channel - remove user from channel and all related tabs
+exports.leaveChannel = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const userId = req.user.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Validate channel exists
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Security check: user must be from same company
+    if (channel.companyId.toString() !== user.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You can only leave channels from your own company",
+      });
+    }
+
+    // Check if user is a member of the channel
+    if (!channel.members.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "You are not a member of this channel",
+      });
+    }
+
+    // Check if user is the creator of the channel
+    if (channel.createdBy.toString() === userId) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "Channel creator cannot leave the channel. Please transfer ownership or delete the channel.",
+      });
+    }
+
+    // Remove user from channel members
+    const updatedChannel = await updateChannel(
+      { _id: channelId },
+      {
+        $pull: { members: userId },
+        updatedAt: new Date(),
+      }
+    );
+
+    if (!updatedChannel) {
+      return next({
+        statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+        message: "Failed to leave channel",
+      });
+    }
+
+    // Get all tabs for this channel and remove user from their members arrays
+    const channelTabsQuery = [
+      {
+        $match: {
+          channelId: require("mongoose").Types.ObjectId.createFromHexString(channelId),
+        },
+      },
+    ];
+
+    const channelTabsResult = await getAllTabs({
+      query: channelTabsQuery,
+      page: 1,
+      limit: 100, // Get all tabs (assuming reasonable limit)
+      responseKey: "tabs",
+    });
+
+    if (channelTabsResult.tabs && channelTabsResult.tabs.length > 0) {
+      // Remove user from all channel tabs in parallel
+      const tabUpdatePromises = channelTabsResult.tabs.map((tab) =>
+        updateChannelTab(
+          { _id: tab._id },
+          { 
+            $pull: { members: userId },
+            updatedAt: new Date(),
+          }
+        )
+      );
+
+      await Promise.all(tabUpdatePromises);
+    }
+
+    return generateResponse(
+      {
+        channelId: channel._id,
+        channelName: channel.channelName,
+        leftAt: new Date(),
+        tabsUpdated: channelTabsResult.tabs ? channelTabsResult.tabs.length : 0,
+      },
+      "Successfully left the channel",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in leaveChannel:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to leave channel",
     });
   }
 };

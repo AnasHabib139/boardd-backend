@@ -31,6 +31,11 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
               as: "allChannels",
               pipeline: [
                 {
+                  $match: {
+                    isArchived: { $ne: true }, // Exclude archived channels
+                  },
+                },
+                {
                   $project: {
                     _id: 1,
                     channelName: 1,
@@ -158,6 +163,7 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                   $match: {
                     companyId: Types.ObjectId.createFromHexString(companyId),
                     members: Types.ObjectId.createFromHexString(userId),
+                    isArchived: { $ne: true }, // Exclude archived channels
                   },
                 },
                 {

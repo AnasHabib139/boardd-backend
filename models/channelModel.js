@@ -8,6 +8,7 @@ const channelSchema = new Schema({
   channelDescription: { type: String, required: true },
   companyId: { type: Types.ObjectId, ref: "Company", required: true },
   isPrivate: { type: Boolean, default: false },
+  isArchived: { type: Boolean, default: false },
   createdBy: { type: Types.ObjectId, ref: "User", required: true },
   channelToken: { type: String, required: true, unique: true },
   tabs: [{ type: Types.ObjectId, ref: "ChannelTab" }],

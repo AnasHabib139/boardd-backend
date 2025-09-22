@@ -392,6 +392,26 @@ const joinChannelWithInviteValidation = Joi.object({
   }),
 });
 
+// Get archived channels query validation
+const getArchivedChannelsQueryValidation = Joi.object({
+  page: Joi.number().integer().min(1).optional().default(1).messages({
+    "number.min": "Page must be at least 1",
+    "number.integer": "Page must be an integer",
+  }),
+
+  limit: Joi.number()
+    .integer()
+    .min(1)
+    .max(100)
+    .optional()
+    .default(10)
+    .messages({
+      "number.min": "Limit must be at least 1",
+      "number.max": "Limit cannot exceed 100",
+      "number.integer": "Limit must be an integer",
+    }),
+});
+
 // Validation middleware function
 const validateRequest = (schema, source = "body") => {
   return (req, res, next) => {
@@ -472,6 +492,12 @@ module.exports = {
     joinChannelWithInviteValidation
   ),
   validateEditChannel: validateRequest(updateChannelValidation),
+  validateToggleChannelArchive: validateRequest(channelIdParamValidation, "params"),
+  validateGetArchivedChannelsQuery: validateRequest(
+    getArchivedChannelsQueryValidation,
+    "query"
+  ),
+  validateLeaveChannel: validateRequest(channelIdParamValidation, "params"),
 
   // Export schemas for testing or custom usage
   schemas: {
@@ -488,5 +514,6 @@ module.exports = {
     joinChannelByTokenValidation,
     sendChannelInviteEmailsValidation,
     joinChannelWithInviteValidation,
+    getArchivedChannelsQueryValidation,
   },
 };

@@ -10,6 +10,9 @@ const {
   sendChannelInviteEmails,
   joinChannelWithInvite,
   editChannel,
+  toggleChannelArchive,
+  getArchivedChannels,
+  leaveChannel,
 } = require("../controller/channelController");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -22,6 +25,9 @@ const {
   validateSendChannelInviteEmails,
   validateJoinChannelWithInvite,
   validateEditChannel,
+  validateToggleChannelArchive,
+  validateGetArchivedChannelsQuery,
+  validateLeaveChannel,
 } = require("../validation/channelValidation");
 
 class ChannelApi {
@@ -95,6 +101,30 @@ class ChannelApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateEditChannel,
       editChannel
+    );
+
+    // Toggle channel archive status
+    router.post(
+      "/:channelId/archive",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateToggleChannelArchive,
+      toggleChannelArchive
+    );
+
+    // Get archived channels for user
+    router.get(
+      "/archived",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateGetArchivedChannelsQuery,
+      getArchivedChannels
+    );
+
+    // Leave channel
+    router.post(
+      "/:channelId/leave",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateLeaveChannel,
+      leaveChannel
     );
   }
 

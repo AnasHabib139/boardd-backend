@@ -586,8 +586,33 @@ exports.getProjectBoardQuery = (projectId) => {
               // Add attachment and link counts
               fileCount: { $size: { $ifNull: ["$attachments", []] } },
               linkCount: { $size: { $ifNull: ["$links", []] } },
-              // Add cover (first link) - get the first element of links array
-              cover: { $arrayElemAt: [{ $ifNull: ["$links", []] }, 0] },
+              // Add coverLink (first link) - get the first element of links array
+              coverLink: { $arrayElemAt: [{ $ifNull: ["$links", []] }, 0] },
+              // Add coverImage - first image file from attachments
+              coverImage: {
+                $let: {
+                  vars: {
+                    imageFiles: {
+                      $filter: {
+                        input: { $ifNull: ["$attachments", []] },
+                        cond: {
+                          $regexMatch: {
+                            input: "$$this",
+                            regex: /\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i
+                          }
+                        }
+                      }
+                    }
+                  },
+                  in: {
+                    $cond: {
+                      if: { $gt: [{ $size: "$$imageFiles" }, 0] },
+                      then: { $arrayElemAt: ["$$imageFiles", 0] },
+                      else: ""
+                    }
+                  }
+                }
+              },
               // Computed fields for UI
               isOverdue: {
                 $cond: {
@@ -632,7 +657,8 @@ exports.getProjectBoardQuery = (projectId) => {
               isOverdue: 1,
               fileCount: 1,
               linkCount: 1,
-              cover: 1,
+              coverLink: 1,
+              coverImage: 1,
             },
           },
           // Sort tasks by their status-specific orderIndex

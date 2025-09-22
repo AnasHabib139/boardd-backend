@@ -239,3 +239,59 @@ exports.getAllMembersInChannelQuery = (channelId, currentUserId) => {
     },
   ];
 };
+
+// get archived channels for a user
+exports.getArchivedChannelsQuery = (userId) => {
+  return [
+    {
+      $match: {
+        members: Types.ObjectId.createFromHexString(userId),
+        isArchived: true,
+      },
+    },
+    {
+      $lookup: {
+        from: "companies",
+        localField: "companyId",
+        foreignField: "_id",
+        as: "company",
+      },
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "createdBy",
+        foreignField: "_id",
+        as: "creator",
+      },
+    },
+    {
+      $addFields: {
+        company: { $arrayElemAt: ["$company", 0] },
+        creator: { $arrayElemAt: ["$creator", 0] },
+        memberCount: { $size: "$members" },
+      },
+    },
+    {
+      $project: {
+        _id: 1,
+        channelName: 1,
+        channelDescription: 1,
+        isPrivate: 1,
+        isArchived: 1,
+        channelToken: 1,
+        memberCount: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        "company.name": 1,
+        "company._id": 1,
+        "creator.name": 1,
+        "creator.email": 1,
+        "creator._id": 1,
+      },
+    },
+    {
+      $sort: { updatedAt: -1 },
+    },
+  ];
+};
