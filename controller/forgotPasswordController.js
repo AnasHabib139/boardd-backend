@@ -177,6 +177,7 @@ const handleCodeVerification = async (email, code, res, next) => {
     // Code is valid
     return generateResponse(
       {
+        success: true,
         message: "Code verified successfully",
         canResetPassword: true,
       },
@@ -269,6 +270,7 @@ const handlePasswordReset = async (email, code, newPassword, res, next) => {
 
     return generateResponse(
       {
+        success: true,
         message: "Password reset successfully",
       },
       "Password reset completed",
