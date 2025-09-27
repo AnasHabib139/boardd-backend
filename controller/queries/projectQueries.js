@@ -490,9 +490,10 @@ exports.getProjectsOverviewQuery = (channelId, tabId, search = null) => {
 /**
  * Get project board view with tasks organized by status
  * @param {string} projectId - Project ID
+ * @param {string} search - Optional search term for task title
  * @returns {Array} Aggregation pipeline
  */
-exports.getProjectBoardQuery = (projectId) => {
+exports.getProjectBoardQuery = (projectId, search = null) => {
   return [
     // Match the specific project
     {
@@ -533,6 +534,8 @@ exports.getProjectBoardQuery = (projectId) => {
           {
             $match: {
               isActive: true, // Only active tasks
+              // Add search condition for task title if provided
+              ...(search && search.trim() ? { title: { $regex: search.trim(), $options: "i" } } : {}),
             },
           },
           // Lookup task assignees

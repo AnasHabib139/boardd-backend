@@ -934,6 +934,7 @@ exports.getProjectsCalendar = async (req, res, next) => {
 exports.getProjectBoard = async (req, res, next) => {
   try {
     const { projectId } = req.params;
+    const { search } = req.query;
     const userId = req.user.id;
 
     // Validate project ID format
@@ -954,7 +955,7 @@ exports.getProjectBoard = async (req, res, next) => {
     }
 
     // Get board query for the specific project
-    const query = getProjectBoardQuery(projectId);
+    const query = getProjectBoardQuery(projectId, search);
 
     // Execute query to get project with tasks
     const result = await getAllProjectsWithoutPagination(query);
@@ -1033,6 +1034,7 @@ exports.getProjectBoard = async (req, res, next) => {
     const responseData = {
       project: organizedProject,
       view: "board",
+      search: search || null,
       context: {
         channel: {
           id: channel._id,
