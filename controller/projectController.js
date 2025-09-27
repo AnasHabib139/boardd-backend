@@ -1,6 +1,7 @@
 const { findChannel } = require("../models/channelModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { createProject, getAllProjects, getAllProjectsWithoutPagination, findProject, updateProject, deleteProject } = require("../models/projectModel");
+const { createTask, findManyTasks } = require("../models/taskModel");
 const { findUser } = require("../models/userModel");
 const { findCompany } = require("../models/companyModel");
 const { parseBody, generateResponse, formatDate } = require("../utils");
@@ -12,6 +13,7 @@ const {
   getProjectBoardQuery,
   getTasksCalendarQuery,
   getOpenTasksQuery,
+  getSingleProjectListQuery,
 } = require("./queries/projectQueries");
 
 // Helper function to parse date strings
@@ -1439,6 +1441,177 @@ exports.updateProjectById = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,
+    });
+  }
+};
+
+// Duplicate project with all tasks preserving exact state
+exports.duplicateProject = async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const { name } = req.body ? parseBody(req.body) : {};
+    const userId = req.user.id;
+
+    // Validate projectId format (24-character hex string)
+    if (!projectId || !/^[0-9a-fA-F]{24}$/.test(projectId)) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Invalid project ID format",
+      });
+    }
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Get original project
+    const originalProject = await findProject({ _id: projectId, status: "active" });
+    if (!originalProject) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Project not found",
+      });
+    }
+
+    // Validate user has access to the project's channel
+    const channel = await findChannel({ _id: originalProject.channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Check if user is a member of the channel
+    if (!channel.members.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this channel",
+      });
+    }
+
+    // Validate tab access
+    const tab = await findChannelTab({ _id: originalProject.tabId });
+    if (tab && tab.members && tab.members.length > 0 && !tab.members.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this tab",
+      });
+    }
+
+    // Create new project (exact copy with new name)
+    const newProjectData = {
+      name: name || `Copy of ${originalProject.name}`,
+      description: originalProject.description,
+      channelId: originalProject.channelId,
+      tabId: originalProject.tabId,
+      companyId: originalProject.companyId,
+      startDate: originalProject.startDate,
+      endDate: originalProject.endDate,
+      priority: originalProject.priority,
+      color: originalProject.color,
+      isPinned: false, // Reset pin status
+      createdBy: userId,
+      status: "active",
+    };
+
+    const newProject = await createProject(newProjectData);
+
+    // Get all tasks from original project
+    const originalTasks = await findManyTasks({
+      projectId: originalProject._id,
+      isActive: true
+    });
+
+    // Duplicate all tasks preserving exact state
+    const taskDuplicationPromises = originalTasks.map(async (task) => {
+      const newTaskData = {
+        title: task.title,
+        description: task.description,
+        projectId: newProject._id,
+        channelId: task.channelId,
+        status: task.status, // Keep exact status (todo/in_progress/completed)
+        priority: task.priority,
+        dueDate: task.dueDate, // Keep exact due date
+        strokeColor: task.strokeColor,
+        assignedTo: task.assignedTo, // Keep exact assignees
+        attachments: [...(task.attachments || [])], // Copy attachments array
+        links: [...(task.links || [])], // Copy links array
+        orderIndex: task.orderIndex, // Keep exact order
+        customFields: task.customFields, // Keep custom fields
+        isActive: true,
+        createdBy: userId, // New creator
+        version: 0, // Reset version for new task
+      };
+
+      return createTask(newTaskData);
+    });
+
+    // Execute all task duplications in parallel
+    const newTasks = await Promise.all(taskDuplicationPromises);
+
+    // Get the complete duplicated project using single project list query
+    let completeProject = null;
+    try {
+      const singleProjectQuery = getSingleProjectListQuery(newProject._id.toString());
+      const result = await getAllProjectsWithoutPagination(singleProjectQuery);
+      completeProject = result[0] || null;
+    } catch (queryError) {
+      console.error("Error fetching duplicated project details:", queryError);
+      // If query fails, just return basic project info
+      completeProject = newProject;
+    }
+
+    // Sort tasks by orderIndex within each status category (same as list view)
+    if (completeProject) {
+      const sortTasksByOrderIndex = (tasks, status) => {
+        return tasks.sort((a, b) => {
+          const aOrder = a.orderIndex?.[status] || new Date(a.createdAt).getTime();
+          const bOrder = b.orderIndex?.[status] || new Date(b.createdAt).getTime();
+          return aOrder - bOrder;
+        });
+      };
+
+      completeProject.todoTasks = sortTasksByOrderIndex(completeProject.todoTasks || [], "todo");
+      completeProject.inProgressTasks = sortTasksByOrderIndex(completeProject.inProgressTasks || [], "in_progress");
+      completeProject.completedTasks = sortTasksByOrderIndex(completeProject.completedTasks || [], "completed");
+    }
+
+    return generateResponse(
+      {
+        project: completeProject,
+        view: "list", // Same as list view
+        originalProject: {
+          id: originalProject._id,
+          name: originalProject.name,
+        },
+        duplicatedTasks: newTasks.length,
+        message: `Successfully duplicated project with ${newTasks.length} tasks`,
+        context: {
+          channel: {
+            id: channel._id,
+            name: channel.channelName,
+          },
+          tab: {
+            id: tab._id,
+            name: tab.tabName,
+          },
+        },
+      },
+      "Project duplicated successfully",
+      res,
+      STATUS_CODES.CREATED
+    );
+  } catch (error) {
+    console.error("Error in duplicateProject:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to duplicate project",
     });
   }
 };

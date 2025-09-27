@@ -13,6 +13,7 @@ const {
   toggleProjectStatus,
   deleteProjectById,
   updateProjectById,
+  duplicateProject,
 } = require("../controller/projectController");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -21,6 +22,7 @@ const {
   validateUpdateProject,
   validateProjectIdParam,
   validateGetProjectsQuery,
+  validateDuplicateProject,
 } = require("../validation/projectValidation");
 
 class ProjectAPI {
@@ -109,6 +111,15 @@ class ProjectAPI {
       validateProjectIdParam,
       validateUpdateProject,
       updateProjectById
+    );
+
+    // Duplicate project with all tasks
+    router.post(
+      "/:projectId/duplicate",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateProjectIdParam,
+      validateDuplicateProject,
+      duplicateProject
     );
 
     // Delete project

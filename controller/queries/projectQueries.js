@@ -1349,3 +1349,408 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
 
   return pipeline;
 };
+
+/**
+ * Get single project in list view format with all tasks organized by status
+ * @param {string} projectId - Project ID
+ * @returns {Array} Aggregation pipeline
+ */
+exports.getSingleProjectListQuery = (projectId) => {
+  return [
+    // Match the specific project
+    {
+      $match: {
+        _id: Types.ObjectId.createFromHexString(projectId),
+        status: "active", // Only active projects
+      },
+    },
+
+    // Lookup company details for context path
+    {
+      $lookup: {
+        from: "companies",
+        localField: "companyId",
+        foreignField: "_id",
+        as: "company",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+            },
+          },
+        ],
+      },
+    },
+
+    // Lookup project creator details
+    {
+      $lookup: {
+        from: "users",
+        localField: "createdBy",
+        foreignField: "_id",
+        as: "creator",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              email: 1,
+              profileImage: { $ifNull: ["$image", null] },
+            },
+          },
+        ],
+      },
+    },
+
+    // Lookup channel details
+    {
+      $lookup: {
+        from: "channels",
+        localField: "channelId",
+        foreignField: "_id",
+        as: "channel",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              channelName: 1,
+            },
+          },
+        ],
+      },
+    },
+
+    // Lookup tab details
+    {
+      $lookup: {
+        from: "channeltabs",
+        localField: "tabId",
+        foreignField: "_id",
+        as: "tab",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              tabName: 1,
+            },
+          },
+        ],
+      },
+    },
+
+    // Lookup all tasks for this project
+    {
+      $lookup: {
+        from: "tasks",
+        localField: "_id",
+        foreignField: "projectId",
+        as: "allTasks",
+        pipeline: [
+          {
+            $match: {
+              isActive: true, // Only active tasks
+            },
+          },
+          // Lookup task assignees
+          {
+            $lookup: {
+              from: "users",
+              localField: "assignedTo",
+              foreignField: "_id",
+              as: "assignees",
+              pipeline: [
+                {
+                  $project: {
+                    _id: 1,
+                    name: 1,
+                    email: 1,
+                    isDemo: 1,
+                    profileImage: { $ifNull: ["$image", null] },
+                  },
+                },
+              ],
+            },
+          },
+          // Lookup task creator
+          {
+            $lookup: {
+              from: "users",
+              localField: "createdBy",
+              foreignField: "_id",
+              as: "taskCreator",
+              pipeline: [
+                {
+                  $project: {
+                    _id: 1,
+                    name: 1,
+                    email: 1,
+                    profileImage: { $ifNull: ["$image", null] },
+                  },
+                },
+              ],
+            },
+          },
+          {
+            $unwind: {
+              path: "$taskCreator",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          // Add computed fields including attachment counts
+          {
+            $addFields: {
+              // Add attachment and link counts
+              fileCount: { $size: { $ifNull: ["$attachments", []] } },
+              linkCount: { $size: { $ifNull: ["$links", []] } },
+              // Computed fields for UI
+              isOverdue: {
+                $cond: {
+                  if: {
+                    $and: [
+                      { $ne: ["$dueDate", null] },
+                      { $lt: ["$dueDate", new Date()] },
+                      { $ne: ["$status", "completed"] },
+                    ],
+                  },
+                  then: true,
+                  else: false,
+                },
+              },
+            },
+          },
+          // Project task fields - OPTIMIZED FOR LIST VIEW
+          {
+            $project: {
+              _id: 1,
+              title: 1,
+              description: 1,
+              projectId: "$projectId", // Already set by foreignField
+              status: 1,
+              priority: 1,
+              dueDate: 1,
+              strokeColor: 1,
+              isActive: 1,
+              orderIndex: 1,
+              version: { $ifNull: ["$version", 0] },
+              createdAt: 1,
+              updatedAt: 1,
+              // Assigned users - only essential details
+              assignees: {
+                $map: {
+                  input: "$assignees",
+                  as: "assignee",
+                  in: {
+                    _id: "$$assignee._id",
+                    name: "$$assignee.name",
+                    email: "$$assignee.email",
+                    profileImage: "$$assignee.profileImage",
+                  },
+                },
+              },
+              // Task creator - only essential details
+              createdBy: {
+                _id: "$taskCreator._id",
+                name: "$taskCreator.name",
+                email: "$taskCreator.email",
+                profileImage: "$taskCreator.profileImage",
+              },
+              // Include computed fields
+              isOverdue: 1,
+              fileCount: 1,
+              linkCount: 1,
+            },
+          },
+          // Sort tasks by creation date as fallback
+          {
+            $sort: {
+              createdAt: -1, // Fallback sort by creation date
+            },
+          },
+        ],
+      },
+    },
+
+    // Separate tasks by status for better organization
+    {
+      $addFields: {
+        todoTasks: {
+          $filter: {
+            input: "$allTasks",
+            cond: { $eq: ["$$this.status", "todo"] },
+          },
+        },
+        inProgressTasks: {
+          $filter: {
+            input: "$allTasks",
+            cond: { $eq: ["$$this.status", "in_progress"] },
+          },
+        },
+        completedTasks: {
+          $filter: {
+            input: "$allTasks",
+            cond: { $eq: ["$$this.status", "completed"] },
+          },
+        },
+      },
+    },
+
+    // Calculate project statistics
+    {
+      $addFields: {
+        taskStats: {
+          total: { $size: "$allTasks" },
+          todo: { $size: "$todoTasks" },
+          inProgress: { $size: "$inProgressTasks" },
+          completed: { $size: "$completedTasks" },
+          overdue: {
+            $size: {
+              $filter: {
+                input: "$allTasks",
+                cond: {
+                  $and: [
+                    { $ne: ["$$this.dueDate", null] },
+                    { $lt: ["$$this.dueDate", new Date()] },
+                    { $ne: ["$$this.status", "completed"] },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+
+    // Calculate progress percentage
+    {
+      $addFields: {
+        progress: {
+          $cond: [
+            { $eq: ["$taskStats.total", 0] },
+            0,
+            {
+              $multiply: [
+                {
+                  $divide: ["$taskStats.completed", "$taskStats.total"],
+                },
+                100,
+              ],
+            },
+          ],
+        },
+        // Calculate total attachment and link counts for project
+        fileAttached: {
+          $reduce: {
+            input: "$allTasks",
+            initialValue: 0,
+            in: {
+              $add: ["$$value", "$$this.fileCount"]
+            }
+          }
+        },
+        linksAttached: {
+          $reduce: {
+            input: "$allTasks",
+            initialValue: 0,
+            in: {
+              $add: ["$$value", "$$this.linkCount"]
+            }
+          }
+        },
+        // Add default value for isPinned if missing
+        isPinned: { $ifNull: ["$isPinned", false] },
+      },
+    },
+
+    // Unwind arrays to get single objects
+    {
+      $unwind: {
+        path: "$creator",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $unwind: {
+        path: "$company",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $unwind: {
+        path: "$channel",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $unwind: {
+        path: "$tab",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // Final project structure (same as list view)
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        description: 1,
+        status: 1,
+        startDate: 1,
+        endDate: 1,
+        priority: 1,
+        color: 1,
+        isPinned: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        creator: 1,
+        channel: 1,
+        tab: 1,
+        todoTasks: 1,
+        inProgressTasks: 1,
+        completedTasks: 1,
+        taskStats: 1,
+        progress: {
+          $round: ["$progress", 1], // Round to 1 decimal place
+        },
+        fileAttached: 1,
+        linksAttached: 1,
+        // Context path for projects: company/project
+        contextPath: {
+          $concat: [
+            { $ifNull: ["$company.name", "Unknown Company"] },
+            "/",
+            "$name",
+          ],
+        },
+        // Project status indicators
+        isOverdue: {
+          $cond: {
+            if: {
+              $and: [
+                { $ne: ["$endDate", null] },
+                { $lt: ["$endDate", new Date()] },
+                { $ne: ["$status", "completed"] },
+              ],
+            },
+            then: true,
+            else: false,
+          },
+        },
+        daysUntilDue: {
+          $cond: {
+            if: { $ne: ["$endDate", null] },
+            then: {
+              $ceil: {
+                $divide: [
+                  { $subtract: ["$endDate", new Date()] },
+                  1000 * 60 * 60 * 24, // Convert milliseconds to days
+                ],
+              },
+            },
+            else: null,
+          },
+        },
+      },
+    },
+  ];
+};

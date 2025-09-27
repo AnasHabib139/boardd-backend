@@ -344,6 +344,15 @@ const getProjectsQueryValidation = Joi.object({
     }),
 });
 
+// Duplicate project validation schema
+const duplicateProjectValidation = Joi.object({
+  name: Joi.string().trim().min(1).max(100).optional().messages({
+    "string.empty": "Project name cannot be empty if provided",
+    "string.min": "Project name must be at least 1 character long",
+    "string.max": "Project name cannot exceed 100 characters",
+  }),
+});
+
 // Validation middleware function
 const validateRequest = (schema, source = "body") => {
   return (req, res, next) => {
@@ -401,6 +410,7 @@ module.exports = {
     getProjectsQueryValidation,
     "query"
   ),
+  validateDuplicateProject: validateRequest(duplicateProjectValidation),
 
   // Export schemas for testing or custom usage
   schemas: {
@@ -410,5 +420,6 @@ module.exports = {
     tabIdParamValidation,
     channelTabParamValidation,
     getProjectsQueryValidation,
+    duplicateProjectValidation,
   },
 };
