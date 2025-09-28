@@ -109,6 +109,21 @@ exports.CUSTOM_FIELD_TYPES = Object.freeze({
   DROPDOWN: "dropdown",
 });
 
+exports.PROJECT_COLUMN_TYPES = Object.freeze({
+  TEXT: "text",
+  DROPDOWN: "dropdown",
+  DATE: "date",
+  NUMBER: "number",
+  LABEL: "label",
+  CHECKBOX: "checkbox",
+  EMAIL: "email",
+  PHONE: "phone",
+  LOCATION: "location",
+  RATING: "rating",
+  VOTING: "voting",
+  SIGNATURE: "signature",
+});
+
 exports.ACTION_TYPE = Object.freeze({
   CREATE_TASK: "CREATE_TASK",
   UPDATE_TASK: "UPDATE_TASK",

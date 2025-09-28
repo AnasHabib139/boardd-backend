@@ -66,6 +66,13 @@ const taskSchema = new Schema({
   customFields: [customFieldSchema], // Add custom fields array
   checklist: { type: [checklistItemSchema], default: [] },
 
+  // Status-specific column values for project list view
+  statusColumnValues: {
+    type: Map,
+    of: Schema.Types.Mixed,
+    default: new Map()
+  },
+
   // Order indexes for drag and drop within project categories
   orderIndex: {
     todo: { type: Number, default: 1000 },

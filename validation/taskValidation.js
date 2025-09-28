@@ -179,6 +179,14 @@ const createTaskValidation = Joi.object({
     .messages({
       "array.base": "Subtasks must be an array",
     }),
+
+  columnValues: Joi.object()
+    .pattern(Joi.string(), Joi.any())
+    .optional()
+    .default({})
+    .messages({
+      "object.base": "Column values must be an object",
+    }),
 }).custom((value, helpers) => {
   // Custom validation to ensure either projectId or channelId is provided, but not both
   const { projectId, channelId } = value;
@@ -280,6 +288,13 @@ const batchUpdateTaskValidation = Joi.object({
       })
     )
     .optional(),
+
+  columnValues: Joi.object()
+    .pattern(Joi.string(), Joi.any())
+    .optional()
+    .messages({
+      "object.base": "Column values must be an object",
+    }),
 })
   .min(1)
   .messages({

@@ -35,6 +35,7 @@ const {
   handleCustomFieldsActivity,
   handleChecklistActivity,
 } = require("./helpers/tasks/task.helper");
+const { processTaskColumnValues } = require("./helpers/tasks/statusColumns.helper");
 const { getTaskByIdQuery, getTrendingTasksQuery, getRecentActivitiesQuery, getUserTasksByFilterQuery, getUserPersonalTasksCalendarQuery } = require("./queries/tasksQueries");
 const { getAllTasks } = require("../models/taskModel");
 const Mailer = require("../utils/mailer");
@@ -82,6 +83,7 @@ exports.createTask = async (req, res, next) => {
       customFields,
       checklist,
       subtasks,
+      columnValues,
     } = parseBody(req.body);
 
     const userId = req?.user?.id;
@@ -170,6 +172,26 @@ exports.createTask = async (req, res, next) => {
     const taskStatus = status || TASK_STATUS.TODO;
     const orderIndex = await getNextOrderIndex(projectId, channelId, taskStatus);
 
+    // Process column values if provided and projectId exists
+    let processedColumnValues = new Map();
+    if (projectId) {
+      const columnProcessResult = await processTaskColumnValues(
+        projectId,
+        taskStatus,
+        columnValues || {}
+      );
+
+      if (!columnProcessResult.isValid) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "Column validation failed",
+          errors: columnProcessResult.errors,
+        });
+      }
+
+      processedColumnValues = new Map(Object.entries(columnProcessResult.processedValues));
+    }
+
     // Prepare orderIndex object for all statuses
     const orderIndexes = {
       todo: taskStatus === "todo" ? orderIndex : 1000,
@@ -194,6 +216,7 @@ exports.createTask = async (req, res, next) => {
       customFields: customFields || [],
       checklist: checklist || [],
       orderIndex: orderIndexes,
+      statusColumnValues: processedColumnValues,
       createdBy: userId,
     });
 
@@ -601,6 +624,51 @@ exports.batchUpdateTask = async (req, res, next) => {
     // Parse dueDate if present
     if (updates.dueDate !== undefined) {
       updates.dueDate = parseDate(updates.dueDate);
+    }
+
+    // Handle column values updates if provided
+    if (updates.columnValues && task.projectId) {
+      const columnProcessResult = await processTaskColumnValues(
+        task.projectId,
+        updates.status || task.status,
+        updates.columnValues
+      );
+
+      if (!columnProcessResult.isValid) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "Column validation failed",
+          errors: columnProcessResult.errors,
+        });
+      }
+
+      // Merge with existing column values
+      const existingColumnValues = task.statusColumnValues || new Map();
+      const newColumnValues = new Map(Object.entries(columnProcessResult.processedValues));
+      const mergedColumnValues = new Map([...existingColumnValues, ...newColumnValues]);
+
+      updates.statusColumnValues = mergedColumnValues;
+      delete updates.columnValues; // Remove original field
+    }
+
+    // Handle status change column inheritance
+    if (updates.status && updates.status !== task.status && task.projectId) {
+      const { getDefaultColumnValues } = require("./helpers/tasks/statusColumns.helper");
+      const defaultColumnValues = await getDefaultColumnValues(task.projectId, updates.status);
+
+      if (Object.keys(defaultColumnValues).length > 0) {
+        const existingColumnValues = updates.statusColumnValues || task.statusColumnValues || new Map();
+        const newDefaults = new Map(Object.entries(defaultColumnValues));
+
+        // Only add defaults for columns that don't already have values
+        for (const [key, value] of newDefaults) {
+          if (!existingColumnValues.has(key)) {
+            existingColumnValues.set(key, value);
+          }
+        }
+
+        updates.statusColumnValues = existingColumnValues;
+      }
     }
 
     // Update task with all changes

@@ -1017,6 +1017,7 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
       },
     },
 
+
     // Lookup all tasks for this project
     {
       $lookup: {
@@ -1137,6 +1138,17 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
               isOverdue: 1,
               fileCount: 1,
               linkCount: 1,
+              // Convert Map to object for easier frontend access
+              columnData: {
+                $map: {
+                  input: { $objectToArray: { $ifNull: ["$statusColumnValues", {}] } },
+                  as: "columnValue",
+                  in: {
+                    key: "$$columnValue.k",
+                    value: "$$columnValue.v",
+                  },
+                },
+              },
             },
           },
           // Sort tasks by their status-specific orderIndex (handled in controller)
@@ -1439,6 +1451,7 @@ exports.getSingleProjectListQuery = (projectId) => {
       },
     },
 
+
     // Lookup all tasks for this project
     {
       $lookup: {
@@ -1559,6 +1572,17 @@ exports.getSingleProjectListQuery = (projectId) => {
               isOverdue: 1,
               fileCount: 1,
               linkCount: 1,
+              // Convert Map to object for easier frontend access
+              columnData: {
+                $map: {
+                  input: { $objectToArray: { $ifNull: ["$statusColumnValues", {}] } },
+                  as: "columnValue",
+                  in: {
+                    key: "$$columnValue.k",
+                    value: "$$columnValue.v",
+                  },
+                },
+              },
             },
           },
           // Sort tasks by creation date as fallback
