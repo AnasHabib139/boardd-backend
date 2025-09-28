@@ -151,7 +151,116 @@ const updateUserSettingsSchema = Joi.object({
       .messages({
         "any.only": "Profile visibility must be one of: public, company, private"
       })
-  }).optional()
+  }).optional(),
+
+  // Profile display settings
+  profile: Joi.object({
+    showJobTitleInProfile: Joi.boolean().optional()
+  }).optional(),
+
+  // Appearance settings
+  appearance: Joi.object({
+    mode: Joi.string()
+      .valid("light", "dark", "system")
+      .optional()
+      .messages({
+        "any.only": "Appearance mode must be one of: light, dark, system"
+      }),
+    backgroundLogo: Joi.boolean().optional()
+  }).optional(),
+
+  // Profile images
+  image: Joi.string()
+    .trim()
+    .max(500)
+    .optional()
+    .allow("")
+    .messages({
+      "string.max": "Image path cannot exceed 500 characters"
+    }),
+
+  coverImage: Joi.string()
+    .trim()
+    .max(500)
+    .optional()
+    .allow("")
+    .messages({
+      "string.max": "Cover image path cannot exceed 500 characters"
+    }),
+
+  // Complete name object
+  completeName: Joi.object({
+    firstName: Joi.string()
+      .trim()
+      .min(1)
+      .max(50)
+      .optional()
+      .allow("")
+      .messages({
+        "string.min": "First name must be at least 1 character long",
+        "string.max": "First name cannot exceed 50 characters"
+      }),
+    lastName: Joi.string()
+      .trim()
+      .min(1)
+      .max(50)
+      .optional()
+      .allow("")
+      .messages({
+        "string.min": "Last name must be at least 1 character long",
+        "string.max": "Last name cannot exceed 50 characters"
+      })
+  }).optional(),
+
+  // Gender field
+  gender: Joi.string()
+    .valid("male", "female", "other", "prefer_not_to_say")
+    .optional()
+    .messages({
+      "any.only": "Gender must be one of: male, female, other, prefer_not_to_say"
+    }),
+
+  // Contact information
+  contact: Joi.object({
+    code: Joi.string()
+      .trim()
+      .max(10)
+      .optional()
+      .allow("")
+      .pattern(/^\+?[0-9]*$/)
+      .messages({
+        "string.max": "Country code cannot exceed 10 characters",
+        "string.pattern.base": "Country code must contain only numbers and optional + sign"
+      }),
+    number: Joi.string()
+      .trim()
+      .max(20)
+      .optional()
+      .allow("")
+      .pattern(/^[0-9\s\-\(\)]*$/)
+      .messages({
+        "string.max": "Phone number cannot exceed 20 characters",
+        "string.pattern.base": "Phone number must contain only numbers, spaces, hyphens, and parentheses"
+      })
+  }).optional(),
+
+  // Address field
+  address: Joi.string()
+    .trim()
+    .max(500)
+    .optional()
+    .allow("")
+    .messages({
+      "string.max": "Address cannot exceed 500 characters"
+    }),
+
+  // Date of birth
+  dob: Joi.date()
+    .max("now")
+    .optional()
+    .messages({
+      "date.max": "Date of birth cannot be in the future"
+    })
 })
 .min(1) // At least one field must be provided
 .messages({

@@ -74,6 +74,27 @@ const userSettingsSchema = new Schema(
         enum: ["public", "company", "private"],
         default: "company"
       }
+    },
+
+    // Profile display settings
+    profile: {
+      showJobTitleInProfile: {
+        type: Boolean,
+        default: true
+      }
+    },
+
+    // Appearance settings
+    appearance: {
+      mode: {
+        type: String,
+        enum: ["light", "dark", "system"],
+        default: "system"
+      },
+      backgroundLogo: {
+        type: Boolean,
+        default: true
+      }
     }
   },
   { _id: false } // Don't create separate _id for settings subdocument
@@ -141,6 +162,22 @@ const userSchema = new Schema(
       coordinates: { type: [Number, Number] },
     },
     image: { type: String },
+    coverImage: { type: String },
+    completeName: {
+      firstName: { type: String, trim: true, maxlength: 50 },
+      lastName: { type: String, trim: true, maxlength: 50 }
+    },
+    gender: {
+      type: String,
+      enum: ["male", "female", "other", "prefer_not_to_say"],
+      trim: true,
+      lowercase: true
+    },
+    contact: {
+      code: { type: String, trim: true, maxlength: 10 }, // Country code like +1, +92
+      number: { type: String, trim: true, maxlength: 20 }
+    },
+    address: { type: String, trim: true, maxlength: 500 },
     role: { type: String, default: "employee", enum: Object.values(ROLES) },
     isActive: { type: Boolean, default: true },
     isDemo: { type: Boolean, default: false },

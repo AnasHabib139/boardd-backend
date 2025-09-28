@@ -332,7 +332,16 @@ exports.updateUserSettings = async (req, res, next) => {
       theme,
       localization,
       notifications,
-      privacy
+      privacy,
+      profile,
+      appearance,
+      image,
+      coverImage,
+      completeName,
+      gender,
+      contact,
+      address,
+      dob
     } = req.validatedBody;
 
     // Find current user with password for validation
@@ -366,6 +375,44 @@ exports.updateUserSettings = async (req, res, next) => {
 
     if (description !== undefined) {
       updateData.description = description;
+    }
+
+    if (image !== undefined) {
+      updateData.image = image;
+    }
+
+    if (coverImage !== undefined) {
+      updateData.coverImage = coverImage;
+    }
+
+    if (completeName !== undefined) {
+      if (completeName.firstName !== undefined) {
+        updateData["completeName.firstName"] = completeName.firstName;
+      }
+      if (completeName.lastName !== undefined) {
+        updateData["completeName.lastName"] = completeName.lastName;
+      }
+    }
+
+    if (gender !== undefined) {
+      updateData.gender = gender;
+    }
+
+    if (contact !== undefined) {
+      if (contact.code !== undefined) {
+        updateData["contact.code"] = contact.code;
+      }
+      if (contact.number !== undefined) {
+        updateData["contact.number"] = contact.number;
+      }
+    }
+
+    if (address !== undefined) {
+      updateData.address = address;
+    }
+
+    if (dob !== undefined) {
+      updateData.dob = dob;
     }
 
     // Handle password update
@@ -437,6 +484,21 @@ exports.updateUserSettings = async (req, res, next) => {
     if (privacy) {
       if (privacy.profileVisibility !== undefined) {
         updateData["settings.privacy.profileVisibility"] = privacy.profileVisibility;
+      }
+    }
+
+    if (profile) {
+      if (profile.showJobTitleInProfile !== undefined) {
+        updateData["settings.profile.showJobTitleInProfile"] = profile.showJobTitleInProfile;
+      }
+    }
+
+    if (appearance) {
+      if (appearance.mode !== undefined) {
+        updateData["settings.appearance.mode"] = appearance.mode;
+      }
+      if (appearance.backgroundLogo !== undefined) {
+        updateData["settings.appearance.backgroundLogo"] = appearance.backgroundLogo;
       }
     }
 
