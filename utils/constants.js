@@ -165,6 +165,10 @@ exports.TASK_STATUS = Object.freeze({
   COMPLETED: "completed",
 });
 
+// Special ObjectId for unassigned channel group (runtime group)
+// This is a fixed ObjectId that represents the virtual "Unassigned Channels" group
+exports.UNASSIGNED_CHANNEL_GROUP_ID = "000000000000000000000000";
+
 // Task priority constants
 exports.TASK_PRIORITY = Object.freeze({
   LOW: "low",

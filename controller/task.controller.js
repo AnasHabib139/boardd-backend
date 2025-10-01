@@ -5,7 +5,6 @@ const {
   STATUS_CODES,
   ACTION_TYPE,
   TASK_STATUS,
-  TASK_PRIORITY,
 } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const { findProject } = require("../models/projectModel");
@@ -207,7 +206,7 @@ exports.createTask = async (req, res, next) => {
       channelId: channelId || null,
       assignedTo: assignedTo || [],
       status: taskStatus,
-      priority: priority || TASK_PRIORITY.MEDIUM,
+      priority: priority || "medium",
       dueDate: parseDate(dueDate) || null,
       tags: tags || [],
       strokeColor: strokeColor || "#6C63FF",

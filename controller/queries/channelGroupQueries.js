@@ -1,4 +1,5 @@
 const { Types } = require("mongoose");
+const { UNASSIGNED_CHANNEL_GROUP_ID } = require("../../utils/constants");
 
 /**
  * Get all channel groups of a company with populated channel information filtered by user's channel membership
@@ -255,7 +256,7 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
               $cond: {
                 if: { $gt: [{ $size: { $ifNull: ["$$unassignedChannels", []] } }, 0] },
                 then: {
-                  _id: "unassigned",
+                  _id: Types.ObjectId.createFromHexString(UNASSIGNED_CHANNEL_GROUP_ID),
                   title: "Unassigned Channels",
                   companyId: Types.ObjectId.createFromHexString(companyId),
                   isActive: true,

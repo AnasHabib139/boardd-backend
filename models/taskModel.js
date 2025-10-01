@@ -7,7 +7,6 @@ const { getMongooseAggregatePaginatedData } = require("../utils");
 const {
   CUSTOM_FIELD_TYPES,
   TASK_STATUS,
-  TASK_PRIORITY,
 } = require("../utils/constants");
 
 const customFieldSchema = new Schema({
@@ -53,8 +52,7 @@ const taskSchema = new Schema({
   },
   priority: {
     type: String,
-    enum: Object.values(TASK_PRIORITY),
-    default: TASK_PRIORITY.MEDIUM,
+    default: "medium",
   },
   dueDate: { type: Date },
   tags: [{ type: String }],

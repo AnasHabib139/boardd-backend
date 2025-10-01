@@ -21,6 +21,9 @@ ChannelGroupSchema.plugin(aggregatePaginate);
 
 const ChannelGroupModel = model("ChannelGroup", ChannelGroupSchema);
 
+// Export the model
+exports.ChannelGroupModel = ChannelGroupModel;
+
 // Utility functions
 exports.createChannelGroup = (obj) => ChannelGroupModel.create(obj);
 

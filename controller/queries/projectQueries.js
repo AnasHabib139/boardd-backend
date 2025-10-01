@@ -1017,6 +1017,39 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
       },
     },
 
+    // Lookup column definitions for this project
+    {
+      $lookup: {
+        from: "projectstatuscolumns",
+        localField: "_id",
+        foreignField: "projectId",
+        as: "columnDefinitions",
+        pipeline: [
+          {
+            $match: {
+              isActive: true,
+            },
+          },
+          {
+            $project: {
+              _id: 1,
+              status: 1,
+              columnKey: 1,
+              columnName: 1,
+              columnType: 1,
+              dropdownOptions: 1,
+              order: 1,
+            },
+          },
+          {
+            $sort: {
+              status: 1,
+              order: 1,
+            },
+          },
+        ],
+      },
+    },
 
     // Lookup all tasks for this project
     {
@@ -1138,17 +1171,8 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
               isOverdue: 1,
               fileCount: 1,
               linkCount: 1,
-              // Convert Map to object for easier frontend access
-              columnData: {
-                $map: {
-                  input: { $objectToArray: { $ifNull: ["$statusColumnValues", {}] } },
-                  as: "columnValue",
-                  in: {
-                    key: "$$columnValue.k",
-                    value: "$$columnValue.v",
-                  },
-                },
-              },
+              // Store statusColumnValues for later enrichment
+              statusColumnValues: 1,
             },
           },
           // Sort tasks by their status-specific orderIndex (handled in controller)
@@ -1183,6 +1207,156 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
           },
         },
       },
+    },
+
+    // Enrich task column data with type and dropdown options
+    {
+      $addFields: {
+        todoTasks: {
+          $map: {
+            input: "$todoTasks",
+            as: "task",
+            in: {
+              $mergeObjects: [
+                "$$task",
+                {
+                  columnData: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: "$columnDefinitions",
+                          cond: { $eq: ["$$this.status", "$$task.status"] }
+                        }
+                      },
+                      as: "colDef",
+                      in: {
+                        key: "$$colDef.columnKey",
+                        value: {
+                          $ifNull: [
+                            { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$$task.statusColumnValues", {}] } } },
+                            null
+                          ]
+                        },
+                        type: "$$colDef.columnType",
+                        columnName: "$$colDef.columnName",
+                        dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        inProgressTasks: {
+          $map: {
+            input: "$inProgressTasks",
+            as: "task",
+            in: {
+              $mergeObjects: [
+                "$$task",
+                {
+                  columnData: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: "$columnDefinitions",
+                          cond: { $eq: ["$$this.status", "$$task.status"] }
+                        }
+                      },
+                      as: "colDef",
+                      in: {
+                        key: "$$colDef.columnKey",
+                        value: {
+                          $ifNull: [
+                            { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$$task.statusColumnValues", {}] } } },
+                            null
+                          ]
+                        },
+                        type: "$$colDef.columnType",
+                        columnName: "$$colDef.columnName",
+                        dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        completedTasks: {
+          $map: {
+            input: "$completedTasks",
+            as: "task",
+            in: {
+              $mergeObjects: [
+                "$$task",
+                {
+                  columnData: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: "$columnDefinitions",
+                          cond: { $eq: ["$$this.status", "$$task.status"] }
+                        }
+                      },
+                      as: "colDef",
+                      in: {
+                        key: "$$colDef.columnKey",
+                        value: {
+                          $ifNull: [
+                            { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$$task.statusColumnValues", {}] } } },
+                            null
+                          ]
+                        },
+                        type: "$$colDef.columnType",
+                        columnName: "$$colDef.columnName",
+                        dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        allTasks: {
+          $map: {
+            input: "$allTasks",
+            as: "task",
+            in: {
+              $mergeObjects: [
+                "$$task",
+                {
+                  columnData: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: "$columnDefinitions",
+                          cond: { $eq: ["$$this.status", "$$task.status"] }
+                        }
+                      },
+                      as: "colDef",
+                      in: {
+                        key: "$$colDef.columnKey",
+                        value: {
+                          $ifNull: [
+                            { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$$task.statusColumnValues", {}] } } },
+                            null
+                          ]
+                        },
+                        type: "$$colDef.columnType",
+                        columnName: "$$colDef.columnName",
+                        dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
     },
 
     // Calculate project statistics
@@ -1451,6 +1625,39 @@ exports.getSingleProjectListQuery = (projectId) => {
       },
     },
 
+    // Lookup column definitions for this project
+    {
+      $lookup: {
+        from: "projectstatuscolumns",
+        localField: "_id",
+        foreignField: "projectId",
+        as: "columnDefinitions",
+        pipeline: [
+          {
+            $match: {
+              isActive: true,
+            },
+          },
+          {
+            $project: {
+              _id: 1,
+              status: 1,
+              columnKey: 1,
+              columnName: 1,
+              columnType: 1,
+              dropdownOptions: 1,
+              order: 1,
+            },
+          },
+          {
+            $sort: {
+              status: 1,
+              order: 1,
+            },
+          },
+        ],
+      },
+    },
 
     // Lookup all tasks for this project
     {
@@ -1572,17 +1779,8 @@ exports.getSingleProjectListQuery = (projectId) => {
               isOverdue: 1,
               fileCount: 1,
               linkCount: 1,
-              // Convert Map to object for easier frontend access
-              columnData: {
-                $map: {
-                  input: { $objectToArray: { $ifNull: ["$statusColumnValues", {}] } },
-                  as: "columnValue",
-                  in: {
-                    key: "$$columnValue.k",
-                    value: "$$columnValue.v",
-                  },
-                },
-              },
+              // Store statusColumnValues for later enrichment
+              statusColumnValues: 1,
             },
           },
           // Sort tasks by creation date as fallback
@@ -1617,6 +1815,156 @@ exports.getSingleProjectListQuery = (projectId) => {
           },
         },
       },
+    },
+
+    // Enrich task column data with type and dropdown options
+    {
+      $addFields: {
+        todoTasks: {
+          $map: {
+            input: "$todoTasks",
+            as: "task",
+            in: {
+              $mergeObjects: [
+                "$$task",
+                {
+                  columnData: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: "$columnDefinitions",
+                          cond: { $eq: ["$$this.status", "$$task.status"] }
+                        }
+                      },
+                      as: "colDef",
+                      in: {
+                        key: "$$colDef.columnKey",
+                        value: {
+                          $ifNull: [
+                            { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$$task.statusColumnValues", {}] } } },
+                            null
+                          ]
+                        },
+                        type: "$$colDef.columnType",
+                        columnName: "$$colDef.columnName",
+                        dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        inProgressTasks: {
+          $map: {
+            input: "$inProgressTasks",
+            as: "task",
+            in: {
+              $mergeObjects: [
+                "$$task",
+                {
+                  columnData: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: "$columnDefinitions",
+                          cond: { $eq: ["$$this.status", "$$task.status"] }
+                        }
+                      },
+                      as: "colDef",
+                      in: {
+                        key: "$$colDef.columnKey",
+                        value: {
+                          $ifNull: [
+                            { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$$task.statusColumnValues", {}] } } },
+                            null
+                          ]
+                        },
+                        type: "$$colDef.columnType",
+                        columnName: "$$colDef.columnName",
+                        dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        completedTasks: {
+          $map: {
+            input: "$completedTasks",
+            as: "task",
+            in: {
+              $mergeObjects: [
+                "$$task",
+                {
+                  columnData: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: "$columnDefinitions",
+                          cond: { $eq: ["$$this.status", "$$task.status"] }
+                        }
+                      },
+                      as: "colDef",
+                      in: {
+                        key: "$$colDef.columnKey",
+                        value: {
+                          $ifNull: [
+                            { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$$task.statusColumnValues", {}] } } },
+                            null
+                          ]
+                        },
+                        type: "$$colDef.columnType",
+                        columnName: "$$colDef.columnName",
+                        dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        allTasks: {
+          $map: {
+            input: "$allTasks",
+            as: "task",
+            in: {
+              $mergeObjects: [
+                "$$task",
+                {
+                  columnData: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: "$columnDefinitions",
+                          cond: { $eq: ["$$this.status", "$$task.status"] }
+                        }
+                      },
+                      as: "colDef",
+                      in: {
+                        key: "$$colDef.columnKey",
+                        value: {
+                          $ifNull: [
+                            { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$$task.statusColumnValues", {}] } } },
+                            null
+                          ]
+                        },
+                        type: "$$colDef.columnType",
+                        columnName: "$$colDef.columnName",
+                        dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
     },
 
     // Calculate project statistics

@@ -1,7 +1,7 @@
 "use strict";
 
 const { parseBody, generateResponse } = require("../utils");
-const { STATUS_CODES } = require("../utils/constants");
+const { STATUS_CODES, UNASSIGNED_CHANNEL_GROUP_ID } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const {
   createChannelGroup,
@@ -80,26 +80,31 @@ exports.assignChannelsToGroup = async (req, res, next) => {
       });
     }
 
-    // Find the channel group
-    const channelGroup = await findChannelGroup({ _id: channelGroupId });
-    if (!channelGroup) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Channel group not found",
-      });
-    }
+    // Check if this is the special "Unassigned" group ID
+    const isUnassignedGroup = channelGroupId === UNASSIGNED_CHANNEL_GROUP_ID;
 
-    // Check if channel group belongs to user's company
-    if (channelGroup.companyId.toString() !== user.companyId.toString()) {
-      return next({
-        statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You can only assign channels to groups in your own company",
-      });
+    // If not unassigned group, validate that the channel group exists
+    if (!isUnassignedGroup) {
+      const channelGroup = await findChannelGroup({ _id: channelGroupId });
+      if (!channelGroup) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Channel group not found",
+        });
+      }
+
+      // Check if channel group belongs to user's company
+      if (channelGroup.companyId.toString() !== user.companyId.toString()) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You can only assign channels to groups in your own company",
+        });
+      }
     }
 
     // Handle null or empty channelIds (to empty the group)
     let validatedChannelIds = [];
-    
+
     if (channelIds && channelIds.length > 0) {
       // Validate that all channels exist and belong to the same company
       const channels = await findManyChannels({
@@ -114,8 +119,55 @@ exports.assignChannelsToGroup = async (req, res, next) => {
             "One or more channels not found or don't belong to your company",
         });
       }
-      
+
       validatedChannelIds = channelIds;
+    }
+
+    // If this is the unassigned group, remove channels from all groups
+    if (isUnassignedGroup) {
+      if (validatedChannelIds.length === 0) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "Channel IDs are required to unassign channels",
+        });
+      }
+
+      // Remove these channels from all groups
+      const { ChannelGroupModel } = require("../models/channelGroupModel");
+      const result = await ChannelGroupModel.updateMany(
+        {
+          companyId: user.companyId,
+          channelIds: { $in: validatedChannelIds }
+        },
+        {
+          $pull: { channelIds: { $in: validatedChannelIds } }
+        }
+      );
+
+      return generateResponse(
+        {
+          channelsUnassigned: validatedChannelIds.length,
+          groupsUpdated: result.modifiedCount,
+        },
+        `${validatedChannelIds.length} channel(s) unassigned successfully`,
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+
+    // For regular groups, remove channels from other groups first
+    if (validatedChannelIds.length > 0) {
+      const { ChannelGroupModel } = require("../models/channelGroupModel");
+      await ChannelGroupModel.updateMany(
+        {
+          companyId: user.companyId,
+          channelIds: { $in: validatedChannelIds },
+          _id: { $ne: channelGroupId } // Don't update the target group
+        },
+        {
+          $pull: { channelIds: { $in: validatedChannelIds } }
+        }
+      );
     }
 
     // Update the channel group with new channel IDs (empty array if null/empty)
@@ -124,7 +176,7 @@ exports.assignChannelsToGroup = async (req, res, next) => {
       { channelIds: validatedChannelIds }
     );
 
-    const message = validatedChannelIds.length > 0 
+    const message = validatedChannelIds.length > 0
       ? "Channels assigned to group successfully"
       : "Channel group emptied successfully";
 

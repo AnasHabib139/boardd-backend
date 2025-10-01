@@ -2,7 +2,6 @@ const Joi = require("joi");
 const {
   CUSTOM_FIELD_TYPES,
   TASK_STATUS,
-  TASK_PRIORITY,
 } = require("../utils/constants");
 const { helpers } = require("./authValidation");
 
@@ -93,13 +92,12 @@ const createTaskValidation = Joi.object({
     }),
 
   priority: Joi.string()
-    .valid(...Object.values(TASK_PRIORITY))
+    .trim()
+    .max(50)
     .optional()
-    .default(TASK_PRIORITY.MEDIUM)
+    .default("medium")
     .messages({
-      "any.only": `Priority must be one of: ${Object.values(TASK_PRIORITY).join(
-        ", "
-      )}`,
+      "string.max": "Priority cannot exceed 50 characters",
     }),
 
   dueDate: Joi.date().optional().messages({
@@ -237,12 +235,11 @@ const batchUpdateTaskValidation = Joi.object({
     }),
 
   priority: Joi.string()
-    .valid(...Object.values(TASK_PRIORITY))
+    .trim()
+    .max(50)
     .optional()
     .messages({
-      "any.only": `Priority must be one of: ${Object.values(TASK_PRIORITY).join(
-        ", "
-      )}`,
+      "string.max": "Priority cannot exceed 50 characters",
     }),
 
   dueDate: Joi.date().optional().allow(null).messages({
