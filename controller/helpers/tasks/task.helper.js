@@ -432,6 +432,80 @@ exports.handleAttachmentsActivity = async ({
 };
 
 /**
+ * Handle links setting activity
+ */
+exports.handleLinksActivity = async ({
+  links,
+  userName,
+  task,
+  projectId,
+  channelId,
+  userId,
+}) => {
+  const linksMessage = generateActivityMessage("links", userName, {
+    previousValue: [],
+    newValue: links,
+    taskTitle: task.title,
+    isCreation: true,
+  });
+
+  const activityData = {
+    taskId: task._id,
+    userId,
+    actionType: ACTION_TYPE.UPDATE_TASK,
+    field: "links",
+    newValue: links,
+    timestamp: new Date(),
+    message: linksMessage,
+  };
+
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else {
+    activityData.channelId = channelId;
+  }
+
+  return createActivity(activityData);
+};
+
+/**
+ * Handle column values setting activity
+ */
+exports.handleColumnValuesActivity = async ({
+  columnValues,
+  userName,
+  task,
+  projectId,
+  channelId,
+  userId,
+}) => {
+  const columnValuesMessage = generateActivityMessage("columnValues", userName, {
+    previousValue: {},
+    newValue: columnValues,
+    taskTitle: task.title,
+    isCreation: true,
+  });
+
+  const activityData = {
+    taskId: task._id,
+    userId,
+    actionType: ACTION_TYPE.UPDATE_TASK,
+    field: "columnValues",
+    newValue: columnValues,
+    timestamp: new Date(),
+    message: columnValuesMessage,
+  };
+
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else {
+    activityData.channelId = channelId;
+  }
+
+  return createActivity(activityData);
+};
+
+/**
  * Handle custom fields setting activity
  */
 exports.handleCustomFieldsActivity = async ({

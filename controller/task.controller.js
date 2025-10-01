@@ -23,23 +23,27 @@ const { emitUserNotification, emitTaskEvent } = require("../utils/socket");
 const {
   createTaskActivitiesAndNotifications,
   handlePriorityActivity,
-  handleStatusActivity,
   handleDueDateActivity,
   handleAssignmentActivitiesAndNotifications,
   prepareTaskEventPayload,
-  handleDescriptionActivity,
-  handleTagsActivity,
-  handleStrokeColorActivity,
   handleAttachmentsActivity,
-  handleCustomFieldsActivity,
-  handleChecklistActivity,
+  handleLinksActivity,
+  handleColumnValuesActivity,
 } = require("./helpers/tasks/task.helper");
-const { processTaskColumnValues } = require("./helpers/tasks/statusColumns.helper");
-const { getTaskByIdQuery, getTrendingTasksQuery, getRecentActivitiesQuery, getUserTasksByFilterQuery, getUserPersonalTasksCalendarQuery } = require("./queries/tasksQueries");
+const {
+  processTaskColumnValues,
+} = require("./helpers/tasks/statusColumns.helper");
+const {
+  getTaskByIdQuery,
+  getTrendingTasksQuery,
+  getRecentActivitiesQuery,
+  getUserTasksByFilterQuery,
+  getUserPersonalTasksCalendarQuery,
+} = require("./queries/tasksQueries");
 const { getAllTasks } = require("../models/taskModel");
 const Mailer = require("../utils/mailer");
 const { generateTaskShareEmail } = require("../utils/emailTemplates");
-const { upsertTaskView, getTrendingTasks, TaskViewModel } = require("../models/taskViewModel");
+const { upsertTaskView, getTrendingTasks } = require("../models/taskViewModel");
 
 // Helper function to parse date strings
 const parseDate = (dateString) => {
@@ -68,20 +72,13 @@ exports.createTask = async (req, res, next) => {
   try {
     const {
       title,
-      description,
       projectId,
       channelId,
       assignedTo,
-      status,
       priority,
       dueDate,
-      tags,
-      strokeColor,
-      type,
       attachments,
-      customFields,
-      checklist,
-      subtasks,
+      links,
       columnValues,
     } = parseBody(req.body);
 
@@ -167,9 +164,13 @@ exports.createTask = async (req, res, next) => {
       });
     }
 
-    // Calculate orderIndex for the task's status
-    const taskStatus = status || TASK_STATUS.TODO;
-    const orderIndex = await getNextOrderIndex(projectId, channelId, taskStatus);
+    // Calculate orderIndex for the task's status (always "todo" for new tasks)
+    const taskStatus = TASK_STATUS.TODO;
+    const orderIndex = await getNextOrderIndex(
+      projectId,
+      channelId,
+      taskStatus
+    );
 
     // Process column values if provided and projectId exists
     let processedColumnValues = new Map();
@@ -188,7 +189,9 @@ exports.createTask = async (req, res, next) => {
         });
       }
 
-      processedColumnValues = new Map(Object.entries(columnProcessResult.processedValues));
+      processedColumnValues = new Map(
+        Object.entries(columnProcessResult.processedValues)
+      );
     }
 
     // Prepare orderIndex object for all statuses
@@ -198,28 +201,30 @@ exports.createTask = async (req, res, next) => {
       completed: taskStatus === "completed" ? orderIndex : 1000,
     };
 
-    // Create task with all fields, using defaults for missing ones
+    // Create task with simplified fields, using defaults for removed ones
     const task = await createTask({
-      title: title || "",
-      description: description || "",
+      title: title,
       projectId: projectId || null,
       channelId: channelId || null,
       assignedTo: assignedTo || [],
       status: taskStatus,
       priority: priority || "medium",
       dueDate: parseDate(dueDate) || null,
-      tags: tags || [],
-      strokeColor: strokeColor || "#6C63FF",
-      type: type || "task",
       attachments: attachments || [],
-      customFields: customFields || [],
-      checklist: checklist || [],
-      orderIndex: orderIndexes,
+      links: links || [],
       statusColumnValues: processedColumnValues,
+      // Auto-defaults for removed fields
+      description: "",
+      tags: [],
+      strokeColor: "#6C63FF",
+      type: "task",
+      customFields: [],
+      checklist: [],
+      orderIndex: orderIndexes,
       createdBy: userId,
     });
 
-    const contextPath = projectId 
+    const contextPath = projectId
       ? `${channel.channelName} / ${tab.tabName}`
       : `${channel.channelName} / Open`;
     const userName = creator.name || creator.email;
@@ -240,20 +245,8 @@ exports.createTask = async (req, res, next) => {
     });
     notifications = [...notifications, ...taskCreationResult.notifications];
 
-    // 2. Handle status setting activity
-    const statusActivity = await handleStatusActivity({
-      status: taskStatus,
-      userName,
-      task,
-      projectId: projectId || null,
-      channelId: channelId || null,
-      userId,
-    });
-    activities.push(statusActivity);
-
-    // 3. Handle priority setting activity
+    // 2. Handle priority setting activity (if provided)
     if (priority) {
-      console.log("priority", priority);
       const priorityActivity = await handlePriorityActivity({
         priority,
         userName,
@@ -265,7 +258,7 @@ exports.createTask = async (req, res, next) => {
       activities.push(priorityActivity);
     }
 
-    // 4. Handle due date setting activity
+    // 3. Handle due date setting activity (if provided)
     if (dueDate) {
       const dueDateActivity = await handleDueDateActivity({
         dueDate,
@@ -278,7 +271,7 @@ exports.createTask = async (req, res, next) => {
       activities.push(dueDateActivity);
     }
 
-    // 5. Handle assignment activities and notifications
+    // 4. Handle assignment activities and notifications (if provided)
     if (assignedTo && assignedTo.length > 0) {
       const assignmentResult = await handleAssignmentActivitiesAndNotifications(
         {
@@ -297,46 +290,7 @@ exports.createTask = async (req, res, next) => {
       notifications = [...notifications, ...assignmentResult.notifications];
     }
 
-    // 6. Handle description setting activity
-    if (description && description.trim() !== "") {
-      const descriptionActivity = await handleDescriptionActivity({
-        description,
-        userName,
-        task,
-        projectId: projectId || null,
-        channelId: channelId || null,
-        userId,
-      });
-      activities.push(descriptionActivity);
-    }
-
-    // 7. Handle tags setting activity
-    if (tags && tags.length > 0) {
-      const tagsActivity = await handleTagsActivity({
-        tags,
-        userName,
-        task,
-        projectId: projectId || null,
-        channelId: channelId || null,
-        userId,
-      });
-      activities.push(tagsActivity);
-    }
-
-    // 8. Handle stroke color setting activity
-    if (strokeColor && strokeColor !== "#6C63FF") {
-      const strokeColorActivity = await handleStrokeColorActivity({
-        strokeColor,
-        userName,
-        task,
-        projectId: projectId || null,
-        channelId: channelId || null,
-        userId,
-      });
-      activities.push(strokeColorActivity);
-    }
-
-    // 9. Handle attachments setting activity
+    // 5. Handle attachments setting activity (if provided)
     if (attachments && attachments.length > 0) {
       const attachmentsActivity = await handleAttachmentsActivity({
         attachments,
@@ -349,107 +303,30 @@ exports.createTask = async (req, res, next) => {
       activities.push(attachmentsActivity);
     }
 
-    // 10. Handle custom fields setting activity
-    if (customFields && customFields.length > 0) {
-      const customFieldsActivity = await handleCustomFieldsActivity({
-        customFields,
+    // 6. Handle links setting activity (if provided)
+    if (links && links.length > 0) {
+      const linksActivity = await handleLinksActivity({
+        links,
         userName,
         task,
         projectId: projectId || null,
         channelId: channelId || null,
         userId,
       });
-      activities.push(customFieldsActivity);
+      activities.push(linksActivity);
     }
 
-    // 11. Handle checklist setting activity
-    if (checklist && checklist.length > 0) {
-      const checklistActivity = await handleChecklistActivity({
-        checklist,
+    // 7. Handle column values setting activity (if provided)
+    if (columnValues && Object.keys(columnValues).length > 0) {
+      const columnValuesActivity = await handleColumnValuesActivity({
+        columnValues,
         userName,
         task,
         projectId: projectId || null,
         channelId: channelId || null,
         userId,
       });
-      activities.push(checklistActivity);
-    }
-
-    // --- Create subtasks if provided ---
-    let createdSubtasks = [];
-    if (Array.isArray(subtasks) && subtasks.length > 0) {
-      for (const subtaskData of subtasks) {
-        const subtask = await require("../models/subtaskModel").createSubtask({
-          title: subtaskData.title,
-          taskId: task._id,
-          projectId: projectId || null,
-          createdBy: userId,
-          assignedTo: subtaskData.assignedTo || [],
-        });
-
-        // Activity and notification logic (reuse from createSubtask)
-        const createSubtaskMessage = {
-          forCreator: `You created subtask "${subtask.title}" for task "${task.title}"`,
-          forOthers: `${userName} created subtask "${subtask.title}" for task "${task.title}"`,
-        };
-        const activityData = {
-          taskId: task._id,
-          subtaskId: subtask._id,
-          userId,
-          actionType: ACTION_TYPE.CREATE_SUBTASK,
-          timestamp: new Date(),
-          message: createSubtaskMessage,
-        };
-
-        if (projectId) {
-          activityData.projectId = projectId;
-        } else {
-          activityData.channelId = channelId;
-        }
-
-        const activity = await createActivity(activityData);
-        activities.push(activity);
-
-        // Notifications for tab members (or channel members for non-project tasks)
-        const membersToNotify = tab ? tab.members : channel.members;
-        for (const memberId of membersToNotify) {
-          await createNotification({
-            userId: memberId,
-            type: "CHANNEL",
-            projectId: projectId || null,
-            channelId: channel._id,
-            tabId: tab?._id || null,
-            taskId: task._id,
-            createdBy: userId,
-            title: "New Subtask Created",
-            message:
-              memberId.toString() === userId.toString()
-                ? createSubtaskMessage.forCreator
-                : createSubtaskMessage.forOthers,
-            contextPath,
-          });
-        }
-        // Notifications for assigned users
-        if (subtaskData.assignedTo && subtaskData.assignedTo.length > 0) {
-          for (const assigneeId of subtaskData.assignedTo) {
-            if (assigneeId !== userId) {
-              await createNotification({
-                userId: assigneeId,
-                type: "MENTION",
-                projectId: projectId || null,
-                channelId: channel._id,
-                tabId: tab?._id || null,
-                taskId: task._id,
-                createdBy: userId,
-                title: "Subtask Assignment",
-                message: `${userName} assigned you to subtask "${subtask.title}" in task "${task.title}"`,
-                contextPath,
-              });
-            }
-          }
-        }
-        createdSubtasks.push(subtask);
-      }
+      activities.push(columnValuesActivity);
     }
 
     // Save all notifications
@@ -494,7 +371,7 @@ exports.createTask = async (req, res, next) => {
     }
 
     return generateResponse(
-      { task, subtasks: createdSubtasks },
+      { task },
       "Task created successfully",
       res,
       STATUS_CODES.CREATED
@@ -643,8 +520,13 @@ exports.batchUpdateTask = async (req, res, next) => {
 
       // Merge with existing column values
       const existingColumnValues = task.statusColumnValues || new Map();
-      const newColumnValues = new Map(Object.entries(columnProcessResult.processedValues));
-      const mergedColumnValues = new Map([...existingColumnValues, ...newColumnValues]);
+      const newColumnValues = new Map(
+        Object.entries(columnProcessResult.processedValues)
+      );
+      const mergedColumnValues = new Map([
+        ...existingColumnValues,
+        ...newColumnValues,
+      ]);
 
       updates.statusColumnValues = mergedColumnValues;
       delete updates.columnValues; // Remove original field
@@ -652,11 +534,17 @@ exports.batchUpdateTask = async (req, res, next) => {
 
     // Handle status change column inheritance
     if (updates.status && updates.status !== task.status && task.projectId) {
-      const { getDefaultColumnValues } = require("./helpers/tasks/statusColumns.helper");
-      const defaultColumnValues = await getDefaultColumnValues(task.projectId, updates.status);
+      const {
+        getDefaultColumnValues,
+      } = require("./helpers/tasks/statusColumns.helper");
+      const defaultColumnValues = await getDefaultColumnValues(
+        task.projectId,
+        updates.status
+      );
 
       if (Object.keys(defaultColumnValues).length > 0) {
-        const existingColumnValues = updates.statusColumnValues || task.statusColumnValues || new Map();
+        const existingColumnValues =
+          updates.statusColumnValues || task.statusColumnValues || new Map();
         const newDefaults = new Map(Object.entries(defaultColumnValues));
 
         // Only add defaults for columns that don't already have values
@@ -1011,13 +899,7 @@ exports.shareTask = async (req, res, next) => {
  */
 exports.getTrendingTasks = async (req, res, next) => {
   try {
-    const { 
-      limit, 
-      page, 
-      timeframe = 'all', 
-      projectId, 
-      channelId 
-    } = req.query;
+    const { limit, page, timeframe = "all", projectId, channelId } = req.query;
     const userId = req?.user?.id;
 
     // Validate user exists
@@ -1030,7 +912,11 @@ exports.getTrendingTasks = async (req, res, next) => {
     }
 
     // Get trending tasks query
-    const query = getTrendingTasksQuery(userId, { timeframe, projectId, channelId });
+    const query = getTrendingTasksQuery(userId, {
+      timeframe,
+      projectId,
+      channelId,
+    });
 
     // Execute query with pagination
     const result = await getTrendingTasks({
@@ -1061,12 +947,7 @@ exports.getTrendingTasks = async (req, res, next) => {
  */
 exports.getRecentActivities = async (req, res, next) => {
   try {
-    const { 
-      limit, 
-      page, 
-      projectId, 
-      channelId 
-    } = req.query;
+    const { limit, page, projectId, channelId } = req.query;
     const userId = req?.user?.id;
 
     // Validate user exists
@@ -1110,11 +991,7 @@ exports.getRecentActivities = async (req, res, next) => {
  */
 exports.getUserTasksByFilter = async (req, res, next) => {
   try {
-    const { 
-      filter, 
-      limit, 
-      page 
-    } = req.query;
+    const { filter, limit, page } = req.query;
     const userId = req?.user?.id;
 
     // Validate user exists
@@ -1131,32 +1008,32 @@ exports.getUserTasksByFilter = async (req, res, next) => {
 
     // Set sorting based on filter type
     let sortOption = {};
-    if (filter === 'today' || filter === 'overdue') {
+    if (filter === "today" || filter === "overdue") {
       sortOption = { dueDate: 1 }; // Ascending order: earliest due date first
-    } else if (filter === 'yesterday') {
+    } else if (filter === "yesterday") {
       sortOption = { completedAt: -1 }; // Descending order: most recently completed first
     }
 
     // Get totals for all filters
     const [todayQuery, overdueQuery, yesterdayQuery] = await Promise.all([
       getAllTasks({
-        query: getUserTasksByFilterQuery(userId, 'today'),
+        query: getUserTasksByFilterQuery(userId, "today"),
         page: 1,
         limit: 1,
-        responseKey: 'count',
+        responseKey: "count",
       }),
       getAllTasks({
-        query: getUserTasksByFilterQuery(userId, 'overdue'),
+        query: getUserTasksByFilterQuery(userId, "overdue"),
         page: 1,
         limit: 1,
-        responseKey: 'count',
+        responseKey: "count",
       }),
       getAllTasks({
-        query: getUserTasksByFilterQuery(userId, 'yesterday'),
+        query: getUserTasksByFilterQuery(userId, "yesterday"),
         page: 1,
         limit: 1,
-        responseKey: 'count',
-      })
+        responseKey: "count",
+      }),
     ]);
 
     // Execute query with pagination and sorting
@@ -1177,7 +1054,9 @@ exports.getUserTasksByFilter = async (req, res, next) => {
 
     return generateResponse(
       result,
-      `${filter.charAt(0).toUpperCase() + filter.slice(1)} tasks fetched successfully`,
+      `${
+        filter.charAt(0).toUpperCase() + filter.slice(1)
+      } tasks fetched successfully`,
       res,
       STATUS_CODES.SUCCESS
     );

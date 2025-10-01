@@ -53,16 +53,12 @@ const customFieldSchema = Joi.object({
   }),
 });
 
-// Create task validation schema
+// Create task validation schema (simplified)
 const createTaskValidation = Joi.object({
   title: Joi.string().trim().min(1).max(200).required().messages({
     "string.empty": "Task title is required",
     "string.min": "Task title must be at least 1 character long",
     "string.max": "Task title cannot exceed 200 characters",
-  }),
-
-  description: Joi.string().trim().max(1000).optional().default("").messages({
-    "string.max": "Task description cannot exceed 1000 characters",
   }),
 
   projectId: helpers.objectIdValidation.optional().messages({
@@ -81,16 +77,6 @@ const createTaskValidation = Joi.object({
       "array.base": "Assigned to must be an array of valid user IDs",
     }),
 
-  status: Joi.string()
-    .valid(...Object.values(TASK_STATUS))
-    .optional()
-    .default(TASK_STATUS.TODO)
-    .messages({
-      "any.only": `Status must be one of: ${Object.values(TASK_STATUS).join(
-        ", "
-      )}`,
-    }),
-
   priority: Joi.string()
     .trim()
     .max(50)
@@ -104,29 +90,6 @@ const createTaskValidation = Joi.object({
     "date.base": "Due date must be a valid date",
   }),
 
-  tags: Joi.array()
-    .items(Joi.string().trim().min(1).max(30))
-    .optional()
-    .default([])
-    .messages({
-      "array.base": "Tags must be an array of strings",
-      "string.min": "Each tag must be at least 1 character long",
-      "string.max": "Each tag cannot exceed 30 characters",
-    }),
-
-  strokeColor: Joi.string()
-    .pattern(/^#([0-9A-F]{3}){1,2}$/i)
-    .optional()
-    .default("#6C63FF")
-    .messages({
-      "string.pattern.base":
-        "Stroke color must be a valid hex color (e.g., #6C63FF)",
-    }),
-
-  type: Joi.string().optional().default("task").messages({
-    "string.base": "Type must be a string",
-  }),
-
   attachments: Joi.array()
     .items(Joi.string().uri())
     .optional()
@@ -136,46 +99,13 @@ const createTaskValidation = Joi.object({
       "string.uri": "Each attachment must be a valid URL",
     }),
 
-  customFields: Joi.array()
-    .items(customFieldSchema)
+  links: Joi.array()
+    .items(Joi.string().uri())
     .optional()
     .default([])
     .messages({
-      "array.base": "Custom fields must be an array",
-    }),
-
-  checklist: Joi.array()
-    .items(
-      Joi.object({
-        name: Joi.string().required(),
-        isCompleted: Joi.boolean().default(false),
-        order: Joi.number().default(0),
-      })
-    )
-    .optional()
-    .default([]),
-
-  subtasks: Joi.array()
-    .items(
-      Joi.object({
-        title: Joi.string().trim().min(1).max(200).required().messages({
-          "string.empty": "Subtask title is required",
-          "string.min": "Subtask title must be at least 1 character long",
-          "string.max": "Subtask title cannot exceed 200 characters",
-        }),
-        assignedTo: Joi.array()
-          .items(helpers.objectIdValidation)
-          .optional()
-          .default([])
-          .messages({
-            "array.base": "Assigned to must be an array of valid user IDs",
-          }),
-      })
-    )
-    .optional()
-    .default([])
-    .messages({
-      "array.base": "Subtasks must be an array",
+      "array.base": "Links must be an array of valid URLs",
+      "string.uri": "Each link must be a valid URL",
     }),
 
   columnValues: Joi.object()
