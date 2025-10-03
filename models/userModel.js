@@ -113,6 +113,10 @@ const refreshTokenSchema = new Schema(
       browser: { type: String },
       os: { type: String },
       deviceType: { type: String }, // mobile, desktop, tablet
+      location: {
+        country: { type: String }, // e.g., "GB"
+        city: { type: String }, // e.g., "London"
+      },
     },
     createdAt: {
       type: Date,

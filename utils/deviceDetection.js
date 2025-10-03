@@ -1,21 +1,62 @@
 const UAParser = require("ua-parser-js");
+const geoip = require("fast-geoip");
 
 /**
  * Extract device information from request
  * @param {Object} req - Express request object
- * @returns {Object} Device information object
+ * @returns {Promise<Object>} Device information object with location
  */
-exports.extractDeviceInfo = (req) => {
+exports.extractDeviceInfo = async (req) => {
   const parser = new UAParser();
   const userAgent = req.headers["user-agent"] || "";
-  const ipAddress =
-    req.ip ||
-    req.connection.remoteAddress ||
-    req.headers["x-forwarded-for"] ||
-    "unknown";
+
+  // Extract IP address, handling x-forwarded-for properly
+  let ipAddress = req.ip || req.connection.remoteAddress || "unknown";
+
+  // Handle x-forwarded-for header (may contain comma-separated IPs)
+  const forwardedFor = req.headers["x-forwarded-for"];
+  if (forwardedFor) {
+    // Take the first IP (client's real IP)
+    ipAddress = forwardedFor.split(",")[0].trim();
+  }
+
+  // Remove IPv6 prefix if present (::ffff:192.168.1.1 -> 192.168.1.1)
+  if (ipAddress.startsWith("::ffff:")) {
+    ipAddress = ipAddress.substring(7);
+  }
 
   parser.setUA(userAgent);
   const result = parser.getResult();
+
+  // Perform geolocation lookup
+  let location = null;
+  console.log(`🌍 Attempting geolocation lookup for IP: ${ipAddress}`);
+
+  // Check if this is localhost
+  const isLocalhost = ipAddress === "::1" || ipAddress === "127.0.0.1" || ipAddress === "unknown";
+
+  if (isLocalhost) {
+    console.log(`⚠️ Localhost detected (${ipAddress}) - location will be null in production`);
+    console.log(`💡 To test: Add "x-forwarded-for: 8.8.8.8" header in Postman`);
+  }
+
+  if (ipAddress && !isLocalhost) {
+    try {
+      const geo = await geoip.lookup(ipAddress);
+      console.log(`🌍 Geolocation result for ${ipAddress}:`, geo);
+
+      if (geo) {
+        location = {
+          country: geo.country || null,
+          city: geo.city || null,
+        };
+        console.log(`✅ Location saved:`, location);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Geolocation lookup failed for IP ${ipAddress}:`, error.message);
+      location = null;
+    }
+  }
 
   return {
     userAgent,
@@ -25,6 +66,7 @@ exports.extractDeviceInfo = (req) => {
     }`.trim(),
     os: `${result.os.name || "Unknown"} ${result.os.version || ""}`.trim(),
     deviceType: result.device.type || "desktop", // mobile, tablet, desktop
+    location,
   };
 };
 

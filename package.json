@@ -19,6 +19,7 @@
     "docx": "^9.5.1",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "fast-geoip": "^1.1.88",
     "fcm-node": "^1.6.1",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",

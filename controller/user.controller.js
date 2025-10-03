@@ -102,8 +102,8 @@ exports.signup = async (req, res, next) => {
     const accessToken = generateToken(cleanUser);
     const refreshToken = generateRefreshToken(cleanUser);
 
-    // Get device info
-    const deviceInfo = extractDeviceInfo(req);
+    // Get device info with location (async)
+    const deviceInfo = await extractDeviceInfo(req);
 
     // Calculate expiration date (30 days from now)
     const expiresAt = calculateRefreshTokenExpiry();

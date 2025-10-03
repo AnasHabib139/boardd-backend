@@ -177,24 +177,78 @@ exports.logoutAllDevices = async (req, res, next) => {
 exports.getActiveSessions = async (req, res, next) => {
   try {
     const userId = req.user.id;
+    const currentRefreshToken = req.cookies[COOKIE_CONFIG.REFRESH_TOKEN_NAME];
+
+    // Update current device's location AND lastUsedAt before fetching sessions
+    if (currentRefreshToken) {
+      try {
+        const { extractDeviceInfo } = require("../utils/deviceDetection");
+        const currentDeviceInfo = await extractDeviceInfo(req);
+
+        // Build update object
+        const updateFields = {
+          "refreshTokens.$.lastUsedAt": new Date(), // Always update lastUsedAt
+        };
+
+        // Add location if successfully detected
+        if (currentDeviceInfo.location) {
+          updateFields["refreshTokens.$.deviceInfo.location"] = currentDeviceInfo.location;
+          console.log(
+            `🌍 Updated current session location:`,
+            currentDeviceInfo.location
+          );
+        }
+
+        // Update both location and lastUsedAt in single query
+        await updateUser(
+          { _id: userId, "refreshTokens.token": currentRefreshToken },
+          { $set: updateFields }
+        );
+
+        console.log(`⏰ Updated lastUsedAt to: ${new Date().toISOString()}`);
+      } catch (locationError) {
+        // Non-critical error - continue even if location update fails
+        console.warn("Failed to update session info:", locationError.message);
+      }
+    }
 
     // Get all active refresh tokens for the user (this one stays as it has complex filtering logic)
     const activeTokens = await getActiveRefreshTokens(userId);
 
-    // Format the response with device info and timestamps
-    const sessions = activeTokens.map((token) => ({
-      id: token._id,
-      deviceInfo: {
-        browser: token.deviceInfo.browser,
-        os: token.deviceInfo.os,
-        deviceType: token.deviceInfo.deviceType,
-      },
-      createdAt: token.createdAt,
-      lastUsedAt: token.lastUsedAt,
-      expiresAt: token.expiresAt,
-      isCurrentSession:
-        req.cookies[COOKIE_CONFIG.REFRESH_TOKEN_NAME] === token.token,
-    }));
+    // Format the response with device info, timestamps, and activity status
+    const sessions = activeTokens.map((token) => {
+      const minutesSinceLastUse = Math.floor(
+        (Date.now() - new Date(token.lastUsedAt)) / (1000 * 60)
+      );
+
+      // Determine activity status
+      let activityStatus;
+      if (minutesSinceLastUse <= 15) {
+        activityStatus = "active"; // Green - currently active (within 15 min)
+      } else if (minutesSinceLastUse <= 60) {
+        activityStatus = "recent"; // Orange - recently active (within 1 hour)
+      } else {
+        activityStatus = "idle"; // Gray - inactive (over 1 hour)
+      }
+
+      return {
+        id: token._id,
+        deviceInfo: {
+          browser: token.deviceInfo.browser,
+          os: token.deviceInfo.os,
+          deviceType: token.deviceInfo.deviceType,
+          location: token.deviceInfo.location || null,
+        },
+        createdAt: token.createdAt,
+        lastUsedAt: token.lastUsedAt,
+        expiresAt: token.expiresAt,
+        isCurrentSession: currentRefreshToken === token.token,
+        // Activity tracking
+        minutesSinceLastUse,
+        isRecentlyActive: minutesSinceLastUse <= 60, // Within 1 hour
+        activityStatus, // "active" | "recent" | "idle"
+      };
+    });
 
     return generateResponse(
       { sessions, totalSessions: sessions.length },

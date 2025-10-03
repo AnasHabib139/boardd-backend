@@ -20,8 +20,8 @@ const createAndStoreRefreshToken = async (user, req) => {
     const accessToken = generateToken(user);
     const refreshToken = generateRefreshToken(user);
 
-    // Get device info
-    const deviceInfo = extractDeviceInfo(req);
+    // Get device info with location (async)
+    const deviceInfo = await extractDeviceInfo(req);
 
     // Calculate expiration date (30 days from now)
     const expiresAt = calculateRefreshTokenExpiry();
