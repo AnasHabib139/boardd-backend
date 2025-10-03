@@ -1,11 +1,11 @@
-version: '3.8'
+version: "3.8"
 
 services:
   mongo:
     image: mongo:latest
     container_name: mongodb_boardd
     ports:
-      - "27018:27017"
+      - "27017:27017"
     volumes:
       - mongo-data:/data/db
     networks:
