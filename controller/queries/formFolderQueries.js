@@ -202,6 +202,14 @@ exports.buildFolderFormsQuery = ({ user, type, created_by, status, sortBy }) => 
         _id: 1,
         name: 1,
         email: 1,
+        title: 1,
+        designation: 1,
+        image: 1,
+        coverImage: 1,
+        description: 1,
+        dob: 1,
+        gender: 1,
+        nickname: 1,
       },
     },
   });
@@ -333,7 +341,7 @@ exports.buildFolderFavoritesQuery = ({ user, type, created_by, status, sortBy })
       isFolder: 1,
       isPrivate: 1,
       isFav: 1,
-      creator: { _id: 1, name: 1, email: 1 },
+      creator: { _id: 1, name: 1, email: 1, title: 1, designation: 1, image: 1, coverImage: 1, description: 1, dob: 1, gender: 1, nickname: 1 },
     },
   });
 

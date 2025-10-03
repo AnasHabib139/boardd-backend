@@ -75,7 +75,15 @@ exports.getCompanyUsersAdminQuery = (companyId, searchTerm = null, excludeUserId
             $project: {
               _id: 1,
               name: 1,
-              email: 1
+              email: 1,
+              title: 1,
+              designation: 1,
+              image: 1,
+              coverImage: 1,
+              description: 1,
+              dob: 1,
+              gender: 1,
+              nickname: 1
             }
           }
         ]
@@ -138,7 +146,15 @@ exports.getCompanyUsersAdminQuery = (companyId, searchTerm = null, excludeUserId
                 then: {
                   name: "$invitedByUser.name",
                   email: "$invitedByUser.email",
-                  _id: "$invitedByUser._id"
+                  _id: "$invitedByUser._id",
+                  title: "$invitedByUser.title",
+                  designation: "$invitedByUser.designation",
+                  image: "$invitedByUser.image",
+                  coverImage: "$invitedByUser.coverImage",
+                  description: "$invitedByUser.description",
+                  dob: "$invitedByUser.dob",
+                  gender: "$invitedByUser.gender",
+                  nickname: "$invitedByUser.nickname"
                 },
                 else: "Unknown"
               }
@@ -237,13 +253,21 @@ exports.getInvitedUsersQuery = (companyId, searchTerm = null) => {
             $project: {
               _id: 1,
               name: 1,
-              email: 1
+              email: 1,
+              title: 1,
+              designation: 1,
+              image: 1,
+              coverImage: 1,
+              description: 1,
+              dob: 1,
+              gender: 1,
+              nickname: 1
             }
           }
         ]
       }
     },
-    
+
     {
       $unwind: {
         path: "$invitedByUser",

@@ -271,7 +271,15 @@ exports.getOutboxInboxTasksQuery = (userId) => {
             $project: {
               _id: 1,
               name: 1,
-              email: 1
+              email: 1,
+              title: 1,
+              designation: 1,
+              image: 1,
+              coverImage: 1,
+              description: 1,
+              dob: 1,
+              gender: 1,
+              nickname: 1
             }
           }
         ]
@@ -720,7 +728,15 @@ exports.getClearedInboxTasksQuery = (userId) => {
             $project: {
               _id: 1,
               name: 1,
-              email: 1
+              email: 1,
+              title: 1,
+              designation: 1,
+              image: 1,
+              coverImage: 1,
+              description: 1,
+              dob: 1,
+              gender: 1,
+              nickname: 1
             }
           }
         ]
