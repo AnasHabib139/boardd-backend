@@ -3,23 +3,14 @@ const mongoosePaginate = require("mongoose-paginate-v2");
 const aggregatePaginate = require("mongoose-aggregate-paginate-v2");
 const { getMongooseAggregatePaginatedData } = require("../utils");
 
-// Schema for hashtags with colors
-const hashtagSchema = new Schema(
-  {
-    text: { type: String, required: true, maxlength: 50 }, // Hashtag text
-    color: { type: String, default: "#6C63FF" }, // Hashtag background color
-    textColor: { type: String, default: "#FFFFFF" }, // Hashtag text color
-  },
-  { _id: false }
-);
-
 // Schema for team card members with additional properties
 const teamMemberSchema = new Schema(
   {
     userId: { type: Types.ObjectId, ref: "User", required: true },
+    memberEmail: { type: String, required: true }, // Member's email
+    memberName: { type: String, required: true }, // Member's name
+    category: { type: String, required: true }, // e.g., "Engineering", "Management"
     designation: { type: String, default: "" }, // e.g., "CEO", "CTO", "Manager"
-    hashtags: [hashtagSchema], // Array of hashtag objects with colors
-    backgroundColor: { type: String, default: "#6C63FF" }, // Member card background color
     addedAt: { type: Date, default: Date.now },
   },
   { _id: false }
@@ -94,7 +85,7 @@ exports.getNextPosition = async (companyId) => {
 
 // Add member to team card with additional properties
 exports.addMemberToCard = async (cardId, memberData) => {
-  const { userId, designation, hashtags, backgroundColor } = memberData;
+  const { userId, memberEmail, memberName, category, designation } = memberData;
 
   // Check if member already exists
   const existingCard = await TeamCard.findOne({
@@ -106,22 +97,16 @@ exports.addMemberToCard = async (cardId, memberData) => {
     throw new Error("Member already exists in this team card");
   }
 
-  // Process hashtags
-  const processedHashtags = (hashtags || []).map((hashtag) => ({
-    text: hashtag.text || "",
-    color: hashtag.color || "#6C63FF",
-    textColor: hashtag.textColor || "#FFFFFF",
-  }));
-
   return TeamCard.findByIdAndUpdate(
     cardId,
     {
       $push: {
         members: {
           userId,
+          memberEmail,
+          memberName,
+          category,
           designation: designation || "",
-          hashtags: processedHashtags,
-          backgroundColor: backgroundColor || "#6C63FF",
           addedAt: new Date(),
         },
       },
@@ -148,19 +133,12 @@ exports.updateMemberInCard = async (cardId, userId, updateData) => {
   const updateFields = {};
   if (updateData.designation !== undefined)
     updateFields["members.$.designation"] = updateData.designation;
-  if (updateData.backgroundColor !== undefined)
-    updateFields["members.$.backgroundColor"] = updateData.backgroundColor;
-
-  // Process hashtags if provided
-  if (updateData.hashtags !== undefined) {
-    const processedHashtags = (updateData.hashtags || []).map((hashtag) => ({
-      text: hashtag.text || "",
-      color: hashtag.color || "#6C63FF",
-      textColor: hashtag.textColor || "#FFFFFF",
-    }));
-
-    updateFields["members.$.hashtags"] = processedHashtags;
-  }
+  if (updateData.category !== undefined)
+    updateFields["members.$.category"] = updateData.category;
+  if (updateData.memberName !== undefined)
+    updateFields["members.$.memberName"] = updateData.memberName;
+  if (updateData.memberEmail !== undefined)
+    updateFields["members.$.memberEmail"] = updateData.memberEmail;
 
   return TeamCard.findOneAndUpdate(
     { _id: cardId, "members.userId": userId },

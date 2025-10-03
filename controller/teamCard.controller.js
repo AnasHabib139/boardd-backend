@@ -86,18 +86,10 @@ exports.createTeamCard = async (req, res, next) => {
 exports.addMemberToCard = async (req, res, next) => {
   try {
     const { cardId } = req.params;
-    const { memberId, designation, hashtags, backgroundColor } = parseBody(
+    const { category, memberName, memberEmail, designation } = parseBody(
       req.body
     );
     const userId = req.user.id;
-
-    // Validate required fields
-    if (!memberId) {
-      return next({
-        statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "memberId is required",
-      });
-    }
 
     // Find team card
     const teamCard = await findTeamCard({ _id: cardId, isActive: true });
@@ -125,12 +117,12 @@ exports.addMemberToCard = async (req, res, next) => {
       });
     }
 
-    // Validate member exists and is in same company
-    const member = await findUser({ _id: memberId });
+    // Find member by email
+    const member = await findUser({ email: memberEmail });
     if (!member) {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Member not found",
+        message: `Member with email ${memberEmail} not found`,
       });
     }
 
@@ -143,10 +135,11 @@ exports.addMemberToCard = async (req, res, next) => {
 
     // Add member to card with additional properties
     const memberData = {
-      userId: memberId,
+      userId: member._id,
+      memberEmail: member.email,
+      memberName: member.name || memberName, // Use DB name if available, else provided name
+      category: category,
       designation: designation || "",
-      hashtags: hashtags || [],
-      backgroundColor: backgroundColor || "#6C63FF",
     };
 
     const updatedCard = await addMemberToCard(cardId, memberData);
