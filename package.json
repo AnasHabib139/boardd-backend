@@ -21,6 +21,7 @@
     "express": "^5.1.0",
     "fast-geoip": "^1.1.88",
     "fcm-node": "^1.6.1",
+    "ioredis": "^5.8.0",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",
     "moment": "^2.30.1",

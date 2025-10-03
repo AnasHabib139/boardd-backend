@@ -10,6 +10,7 @@ const { log } = require("./middlewares/log");
 const { initSocket } = require("./utils/socket");
 const migrationRunner = require("./utils/migrationRunner");
 const { initializeCronJobs } = require("./utils/cronJobs");
+const { initRedis } = require("./utils/redis");
 require("dotenv").config();
 const PORT = process.env.PORT;
 
@@ -21,6 +22,10 @@ const initializeApp = async () => {
     // Connect to database
     await DB_CONNECT();
     console.log("✅ Database connected successfully");
+
+    // Initialize Redis
+    initRedis();
+    console.log("✅ Redis initialization started");
 
     // Run pending migrations
     const migrationResult = await migrationRunner.runPendingMigrations();

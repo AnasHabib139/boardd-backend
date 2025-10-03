@@ -118,6 +118,10 @@ const refreshTokenSchema = new Schema(
         city: { type: String }, // e.g., "London"
       },
     },
+    currentAccessTokenJti: {
+      type: String,
+      default: null,
+    }, // JWT ID for blacklisting
     createdAt: {
       type: Date,
       default: Date.now,
@@ -255,19 +259,22 @@ exports.getAllUsers = async ({ query, page, limit, responseKey = "data" }) => {
 // aggregate users
 exports.aggregateUsers = (query) => UserModel.aggregate(query);
 
-// generate token
+// generate token with JTI for blacklisting
 exports.generateToken = (user) => {
+  const jti = uuidv4(); // Generate unique JWT ID
+
   const token = sign(
     {
       id: user._id,
       email: user.email,
       role: user.role,
+      jti: jti, // Include JTI in token payload
     },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRATION }
+    { expiresIn: process.env.ACCESS_TOKEN_TTL ? `${process.env.ACCESS_TOKEN_TTL}s` : process.env.JWT_EXPIRATION }
   );
 
-  return token;
+  return { token, jti }; // Return both token and JTI
 };
 
 // generate refresh token

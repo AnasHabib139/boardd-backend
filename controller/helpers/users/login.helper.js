@@ -16,8 +16,8 @@ const { extractDeviceInfo } = require("../../../utils/deviceDetection");
 // Helper function to create and store refresh token
 const createAndStoreRefreshToken = async (user, req) => {
   try {
-    // Generate both tokens
-    const accessToken = generateToken(user);
+    // Generate both tokens (now returns { token, jti })
+    const { token: accessToken, jti } = generateToken(user);
     const refreshToken = generateRefreshToken(user);
 
     // Get device info with location (async)
@@ -26,10 +26,11 @@ const createAndStoreRefreshToken = async (user, req) => {
     // Calculate expiration date (30 days from now)
     const expiresAt = calculateRefreshTokenExpiry();
 
-    // Create refresh token data
+    // Create refresh token data with JTI
     const refreshTokenData = {
       token: refreshToken,
       deviceInfo,
+      currentAccessTokenJti: jti, // Store JTI for blacklisting
       expiresAt,
     };
 

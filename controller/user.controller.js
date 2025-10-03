@@ -98,8 +98,8 @@ exports.signup = async (req, res, next) => {
       "-refreshTokens"
     );
 
-    // Generate both tokens
-    const accessToken = generateToken(cleanUser);
+    // Generate both tokens (now returns { token, jti })
+    const { token: accessToken, jti } = generateToken(cleanUser);
     const refreshToken = generateRefreshToken(cleanUser);
 
     // Get device info with location (async)
@@ -108,10 +108,11 @@ exports.signup = async (req, res, next) => {
     // Calculate expiration date (30 days from now)
     const expiresAt = calculateRefreshTokenExpiry();
 
-    // Create refresh token data
+    // Create refresh token data with JTI
     const refreshTokenData = {
       token: refreshToken,
       deviceInfo,
+      currentAccessTokenJti: jti, // Store JTI for blacklisting
       expiresAt,
     };
 

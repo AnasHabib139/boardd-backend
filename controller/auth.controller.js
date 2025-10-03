@@ -51,19 +51,33 @@ exports.refreshToken = async (req, res, next) => {
       });
     }
 
+    // Generate new access token with new JTI
+    const { token: accessToken, jti } = generateToken(user);
+
     // Check if token should slide (has 15+ days remaining)
     if (shouldSlideToken(tokenData)) {
       const newExpiresAt = calculateSlidingExpiry();
       await updateUser(
         { _id: user._id, "refreshTokens.token": refreshToken },
-        UPDATE_QUERIES.updateExpiration(newExpiresAt)
+        {
+          ...UPDATE_QUERIES.updateExpiration(newExpiresAt),
+          $set: {
+            ...UPDATE_QUERIES.updateExpiration(newExpiresAt).$set,
+            "refreshTokens.$.currentAccessTokenJti": jti, // Update JTI
+          },
+        }
       );
       console.log(`🔄 Token sliding: Extended expiry to ${newExpiresAt}`);
     } else {
-      // Just update lastUsedAt if not sliding
+      // Just update lastUsedAt and JTI if not sliding
       await updateUser(
         { _id: user._id, "refreshTokens.token": refreshToken },
-        UPDATE_QUERIES.updateLastUsed()
+        {
+          $set: {
+            "refreshTokens.$.lastUsedAt": new Date(),
+            "refreshTokens.$.currentAccessTokenJti": jti, // Update JTI
+          },
+        }
       );
     }
 
@@ -73,9 +87,6 @@ exports.refreshToken = async (req, res, next) => {
       { _id: user._id },
       { lastLoginAt: new Date() }
     );
-
-    // Generate new access token
-    const accessToken = generateToken(user);
 
     return generateResponse(
       { accessToken },
@@ -104,6 +115,14 @@ exports.logout = async (req, res, next) => {
         statusCode: STATUS_CODES.BAD_REQUEST,
         message: "No refresh token found",
       });
+    }
+
+    // Blacklist the current access token (immediate termination)
+    const accessToken = req.header("accessToken") || req.session.accessToken;
+    if (accessToken) {
+      const { blacklistToken } = require("../services/tokenBlacklist");
+      await blacklistToken(accessToken, 600); // 10 min TTL
+      console.log("🚫 Access token blacklisted on logout");
     }
 
     // Remove the specific refresh token using tokenQueries helper
@@ -141,6 +160,11 @@ exports.logout = async (req, res, next) => {
 exports.logoutAllDevices = async (req, res, next) => {
   try {
     const userId = req.user.id;
+
+    // Blacklist user-level timestamp (all old tokens invalidated)
+    const { blacklistUserTokens } = require("../services/tokenBlacklist");
+    await blacklistUserTokens(userId);
+    console.log(`🚫 User-level blacklist set for ${userId}`);
 
     // Remove all refresh tokens using tokenQueries helper
     await updateUser({ _id: userId }, UPDATE_QUERIES.removeAllTokens());
@@ -296,6 +320,13 @@ exports.revokeSession = async (req, res, next) => {
         statusCode: STATUS_CODES.NOT_FOUND,
         message: "Session not found",
       });
+    }
+
+    // Blacklist the device's current access token JTI (immediate termination)
+    if (tokenToRevoke.currentAccessTokenJti) {
+      const { blacklistToken } = require("../services/tokenBlacklist");
+      await blacklistToken(tokenToRevoke.currentAccessTokenJti, 600); // 10 min TTL
+      console.log(`🚫 Device JTI blacklisted: ${tokenToRevoke.currentAccessTokenJti}`);
     }
 
     // Remove the specific token using tokenQueries helper
