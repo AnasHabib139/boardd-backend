@@ -14,6 +14,13 @@ class ChatApi {
   registerRoutes() {
     let router = this.router;
 
+    // Resolve conversation (find or create DM/Group DM)
+    router.post(
+      "/conversations/resolve",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      chatController.resolveConversation
+    );
+
     // Get messages for a conversation (with pagination)
     router.get(
       "/conversations/:conversationId/messages",

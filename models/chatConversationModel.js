@@ -170,6 +170,7 @@ exports.resolveConversation = async (params, createIfMissing = false) => {
 
   // Try to find existing conversation
   let conversation = await ChatConversation.findOne(query);
+  let created = false;
 
   // Create if not found and requested
   if (!conversation && createIfMissing) {
@@ -198,9 +199,10 @@ exports.resolveConversation = async (params, createIfMissing = false) => {
       : [];
 
     conversation = await ChatConversation.create(conversationData);
+    created = true;
   }
 
-  return conversation;
+  return { conversation, created };
 };
 
 /**

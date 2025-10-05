@@ -73,6 +73,116 @@ exports.getConversationMessages = async (req, res, next) => {
 };
 
 /**
+ * Resolve conversation (find or create DM/Group DM)
+ * POST /api/chat/conversations/resolve
+ */
+exports.resolveConversation = async (req, res, next) => {
+  try {
+    const { type, participantIds } = req.body;
+    const userId = req.user.id.toString();
+
+    // Verify user is authenticated
+    if (!req.user || !req.user.id) {
+      return next({
+        statusCode: STATUS_CODES.UNAUTHORIZED,
+        message: "User not authenticated",
+      });
+    }
+
+    // Validate input
+    if (!type || !["dm", "group_dm"].includes(type)) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Type must be either 'dm' or 'group_dm'",
+      });
+    }
+
+    if (!participantIds || !Array.isArray(participantIds) || participantIds.length === 0) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "participantIds must be a non-empty array",
+      });
+    }
+
+    // Validate DM has exactly 2 participants
+    if (type === "dm" && participantIds.length !== 2) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "DM conversations must have exactly 2 participants",
+      });
+    }
+
+    // Validate group_dm has at least 3 participants
+    if (type === "group_dm" && participantIds.length < 3) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Group DM conversations must have at least 3 participants",
+      });
+    }
+
+    // Verify user is included in participants
+    if (!participantIds.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "You must be included in the participants list",
+      });
+    }
+
+    // Get user's company ID
+    const { findUser } = require("../models/userModel");
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Verify all participants exist and are in the same company
+    for (const participantId of participantIds) {
+      const participant = await findUser({ _id: participantId });
+      if (!participant) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: `User with ID ${participantId} not found`,
+        });
+      }
+      if (participant.companyId.toString() !== user.companyId.toString()) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "All participants must be from the same company",
+        });
+      }
+    }
+
+    // Resolve conversation (find or create)
+    const { resolveConversation } = require("../models/chatConversationModel");
+    const result = await resolveConversation({
+      companyId: user.companyId,
+      type,
+      participantIds,
+      createdBy: userId,
+    }, true); // createIfMissing = true
+
+    return generateResponse(
+      {
+        conversation: result.conversation,
+        created: result.created,
+      },
+      result.created ? "Conversation created successfully" : "Conversation found",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in resolveConversation:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
  * Helper: Verify user has access to conversation
  */
 async function verifyConversationAccess(conversation, userId) {

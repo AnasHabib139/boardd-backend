@@ -36,6 +36,84 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                     isArchived: { $ne: true }, // Exclude archived channels
                   },
                 },
+                // Lookup chat conversation for unread count
+                {
+                  $lookup: {
+                    from: "chatconversations",
+                    let: { channelId: "$_id" },
+                    pipeline: [
+                      {
+                        $match: {
+                          $expr: {
+                            $and: [
+                              { $eq: ["$type", "channel"] },
+                              { $eq: ["$channelId", "$$channelId"] }
+                            ]
+                          }
+                        }
+                      },
+                      // Find user's participant entry
+                      {
+                        $addFields: {
+                          userParticipant: {
+                            $arrayElemAt: [
+                              {
+                                $filter: {
+                                  input: "$participants",
+                                  as: "p",
+                                  cond: { $eq: ["$$p.userId", Types.ObjectId.createFromHexString(userId)] }
+                                }
+                              },
+                              0
+                            ]
+                          }
+                        }
+                      },
+                      // Lookup unread messages count
+                      {
+                        $lookup: {
+                          from: "chatmessages",
+                          let: {
+                            convId: "$_id",
+                            lastRead: "$userParticipant.lastReadAt"
+                          },
+                          pipeline: [
+                            {
+                              $match: {
+                                $expr: {
+                                  $and: [
+                                    { $eq: ["$conversationId", "$$convId"] },
+                                    {
+                                      $cond: {
+                                        if: { $ne: ["$$lastRead", null] },
+                                        then: { $gt: ["$createdAt", "$$lastRead"] },
+                                        else: true // If never read, all messages are unread
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            { $count: "count" }
+                          ],
+                          as: "unreadMessages"
+                        }
+                      },
+                      {
+                        $project: {
+                          _id: 1,
+                          unreadCount: {
+                            $ifNull: [
+                              { $arrayElemAt: ["$unreadMessages.count", 0] },
+                              0
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    as: "conversation"
+                  }
+                },
                 {
                   $project: {
                     _id: 1,
@@ -43,6 +121,15 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                     channelDescription: 1,
                     createdAt: 1,
                     members: 1, // Include members for filtering
+                    conversationId: {
+                      $arrayElemAt: ["$conversation._id", 0]
+                    },
+                    unreadCount: {
+                      $ifNull: [
+                        { $arrayElemAt: ["$conversation.unreadCount", 0] },
+                        0 // Default to 0 if no conversation exists
+                      ]
+                    }
                   },
                 },
               ],
@@ -73,7 +160,7 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
             },
           },
 
-          // Clean up channels field (remove members for response)
+          // Clean up channels field (remove members for response, include conversationId and unreadCount)
           {
             $addFields: {
               channels: {
@@ -85,6 +172,8 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                     channelName: "$$channel.channelName",
                     channelDescription: "$$channel.channelDescription",
                     createdAt: "$$channel.createdAt",
+                    conversationId: "$$channel.conversationId",
+                    unreadCount: "$$channel.unreadCount"
                   }
                 }
               }
@@ -175,12 +264,99 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                     isArchived: { $ne: true }, // Exclude archived channels
                   },
                 },
+                // Lookup chat conversation for unread count (same as above)
+                {
+                  $lookup: {
+                    from: "chatconversations",
+                    let: { channelId: "$_id" },
+                    pipeline: [
+                      {
+                        $match: {
+                          $expr: {
+                            $and: [
+                              { $eq: ["$type", "channel"] },
+                              { $eq: ["$channelId", "$$channelId"] }
+                            ]
+                          }
+                        }
+                      },
+                      // Find user's participant entry
+                      {
+                        $addFields: {
+                          userParticipant: {
+                            $arrayElemAt: [
+                              {
+                                $filter: {
+                                  input: "$participants",
+                                  as: "p",
+                                  cond: { $eq: ["$$p.userId", Types.ObjectId.createFromHexString(userId)] }
+                                }
+                              },
+                              0
+                            ]
+                          }
+                        }
+                      },
+                      // Lookup unread messages count
+                      {
+                        $lookup: {
+                          from: "chatmessages",
+                          let: {
+                            convId: "$_id",
+                            lastRead: "$userParticipant.lastReadAt"
+                          },
+                          pipeline: [
+                            {
+                              $match: {
+                                $expr: {
+                                  $and: [
+                                    { $eq: ["$conversationId", "$$convId"] },
+                                    {
+                                      $cond: {
+                                        if: { $ne: ["$$lastRead", null] },
+                                        then: { $gt: ["$createdAt", "$$lastRead"] },
+                                        else: true // If never read, all messages are unread
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            { $count: "count" }
+                          ],
+                          as: "unreadMessages"
+                        }
+                      },
+                      {
+                        $project: {
+                          _id: 1,
+                          unreadCount: {
+                            $ifNull: [
+                              { $arrayElemAt: ["$unreadMessages.count", 0] },
+                              0
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    as: "conversation"
+                  }
+                },
                 {
                   $project: {
                     _id: 1,
                     channelName: 1,
                     channelDescription: 1,
                     createdAt: 1,
+                    conversationId: {
+                      $arrayElemAt: ["$conversation._id", 0]
+                    },
+                    unreadCount: {
+                      $ifNull: [
+                        { $arrayElemAt: ["$conversation.unreadCount", 0] },
+                        0 // Default to 0 if no conversation exists
+                      ]
+                    }
                   },
                 },
               ],
