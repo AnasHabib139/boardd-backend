@@ -8,6 +8,7 @@ const {
   getAllChannelsDetails,
   updateChannel,
 } = require("../models/channelModel");
+const { createChatConversation } = require("../models/chatConversationModel");
 const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const {
@@ -88,6 +89,21 @@ exports.createChannel = async (req, res, next) => {
       createdBy: userId,
       channelToken: generateJoinToken(),
       members: [userId], // Only add creator
+    });
+
+    // Auto-create chat conversation for this channel
+    await createChatConversation({
+      companyId: user.companyId,
+      type: "channel",
+      channelId: channel._id,
+      participantIds: [], // Empty for channel type - members stored in participants array
+      participants: [
+        {
+          userId: userId,
+          lastReadAt: null, // Initialize with null - will be set when creator first reads chat
+        },
+      ],
+      createdBy: userId,
     });
 
     // Create default "task management" tab and add only creator to it
@@ -894,6 +910,10 @@ exports.joinChannelWithInvite = async (req, res, next) => {
       });
     }
 
+    // Add user to chat conversation participants
+    const { addChannelParticipant } = require("../models/chatConversationModel");
+    await addChannelParticipant(channel._id, currentUserId);
+
     // Mark invite slot as used and set the channelId
     await updateInviteSlot(
       { _id: inviteSlot._id },
@@ -1162,6 +1182,10 @@ exports.leaveChannel = async (req, res, next) => {
         message: "Failed to leave channel",
       });
     }
+
+    // Remove user from chat conversation participants
+    const { removeChannelParticipant } = require("../models/chatConversationModel");
+    await removeChannelParticipant(channelId, userId);
 
     // Get all tabs for this channel and remove user from their members arrays
     const channelTabsQuery = [

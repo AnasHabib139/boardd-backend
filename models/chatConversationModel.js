@@ -315,3 +315,137 @@ exports.removeParticipant = async (conversationId, userId) => {
     { new: true }
   );
 };
+
+/**
+ * Sync channel conversation participants with channel members
+ * Used when channel members are added/removed
+ * @param {String} channelId - Channel ID
+ * @param {Array} memberIds - Array of user IDs (current channel members)
+ */
+exports.syncChannelParticipants = async (channelId, memberIds) => {
+  const conversation = await ChatConversation.findOne({
+    channelId,
+    type: "channel",
+  });
+
+  if (!conversation) {
+    console.warn(`No conversation found for channel ${channelId}`);
+    return null;
+  }
+
+  // Get current participant user IDs
+  const currentParticipantIds = conversation.participants.map((p) =>
+    p.userId.toString()
+  );
+
+  // Convert memberIds to strings for comparison
+  const newMemberIds = memberIds.map((id) => id.toString());
+
+  // Find users to add (in memberIds but not in participants)
+  const toAdd = newMemberIds.filter(
+    (id) => !currentParticipantIds.includes(id)
+  );
+
+  // Find users to remove (in participants but not in memberIds)
+  const toRemove = currentParticipantIds.filter(
+    (id) => !newMemberIds.includes(id)
+  );
+
+  // Build update operations
+  const updates = {};
+
+  if (toAdd.length > 0) {
+    updates.$push = {
+      participants: {
+        $each: toAdd.map((userId) => ({
+          userId: new Types.ObjectId(userId),
+          lastReadAt: null,
+        })),
+      },
+    };
+  }
+
+  if (toRemove.length > 0) {
+    updates.$pull = {
+      participants: {
+        userId: { $in: toRemove.map((id) => new Types.ObjectId(id)) },
+      },
+    };
+  }
+
+  // If no changes needed, return conversation as-is
+  if (Object.keys(updates).length === 0) {
+    return conversation;
+  }
+
+  // Apply updates
+  return ChatConversation.findByIdAndUpdate(conversation._id, updates, {
+    new: true,
+  });
+};
+
+/**
+ * Add a single user to channel conversation participants
+ * @param {String} channelId - Channel ID
+ * @param {String} userId - User ID to add
+ */
+exports.addChannelParticipant = async (channelId, userId) => {
+  const conversation = await ChatConversation.findOne({
+    channelId,
+    type: "channel",
+  });
+
+  if (!conversation) {
+    console.warn(`No conversation found for channel ${channelId}`);
+    return null;
+  }
+
+  // Check if user already exists in participants
+  const exists = conversation.participants.some(
+    (p) => p.userId.toString() === userId.toString()
+  );
+
+  if (exists) {
+    return conversation; // Already a participant
+  }
+
+  return ChatConversation.findByIdAndUpdate(
+    conversation._id,
+    {
+      $push: {
+        participants: {
+          userId: new Types.ObjectId(userId),
+          lastReadAt: null,
+        },
+      },
+    },
+    { new: true }
+  );
+};
+
+/**
+ * Remove a single user from channel conversation participants
+ * @param {String} channelId - Channel ID
+ * @param {String} userId - User ID to remove
+ */
+exports.removeChannelParticipant = async (channelId, userId) => {
+  const conversation = await ChatConversation.findOne({
+    channelId,
+    type: "channel",
+  });
+
+  if (!conversation) {
+    console.warn(`No conversation found for channel ${channelId}`);
+    return null;
+  }
+
+  return ChatConversation.findByIdAndUpdate(
+    conversation._id,
+    {
+      $pull: {
+        participants: { userId: new Types.ObjectId(userId) },
+      },
+    },
+    { new: true }
+  );
+};

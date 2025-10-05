@@ -2,6 +2,7 @@
 const socketIO = require("socket.io");
 const { Types } = require("mongoose");
 const { createActivity } = require("../models/activityModel");
+const { initChatSocket } = require("./chatSocket");
 const {
   updateTask,
   findTask,
@@ -1274,6 +1275,9 @@ exports.initSocket = (server) => {
     pingTimeout: 60000,
     pingInterval: 25000,
   });
+
+  // Initialize chat socket handlers
+  initChatSocket(io);
 
   io.on("connection", (socket) => {
     console.log("New client connected:", socket.id);
