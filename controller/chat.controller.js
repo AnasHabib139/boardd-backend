@@ -2,9 +2,9 @@
 
 const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
-const { findChatConversation } = require("../models/chatConversationModel");
+const { findChatConversation, aggregateChatConversations } = require("../models/chatConversationModel");
 const { getAllChatMessages } = require("../models/chatMessageModel");
-const { getConversationMessagesQuery } = require("./queries/chatQueries");
+const { getConversationMessagesQuery, getUserConversationsQuery } = require("./queries/chatQueries");
 
 /**
  * Get chat messages for a conversation
@@ -175,6 +175,82 @@ exports.resolveConversation = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in resolveConversation:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Get user's DM and Group DM conversations
+ * GET /api/chat/conversations
+ */
+exports.getConversations = async (req, res, next) => {
+  try {
+    const { page, limit } = req.query;
+
+    // Verify user is authenticated
+    if (!req.user || !req.user.id) {
+      return next({
+        statusCode: STATUS_CODES.UNAUTHORIZED,
+        message: "User not authenticated",
+      });
+    }
+
+    const userId = req.user.id.toString();
+
+    // Get user's company ID
+    const { findUser } = require("../models/userModel");
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    const companyId = user.companyId.toString();
+
+    // Parse pagination params
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 20;
+
+    // Build aggregation query with pagination
+    const query = getUserConversationsQuery(userId, companyId, pageNum, limitNum);
+
+    // Execute aggregation
+    const result = await aggregateChatConversations(query);
+
+    // Extract data from faceted result
+    const data = result[0] || {
+      conversations: [],
+      totalUnreadCount: 0,
+      totalConversations: 0,
+    };
+
+    // Build pagination metadata
+    const pagination = {
+      page: pageNum,
+      limit: limitNum,
+      total: data.totalConversations,
+      totalPages: Math.ceil(data.totalConversations / limitNum),
+      hasNextPage: pageNum < Math.ceil(data.totalConversations / limitNum),
+      hasPrevPage: pageNum > 1,
+    };
+
+    return generateResponse(
+      {
+        conversations: data.conversations,
+        pagination,
+        totalUnreadCount: data.totalUnreadCount,
+      },
+      "Conversations fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getConversations:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

@@ -139,3 +139,195 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
     },
   ];
 };
+
+/**
+ * Get user's DM and Group DM conversations (like WhatsApp/Slack sidebar)
+ * Returns all conversations with unread counts, participant details, and chat names
+ * Uses $facet to calculate totalUnreadCount in same query
+ * @param {string} userId - Current user ID
+ * @param {string} companyId - Company ID
+ * @param {number} page - Page number for pagination
+ * @param {number} limit - Items per page
+ * @returns {Array} Aggregation pipeline
+ */
+exports.getUserConversationsQuery = (userId, companyId, page = 1, limit = 20) => {
+  const userObjectId = Types.ObjectId.createFromHexString(userId);
+
+  return [
+    // Match conversations user is part of (DM and Group DM only)
+    {
+      $match: {
+        companyId: Types.ObjectId.createFromHexString(companyId),
+        type: { $in: ["dm", "group_dm"] },
+        participantIds: userObjectId,
+      },
+    },
+
+    // Get user's lastReadAt from participants array
+    {
+      $addFields: {
+        userParticipant: {
+          $arrayElemAt: [
+            {
+              $filter: {
+                input: "$participants",
+                as: "p",
+                cond: { $eq: ["$$p.userId", userObjectId] },
+              },
+            },
+            0,
+          ],
+        },
+      },
+    },
+
+    // Lookup unread messages count
+    {
+      $lookup: {
+        from: "chatmessages",
+        let: {
+          convId: "$_id",
+          lastRead: "$userParticipant.lastReadAt",
+        },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$conversationId", "$$convId"] },
+                  { $ne: ["$authorId", userObjectId] }, // Exclude own messages
+                  {
+                    $cond: {
+                      if: { $ne: ["$$lastRead", null] },
+                      then: { $gt: ["$createdAt", "$$lastRead"] },
+                      else: true, // All messages are unread if never read
+                    },
+                  },
+                  { $eq: ["$deletedAt", null] }, // Don't count deleted messages
+                ],
+              },
+            },
+          },
+          { $count: "count" },
+        ],
+        as: "unreadMessages",
+      },
+    },
+
+    // Lookup participants details (excluding current user)
+    {
+      $lookup: {
+        from: "users",
+        let: { participantIds: "$participantIds" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $in: ["$_id", "$$participantIds"] },
+                  { $ne: ["$_id", userObjectId] }, // Filter out logged-in user
+                ],
+              },
+            },
+          },
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              email: 1,
+              image: 1,
+              coverImage: 1,
+              title: 1,
+              designation: 1,
+              nickname: 1,
+              dob: 1,
+              gender: 1,
+              description: 1,
+            },
+          },
+        ],
+        as: "participants",
+      },
+    },
+
+    // Add computed fields
+    {
+      $addFields: {
+        unreadCount: {
+          $ifNull: [{ $arrayElemAt: ["$unreadMessages.count", 0] }, 0],
+        },
+        // Compute chat name based on type
+        chatName: {
+          $cond: {
+            if: { $eq: ["$type", "dm"] },
+            then: { $arrayElemAt: ["$participants.name", 0] }, // DM: other person's name
+            else: {
+              // Group DM: comma-separated names
+              $reduce: {
+                input: "$participants",
+                initialValue: "",
+                in: {
+                  $concat: [
+                    "$$value",
+                    { $cond: [{ $eq: ["$$value", ""] }, "", ", "] },
+                    "$$this.name",
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+
+    // Project final fields
+    {
+      $project: {
+        _id: 1,
+        type: 1,
+        chatName: 1,
+        lastMessageAt: 1,
+        lastMessageText: 1,
+        unreadCount: 1,
+        participants: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+
+    // Use $facet to calculate both conversations and totalUnreadCount in one query
+    {
+      $facet: {
+        // Conversations data with pagination
+        conversations: [
+          { $sort: { lastMessageAt: -1 } },
+          { $skip: (page - 1) * limit },
+          { $limit: limit },
+        ],
+        // Metadata: total unread count and total conversation count
+        metadata: [
+          {
+            $group: {
+              _id: null,
+              totalUnreadCount: { $sum: "$unreadCount" },
+              totalConversations: { $sum: 1 },
+            },
+          },
+        ],
+      },
+    },
+
+    // Unwind and restructure to final format
+    {
+      $project: {
+        conversations: 1,
+        totalUnreadCount: {
+          $ifNull: [{ $arrayElemAt: ["$metadata.totalUnreadCount", 0] }, 0],
+        },
+        totalConversations: {
+          $ifNull: [{ $arrayElemAt: ["$metadata.totalConversations", 0] }, 0],
+        },
+      },
+    },
+  ];
+};

@@ -27,6 +27,13 @@ class ChatApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       chatController.getConversationMessages
     );
+
+    // Get user's DM and Group DM conversations (like WhatsApp/Slack sidebar)
+    router.get(
+      "/conversations",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      chatController.getConversations
+    );
   }
 
   getRouter() {
