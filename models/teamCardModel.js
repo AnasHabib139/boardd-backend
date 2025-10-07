@@ -77,7 +77,8 @@ exports.deleteTeamCard = (query) => TeamCard.findOneAndDelete(query);
 
 // Get next position for ordering
 exports.getNextPosition = async (companyId) => {
-  const highestCard = await TeamCard.findOne({ companyId, isActive: true })
+  // Check ALL cards (not just active) to avoid unique index conflicts
+  const highestCard = await TeamCard.findOne({ companyId })
     .sort({ position: -1 })
     .select("position");
   return highestCard ? highestCard.position + 1 : 1;

@@ -55,38 +55,16 @@ exports.createTeamCard = async (req, res, next) => {
       });
     }
 
-    // Retry logic to handle race condition on position duplicate key
-    let retries = 3;
-    let teamCard;
+    // Get next position for ordering
+    const position = await getNextPosition(user.companyId);
 
-    while (retries > 0) {
-      try {
-        // Get next position for ordering
-        const position = await getNextPosition(user.companyId);
-
-        // Create team card
-        teamCard = await createTeamCard({
-          companyId: user.companyId,
-          title,
-          position,
-          createdBy: userId,
-        });
-
-        // Success - exit retry loop
-        break;
-      } catch (error) {
-        // Check if it's a duplicate key error on position
-        if (error.code === 11000 && retries > 1) {
-          console.log(`Duplicate position detected, retrying... (${retries - 1} retries left)`);
-          retries--;
-          // Small delay to let other request complete
-          await new Promise(resolve => setTimeout(resolve, 50));
-          continue; // Retry
-        }
-        // Re-throw if not duplicate error or no retries left
-        throw error;
-      }
-    }
+    // Create team card
+    const teamCard = await createTeamCard({
+      companyId: user.companyId,
+      title,
+      position,
+      createdBy: userId,
+    });
 
     return generateResponse(
       teamCard,
