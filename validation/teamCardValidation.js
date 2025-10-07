@@ -61,6 +61,33 @@ const removeTeamCardMemberSchema = Joi.object({
     }),
 });
 
+// Validation for editing member in team card
+const editTeamCardMemberSchema = Joi.object({
+  category: Joi.string()
+    .max(100)
+    .optional()
+    .messages({
+      "string.max": "Category cannot exceed 100 characters",
+    }),
+  memberName: Joi.string()
+    .min(1)
+    .max(100)
+    .optional()
+    .messages({
+      "string.min": "Member name must be at least 1 character",
+      "string.max": "Member name cannot exceed 100 characters",
+    }),
+  designation: Joi.string()
+    .max(100)
+    .optional()
+    .allow("")
+    .messages({
+      "string.max": "Designation cannot exceed 100 characters",
+    }),
+}).min(1).messages({
+  "object.min": "At least one field must be provided for update",
+});
+
 // Validation for editing team card
 const editTeamCardSchema = Joi.object({
   title: Joi.string()
@@ -91,6 +118,24 @@ const teamCardIdParamSchema = Joi.object({
     }),
 });
 
+// Validation for team card ID and member ID parameters
+const teamCardMemberIdParamSchema = Joi.object({
+  cardId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "cardId must be a valid MongoDB ObjectId",
+      "any.required": "cardId is required",
+    }),
+  memberId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "memberId must be a valid MongoDB ObjectId",
+      "any.required": "memberId is required",
+    }),
+});
+
 // Middleware to validate create team card request
 exports.validateCreateTeamCard = (req, res, next) => {
   const { error } = createTeamCardSchema.validate(req.body);
@@ -118,6 +163,30 @@ exports.validateAddTeamCardMember = (req, res, next) => {
 // Middleware to validate remove team card member request
 exports.validateRemoveTeamCardMember = (req, res, next) => {
   const { error } = removeTeamCardMemberSchema.validate(req.body);
+  if (error) {
+    return next({
+      statusCode: STATUS_CODES.BAD_REQUEST,
+      message: error.details[0].message,
+    });
+  }
+  next();
+};
+
+// Middleware to validate edit team card member request
+exports.validateEditTeamCardMember = (req, res, next) => {
+  const { error } = editTeamCardMemberSchema.validate(req.body);
+  if (error) {
+    return next({
+      statusCode: STATUS_CODES.BAD_REQUEST,
+      message: error.details[0].message,
+    });
+  }
+  next();
+};
+
+// Middleware to validate team card ID and member ID parameters
+exports.validateTeamCardMemberIdParams = (req, res, next) => {
+  const { error } = teamCardMemberIdParamSchema.validate(req.params);
   if (error) {
     return next({
       statusCode: STATUS_CODES.BAD_REQUEST,

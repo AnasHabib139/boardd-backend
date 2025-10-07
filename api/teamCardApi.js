@@ -5,6 +5,7 @@ const {
   createTeamCard,
   addMemberToCard,
   removeMemberFromCard,
+  editMemberInCard,
   getTeamCards,
   getMemberProfile,
   editTeamCard,
@@ -16,6 +17,8 @@ const {
   validateCreateTeamCard,
   validateAddTeamCardMember,
   validateRemoveTeamCardMember,
+  validateEditTeamCardMember,
+  validateTeamCardMemberIdParams,
   validateTeamCardIdParam,
   validateMemberProfile,
   validateEditTeamCard,
@@ -61,6 +64,15 @@ class TeamCardApi {
       validateTeamCardIdParam,
       validateAddTeamCardMember,
       addMemberToCard
+    );
+
+    // Edit member in team card (admin only)
+    router.put(
+      "/:cardId/members/:memberId",
+      Auth([ROLES.ADMIN]),
+      validateTeamCardMemberIdParams,
+      validateEditTeamCardMember,
+      editMemberInCard
     );
 
     // Remove member from team card (admin only)

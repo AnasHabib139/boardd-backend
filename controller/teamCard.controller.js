@@ -10,6 +10,7 @@ const {
   getNextPosition,
   addMemberToCard,
   removeMemberFromCard,
+  updateMemberInCard,
   updateTeamCardWithTimestamp,
 } = require("../models/teamCardModel");
 const { getTeamCardsWithMembersQuery, getMemberTasksQuery } = require("./queries/teamCardsQueries");
@@ -54,16 +55,38 @@ exports.createTeamCard = async (req, res, next) => {
       });
     }
 
-    // Get next position for ordering
-    const position = await getNextPosition(user.companyId);
+    // Retry logic to handle race condition on position duplicate key
+    let retries = 3;
+    let teamCard;
 
-    // Create team card
-    const teamCard = await createTeamCard({
-      companyId: user.companyId,
-      title,
-      position,
-      createdBy: userId,
-    });
+    while (retries > 0) {
+      try {
+        // Get next position for ordering
+        const position = await getNextPosition(user.companyId);
+
+        // Create team card
+        teamCard = await createTeamCard({
+          companyId: user.companyId,
+          title,
+          position,
+          createdBy: userId,
+        });
+
+        // Success - exit retry loop
+        break;
+      } catch (error) {
+        // Check if it's a duplicate key error on position
+        if (error.code === 11000 && retries > 1) {
+          console.log(`Duplicate position detected, retrying... (${retries - 1} retries left)`);
+          retries--;
+          // Small delay to let other request complete
+          await new Promise(resolve => setTimeout(resolve, 50));
+          continue; // Retry
+        }
+        // Re-throw if not duplicate error or no retries left
+        throw error;
+      }
+    }
 
     return generateResponse(
       teamCard,
@@ -230,6 +253,86 @@ exports.removeMemberFromCard = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message || "Failed to remove member from team card",
+    });
+  }
+};
+
+/**
+ * Edit member in team card
+ */
+exports.editMemberInCard = async (req, res, next) => {
+  try {
+    const { cardId, memberId } = req.params;
+    const { category, memberName, designation } = parseBody(req.body);
+    const userId = req.user.id;
+
+    // Find team card
+    const teamCard = await findTeamCard({ _id: cardId, isActive: true });
+    if (!teamCard) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Team card not found",
+      });
+    }
+
+    // Get user info
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Check if user is admin (only admins can edit members in team cards)
+    if (user.role !== "admin") {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "Only admins can edit members in team cards",
+      });
+    }
+
+    // Check if member is in the card
+    const memberExists = teamCard.members.some(
+      (member) => member.userId.toString() === memberId
+    );
+    if (!memberExists) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Member is not in this team card",
+      });
+    }
+
+    // Prepare update data
+    const updateData = {};
+    if (category !== undefined) updateData.category = category;
+    if (memberName !== undefined) updateData.memberName = memberName;
+    if (designation !== undefined) updateData.designation = designation;
+
+    // Update member in card
+    const updatedCard = await updateMemberInCard(cardId, memberId, updateData);
+
+    // Build response message
+    const changes = [];
+    if (category !== undefined) changes.push("category");
+    if (memberName !== undefined) changes.push("name");
+    if (designation !== undefined) changes.push("designation");
+
+    const responseMessage = changes.length > 0
+      ? `Member ${changes.join(", ")} updated successfully`
+      : "Member updated successfully";
+
+    return generateResponse(
+      updatedCard,
+      responseMessage,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in editMemberInCard:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to edit member in team card",
     });
   }
 };
