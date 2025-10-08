@@ -237,6 +237,7 @@ exports.removeMemberFromCard = async (req, res, next) => {
 
 /**
  * Edit member in team card
+ * If category (card name) changes, transfer member to new card
  */
 exports.editMemberInCard = async (req, res, next) => {
   try {
@@ -244,9 +245,9 @@ exports.editMemberInCard = async (req, res, next) => {
     const { category, memberName, designation } = parseBody(req.body);
     const userId = req.user.id;
 
-    // Find team card
-    const teamCard = await findTeamCard({ _id: cardId, isActive: true });
-    if (!teamCard) {
+    // Find current team card
+    const currentCard = await findTeamCard({ _id: cardId, isActive: true });
+    if (!currentCard) {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
         message: "Team card not found",
@@ -270,38 +271,88 @@ exports.editMemberInCard = async (req, res, next) => {
       });
     }
 
-    // Check if member is in the card
-    const memberExists = teamCard.members.some(
-      (member) => member.userId.toString() === memberId
+    // Find member in current card
+    const member = currentCard.members.find(
+      (m) => m.userId.toString() === memberId
     );
-    if (!memberExists) {
+    if (!member) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
         message: "Member is not in this team card",
       });
     }
 
-    // Prepare update data
-    const updateData = {};
-    if (category !== undefined) updateData.category = category;
-    if (memberName !== undefined) updateData.memberName = memberName;
-    if (designation !== undefined) updateData.designation = designation;
+    // Check if category (card name) is different - need to transfer
+    let resultCard;
+    let responseMessage;
 
-    // Update member in card
-    const updatedCard = await updateMemberInCard(cardId, memberId, updateData);
+    if (category && category !== currentCard.title) {
+      // Category changed - transfer member to new card
 
-    // Build response message
-    const changes = [];
-    if (category !== undefined) changes.push("category");
-    if (memberName !== undefined) changes.push("name");
-    if (designation !== undefined) changes.push("designation");
+      // Find target card by title (category is the card name)
+      const targetCard = await findTeamCard({
+        title: category,
+        companyId: user.companyId,
+        isActive: true,
+      });
 
-    const responseMessage = changes.length > 0
-      ? `Member ${changes.join(", ")} updated successfully`
-      : "Member updated successfully";
+      if (!targetCard) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: `Target card with title "${category}" not found`,
+        });
+      }
+
+      // Check if member already exists in target card
+      const memberExistsInTarget = targetCard.members.some(
+        (m) => m.userId.toString() === memberId
+      );
+      if (memberExistsInTarget) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "Member already exists in target card",
+        });
+      }
+
+      // Prepare member data for new card
+      const memberData = {
+        userId: member.userId,
+        memberEmail: member.memberEmail,
+        memberName: memberName !== undefined ? memberName : member.memberName,
+        category: targetCard.title, // Use target card title as category
+        designation: designation !== undefined ? designation : member.designation,
+      };
+
+      // Remove from current card
+      await removeMemberFromCard(cardId, memberId);
+
+      // Add to target card
+      resultCard = await addMemberToCard(targetCard._id.toString(), memberData);
+
+      responseMessage = `Member transferred from "${currentCard.title}" to "${targetCard.title}" successfully`;
+    } else {
+      // No transfer needed - just update member details in current card
+      const updateData = {};
+      if (memberName !== undefined) updateData.memberName = memberName;
+      if (designation !== undefined) updateData.designation = designation;
+      // Keep category as current card title if not transferring
+      if (category && category === currentCard.title) {
+        updateData.category = currentCard.title;
+      }
+
+      resultCard = await updateMemberInCard(cardId, memberId, updateData);
+
+      const changes = [];
+      if (memberName !== undefined) changes.push("name");
+      if (designation !== undefined) changes.push("designation");
+
+      responseMessage = changes.length > 0
+        ? `Member ${changes.join(", ")} updated successfully`
+        : "Member updated successfully";
+    }
 
     return generateResponse(
-      updatedCard,
+      resultCard,
       responseMessage,
       res,
       STATUS_CODES.SUCCESS
