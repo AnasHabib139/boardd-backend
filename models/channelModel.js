@@ -77,3 +77,15 @@ exports.addFilesToChannel = async (channelId, filesData) => {
     { new: true }
   );
 };
+
+// remove file from channel
+exports.removeFileFromChannel = async (channelId, fileId) => {
+  return Channel.findByIdAndUpdate(
+    channelId,
+    {
+      $pull: { files: { _id: fileId } },
+      updatedAt: new Date(),
+    },
+    { new: true }
+  );
+};

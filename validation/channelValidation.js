@@ -441,6 +441,18 @@ const getChannelFilesQueryValidation = Joi.object({
     }),
 });
 
+// Delete channel file params validation
+const deleteChannelFileParamsValidation = Joi.object({
+  channelId: helpers.objectIdValidation.required().messages({
+    "any.required": "Channel ID is required",
+    "string.pattern.base": "Channel ID must be a valid ObjectId",
+  }),
+  fileId: helpers.objectIdValidation.required().messages({
+    "any.required": "File ID is required",
+    "string.pattern.base": "File ID must be a valid ObjectId",
+  }),
+});
+
 // Validation middleware function
 const validateRequest = (schema, source = "body") => {
   return (req, res, next) => {
@@ -531,6 +543,10 @@ module.exports = {
     getChannelFilesQueryValidation,
     "query"
   ),
+  validateDeleteChannelFile: validateRequest(
+    deleteChannelFileParamsValidation,
+    "params"
+  ),
 
   // Export schemas for testing or custom usage
   schemas: {
@@ -549,5 +565,6 @@ module.exports = {
     joinChannelWithInviteValidation,
     getArchivedChannelsQueryValidation,
     getChannelFilesQueryValidation,
+    deleteChannelFileParamsValidation,
   },
 };

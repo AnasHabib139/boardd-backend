@@ -8,6 +8,7 @@ const {
   getAllChannelsDetails,
   updateChannel,
   addFilesToChannel,
+  removeFileFromChannel,
   findManyChannels,
 } = require("../models/channelModel");
 const { createChatConversation } = require("../models/chatConversationModel");
@@ -1371,6 +1372,69 @@ exports.getChannelFiles = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message || "Failed to retrieve files",
+    });
+  }
+};
+
+/**
+ * Delete file from channel
+ * DELETE /api/channels/:channelId/files/:fileId
+ */
+exports.deleteChannelFile = async (req, res, next) => {
+  try {
+    const { channelId, fileId } = req.params;
+    const userId = req.user.id;
+
+    // Verify channel exists
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Check if user is a member of the channel
+    const isMember = channel.members.some(
+      (memberId) => memberId.toString() === userId
+    );
+    if (!isMember) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this channel",
+      });
+    }
+
+    // Verify file exists in channel
+    const fileExists = channel.files.some(
+      (file) => file._id.toString() === fileId
+    );
+    if (!fileExists) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "File not found in this channel",
+      });
+    }
+
+    // Remove file from channel
+    const updatedChannel = await removeFileFromChannel(channelId, fileId);
+
+    return generateResponse(
+      {
+        channelId: updatedChannel._id,
+        fileId,
+        totalFiles: updatedChannel.files.length,
+        deletedAt: new Date(),
+      },
+      "File deleted successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in deleteChannelFile:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to delete file",
     });
   }
 };

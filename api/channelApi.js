@@ -15,6 +15,7 @@ const {
   leaveChannel,
   uploadFilesToChannel,
   getChannelFiles,
+  deleteChannelFile,
 } = require("../controller/channelController");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -31,6 +32,7 @@ const {
   validateGetArchivedChannelsQuery,
   validateLeaveChannel,
   validateGetChannelFilesQuery,
+  validateDeleteChannelFile,
 } = require("../validation/channelValidation");
 
 class ChannelApi {
@@ -143,6 +145,14 @@ class ChannelApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateGetChannelFilesQuery,
       getChannelFiles
+    );
+
+    // Delete file from channel
+    router.delete(
+      "/:channelId/files/:fileId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateDeleteChannelFile,
+      deleteChannelFile
     );
   }
 
