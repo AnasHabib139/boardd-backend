@@ -13,6 +13,16 @@ const channelSchema = new Schema({
   channelToken: { type: String, required: true, unique: true },
   tabs: [{ type: Types.ObjectId, ref: "ChannelTab" }],
   members: [{ type: Types.ObjectId, ref: "User" }],
+  files: [
+    {
+      url: { type: String, required: true },
+      fileName: { type: String },
+      fileSize: { type: Number },
+      mimeType: { type: String },
+      uploadedBy: { type: Types.ObjectId, ref: "User" },
+      uploadedAt: { type: Date, default: Date.now },
+    },
+  ],
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
@@ -54,4 +64,16 @@ exports.getAllChannelsDetails = async ({
   });
 
   return { [responseKey]: data, pagination };
+};
+
+// add files to channel
+exports.addFilesToChannel = async (channelId, filesData) => {
+  return Channel.findByIdAndUpdate(
+    channelId,
+    {
+      $push: { files: { $each: filesData } },
+      updatedAt: new Date(),
+    },
+    { new: true }
+  );
 };

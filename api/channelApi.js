@@ -13,6 +13,8 @@ const {
   toggleChannelArchive,
   getArchivedChannels,
   leaveChannel,
+  uploadFilesToChannel,
+  getChannelFiles,
 } = require("../controller/channelController");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -28,6 +30,7 @@ const {
   validateToggleChannelArchive,
   validateGetArchivedChannelsQuery,
   validateLeaveChannel,
+  validateGetChannelFilesQuery,
 } = require("../validation/channelValidation");
 
 class ChannelApi {
@@ -125,6 +128,21 @@ class ChannelApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateLeaveChannel,
       leaveChannel
+    );
+
+    // Upload files to channel
+    router.post(
+      "/:channelId/files",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      uploadFilesToChannel
+    );
+
+    // Get channel files with type filtering
+    router.get(
+      "/:channelId/files",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateGetChannelFilesQuery,
+      getChannelFiles
     );
   }
 

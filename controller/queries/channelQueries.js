@@ -343,3 +343,98 @@ exports.getArchivedChannelsQuery = (userId) => {
     },
   ];
 };
+
+/**
+ * Get channel files with type filtering
+ * @param {string} channelId - Channel ID
+ * @param {string} type - File type filter (all, photos&images, videos, etc.)
+ * @returns {Array} Aggregation pipeline
+ */
+exports.getChannelFilesQuery = (channelId, type) => {
+  const { getMimeTypeFilter } = require("../helpers/channels/fileTypeMapper");
+
+  const pipeline = [
+    // Match the specific channel
+    {
+      $match: {
+        _id: Types.ObjectId.createFromHexString(channelId),
+      },
+    },
+
+    // Unwind files array to work with individual files
+    {
+      $unwind: {
+        path: "$files",
+        preserveNullAndEmptyArrays: false,
+      },
+    },
+
+    // Lookup user who uploaded the file
+    {
+      $lookup: {
+        from: "users",
+        localField: "files.uploadedBy",
+        foreignField: "_id",
+        as: "uploadedByUser",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              email: 1,
+              image: 1,
+              title: 1,
+              designation: 1,
+            },
+          },
+        ],
+      },
+    },
+
+    // Unwind uploadedByUser (should be one)
+    {
+      $unwind: {
+        path: "$uploadedByUser",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // Add uploadedBy user details to file object
+    {
+      $addFields: {
+        "files.uploadedByUser": "$uploadedByUser",
+      },
+    },
+
+    // Project only the file data with channel info
+    {
+      $project: {
+        _id: "$files._id",
+        url: "$files.url",
+        fileName: "$files.fileName",
+        fileSize: "$files.fileSize",
+        mimeType: "$files.mimeType",
+        uploadedBy: "$files.uploadedByUser",
+        uploadedAt: "$files.uploadedAt",
+        channelId: "$_id",
+        channelName: "$channelName",
+      },
+    },
+
+    // Sort by upload date (newest first)
+    {
+      $sort: { uploadedAt: -1 },
+    },
+  ];
+
+  // Add MIME type filter if not 'all'
+  const mimeTypeFilter = getMimeTypeFilter(type);
+  if (mimeTypeFilter) {
+    // Insert filter after unwind, before lookup
+    pipeline.splice(2, 0, {
+      $match: mimeTypeFilter,
+    });
+  }
+
+  return pipeline;
+};

@@ -7,6 +7,8 @@ const {
   findChannel,
   getAllChannelsDetails,
   updateChannel,
+  addFilesToChannel,
+  findManyChannels,
 } = require("../models/channelModel");
 const { createChatConversation } = require("../models/chatConversationModel");
 const { generateResponse } = require("../utils");
@@ -24,6 +26,7 @@ const {
   getAllMembersInChannelQuery,
   getAllChannelsOfUserQuery,
   getArchivedChannelsQuery,
+  getChannelFilesQuery,
 } = require("./queries/channelQueries");
 const { findCompany } = require("../models/companyModel");
 // Import required functions
@@ -1234,6 +1237,140 @@ exports.leaveChannel = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to leave channel",
+    });
+  }
+};
+
+/**
+ * Upload files to channel
+ * POST /api/channels/:channelId/files
+ */
+exports.uploadFilesToChannel = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const { files } = parseBody(req.body);
+    const userId = req.user.id;
+
+    // Validate required fields
+    if (!files || !Array.isArray(files) || files.length === 0) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "files array is required and must not be empty",
+      });
+    }
+
+    // Verify channel exists
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Check if user is a member of the channel
+    const isMember = channel.members.some(
+      (memberId) => memberId.toString() === userId
+    );
+    if (!isMember) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this channel",
+      });
+    }
+
+    // Prepare files data with metadata
+    const filesData = files.map((file) => ({
+      url: file.url,
+      fileName: file.fileName || null,
+      fileSize: file.fileSize || null,
+      mimeType: file.mimeType || null,
+      uploadedBy: userId,
+      uploadedAt: new Date(),
+    }));
+
+    // Add files to channel
+    const updatedChannel = await addFilesToChannel(channelId, filesData);
+
+    return generateResponse(
+      {
+        channelId: updatedChannel._id,
+        filesAdded: filesData.length,
+        totalFiles: updatedChannel.files.length,
+        files: filesData,
+      },
+      "Files uploaded successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in uploadFilesToChannel:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to upload files",
+    });
+  }
+};
+
+/**
+ * Get channel files with type filtering
+ * GET /api/channels/:channelId/files
+ */
+exports.getChannelFiles = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const { type = "all", page = 1, limit = 20 } = req.query;
+    const userId = req.user.id;
+
+    // Verify channel exists
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Check if user is a member of the channel
+    const isMember = channel.members.some(
+      (memberId) => memberId.toString() === userId
+    );
+    if (!isMember) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this channel",
+      });
+    }
+
+    // Build aggregation query
+    const query = getChannelFilesQuery(channelId, type);
+
+    // Get paginated files
+    const result = await getAllChannelsDetails({
+      query,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      responseKey: "files",
+    });
+
+    return generateResponse(
+      {
+        ...result,
+        filter: {
+          type,
+          channelId,
+          channelName: channel.channelName,
+        },
+      },
+      "Files retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getChannelFiles:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to retrieve files",
     });
   }
 };
