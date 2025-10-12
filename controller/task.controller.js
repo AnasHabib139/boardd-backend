@@ -457,15 +457,7 @@ exports.batchUpdateTask = async (req, res, next) => {
       });
     }
 
-    // Get project and user info
-    const project = await findProject({ _id: task.projectId });
-    if (!project) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Project not found",
-      });
-    }
-
+    // Get user info
     const user = await findUser({ _id: userId });
     if (!user) {
       return next({
@@ -474,20 +466,50 @@ exports.batchUpdateTask = async (req, res, next) => {
       });
     }
 
-    // Get tab and channel info for context
-    const tab = await findChannelTab({ _id: project.tabId });
-    if (!tab) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Tab not found",
-      });
-    }
+    // Get context based on task type (project-based or channel-based)
+    let project = null;
+    let tab = null;
+    let channel = null;
 
-    const channel = await findChannel({ _id: project.channelId });
-    if (!channel) {
+    if (task.projectId) {
+      // Project-based task
+      project = await findProject({ _id: task.projectId });
+      if (!project) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Project not found",
+        });
+      }
+
+      // Get tab and channel info for context
+      tab = await findChannelTab({ _id: project.tabId });
+      if (!tab) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Tab not found",
+        });
+      }
+
+      channel = await findChannel({ _id: project.channelId });
+      if (!channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Channel not found",
+        });
+      }
+    } else if (task.channelId) {
+      // Channel-based task (Open task)
+      channel = await findChannel({ _id: task.channelId });
+      if (!channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Channel not found",
+        });
+      }
+    } else {
       return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Channel not found",
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Task has no project or channel association",
       });
     }
 
@@ -565,14 +587,113 @@ exports.batchUpdateTask = async (req, res, next) => {
       { new: true }
     );
 
-    const contextPath = `${channel.channelName} / ${tab.tabName}`;
+    const contextPath = task.projectId
+      ? `${channel.channelName} / ${tab.tabName}`
+      : `${channel.channelName} / Open`;
     const userName = user.name || user.email;
 
-    // Create activities and notifications for each changed field
-    const activities = [];
-    const notifications = [];
+    // Create activities and notifications for changed fields using specialized helpers
+    let activities = [];
+    let notifications = [];
 
+    // Handle priority update (if provided)
+    if (updates.priority !== undefined && updates.priority !== previousValues.priority) {
+      const priorityActivity = await handlePriorityActivity({
+        priority: updates.priority,
+        userName,
+        task: updatedTask,
+        projectId: task.projectId || null,
+        channelId: task.channelId || null,
+        userId,
+      });
+      activities.push(priorityActivity);
+    }
+
+    // Handle due date update (if provided)
+    if (updates.dueDate !== undefined && updates.dueDate !== previousValues.dueDate) {
+      const dueDateActivity = await handleDueDateActivity({
+        dueDate: updates.dueDate,
+        userName,
+        task: updatedTask,
+        projectId: task.projectId || null,
+        channelId: task.channelId || null,
+        userId,
+      });
+      activities.push(dueDateActivity);
+    }
+
+    // Handle assignment updates (if provided)
+    if (updates.assignedTo !== undefined) {
+      const newAssignees = updates.assignedTo.filter(
+        (id) => !previousValues.assignedTo?.includes(id.toString())
+      );
+
+      if (newAssignees.length > 0) {
+        const assignmentResult = await handleAssignmentActivitiesAndNotifications({
+          assignedTo: newAssignees,
+          userName,
+          task: updatedTask,
+          projectId: task.projectId || null,
+          channelId: task.channelId || null,
+          userId,
+          channel,
+          tab,
+          contextPath,
+        });
+        activities = [...activities, ...assignmentResult.activities];
+        notifications = [...notifications, ...assignmentResult.notifications];
+      }
+    }
+
+    // Handle attachments update (if provided)
+    if (updates.attachments !== undefined &&
+        JSON.stringify(updates.attachments) !== JSON.stringify(previousValues.attachments)) {
+      const attachmentsActivity = await handleAttachmentsActivity({
+        attachments: updates.attachments,
+        userName,
+        task: updatedTask,
+        projectId: task.projectId || null,
+        channelId: task.channelId || null,
+        userId,
+      });
+      activities.push(attachmentsActivity);
+    }
+
+    // Handle links update (if provided)
+    if (updates.links !== undefined &&
+        JSON.stringify(updates.links) !== JSON.stringify(previousValues.links)) {
+      const linksActivity = await handleLinksActivity({
+        links: updates.links,
+        userName,
+        task: updatedTask,
+        projectId: task.projectId || null,
+        channelId: task.channelId || null,
+        userId,
+      });
+      activities.push(linksActivity);
+    }
+
+    // Handle column values update (if provided) - already processed above
+    if (updates.statusColumnValues !== undefined) {
+      const columnValuesActivity = await handleColumnValuesActivity({
+        columnValues: updates.columnValues || {},
+        userName,
+        task: updatedTask,
+        projectId: task.projectId || null,
+        channelId: task.channelId || null,
+        userId,
+      });
+      activities.push(columnValuesActivity);
+    }
+
+    // Handle other generic field updates (title, description, tags, status, etc.)
+    const specialFields = ['priority', 'dueDate', 'assignedTo', 'attachments', 'links', 'statusColumnValues', 'columnValues', 'updatedAt', 'version'];
     for (const [field, value] of Object.entries(updates)) {
+      if (specialFields.includes(field)) continue;
+
+      // Check if value actually changed
+      if (JSON.stringify(value) === JSON.stringify(previousValues[field])) continue;
+
       // Determine if this is a creation-like scenario (setting a field for the first time)
       const isFieldCreation =
         previousValues[field] === null ||
@@ -607,88 +728,50 @@ exports.batchUpdateTask = async (req, res, next) => {
 
       const activity = await createActivity(activityData);
       activities.push(activity);
-
-      // Create notifications based on field type
-      switch (field) {
-        case "assignedTo":
-          // Handle new assignees (Mentions)
-          const newAssignees = value.filter(
-            (id) => !previousValues.assignedTo?.includes(id.toString())
-          );
-
-          for (const assigneeId of newAssignees) {
-            if (assigneeId.toString() !== userId) {
-              notifications.push(
-                createNotification({
-                  userId: assigneeId,
-                  type: "MENTION",
-                  projectId: task.projectId,
-                  channelId: project.channelId,
-                  tabId: project.tabId,
-                  taskId: task._id,
-                  createdBy: userId,
-                  title: "Task Assignment",
-                  message: `${userName} assigned you to task "${task.title}"`,
-                  contextPath,
-                })
-              );
-            }
-          }
-          break;
-
-        default:
-          // Channel notification for all other updates
-          notifications.push(
-            createNotification({
-              userId: task.createdBy,
-              type: "CHANNEL",
-              projectId: task.projectId,
-              channelId: project.channelId,
-              tabId: project.tabId,
-              taskId: task._id,
-              createdBy: userId,
-              title: "Task Update",
-              message: message.forOthers,
-              contextPath,
-            })
-          );
-      }
     }
 
     // Save all notifications
     await Promise.all(notifications);
 
-    // Emit task update event
-    emitTaskEvent({
-      taskId,
-      channelId: project.channelId,
-      type: "TASK_UPDATED",
-      payload: {
+    // Emit socket events
+    try {
+      // Prepare and emit task event using helper
+      const taskEventPayload = prepareTaskEventPayload({
         task: updatedTask,
         activities,
-        updatedBy: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-        },
-      },
-    });
-
-    // Emit notifications to relevant users
-    notifications.forEach((notification) => {
-      emitUserNotification(notification.userId, {
-        type: notification.type,
-        message: notification.message,
-        taskId: task._id,
-        context: {
-          channelId: project.channelId,
-          tabId: project.tabId,
-          projectId: project._id,
-          projectName: project.name,
-          contextPath,
-        },
+        channel,
+        tab,
+        project,
+        creator: user, // updatedBy user
+        contextPath,
       });
-    });
+      // Override type for updates
+      taskEventPayload.type = "TASK_UPDATED";
+      emitTaskEvent(taskEventPayload);
+
+      // Emit user notifications for mentions
+      if (notifications.length > 0) {
+        for (const notification of notifications) {
+          if (notification.type === "MENTION") {
+            emitUserNotification(notification.userId, {
+              type: "MENTION",
+              message: notification.message,
+              taskId: task._id,
+              context: {
+                channelId: channel._id,
+                tabId: tab?._id || null,
+                projectId: project?._id || null,
+                projectName: project?.name || null,
+                contextPath,
+              },
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Socket error:", error);
+      // Continue even if socket fails
+    }
 
     return generateResponse(
       { task: updatedTask, activities },
