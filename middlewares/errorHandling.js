@@ -42,6 +42,7 @@ class ErrorHandling {
         return res.status(statusCode).json({
             message: error?.message,
             stack: error?.stack,
+            ...(err?.errors && { errors: err.errors }), // Include validation errors if present
         });
     }
 }
