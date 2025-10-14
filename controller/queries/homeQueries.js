@@ -1,5 +1,7 @@
 "use strict";
 
+const { Types } = require("mongoose");
+
 /**
  * Build aggregation pipeline for recently viewed forms (internal helper)
  * @param {Object} options - Query options
@@ -367,4 +369,156 @@ exports.buildRecentlyViewedCombinedQuery = ({ user }) => {
   ];
 
   return combinedQuery;
+};
+
+/**
+ * Build aggregation pipeline for dashboard channel stats
+ * @param {string} userId - User ID
+ * @param {string} companyId - Company ID
+ * @param {string} channelSearch - Optional search term for channel name
+ * @param {number} page - Page number for pagination
+ * @param {number} limit - Items per page
+ * @returns {Array} MongoDB aggregation pipeline
+ */
+exports.getDashboardStatsQuery = (userId, companyId, channelSearch = null, page = 1, limit = 20) => {
+  const userObjectId = Types.ObjectId.createFromHexString(userId);
+
+  const matchStage = {
+    members: userObjectId,
+  };
+
+  // Add search filter if provided
+  if (channelSearch && channelSearch.trim()) {
+    matchStage.channelName = { $regex: channelSearch.trim(), $options: "i" };
+  }
+
+  const skip = (page - 1) * limit;
+
+  return [
+    // Stage 1: Match channels where user is a member
+    {
+      $match: matchStage,
+    },
+
+    // Stage 2: Lookup projects in this channel
+    {
+      $lookup: {
+        from: "projects",
+        localField: "_id",
+        foreignField: "channelId",
+        as: "projects",
+      },
+    },
+
+    // Stage 3: Lookup tasks (both project-based and channel-based)
+    {
+      $lookup: {
+        from: "tasks",
+        let: {
+          channelId: "$_id",
+          projectIds: "$projects._id"
+        },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$isActive", true] },
+                  // Task is in this channel OR in projects of this channel
+                  {
+                    $or: [
+                      { $eq: ["$channelId", "$$channelId"] }, // Channel-based
+                      { $in: ["$projectId", "$$projectIds"] }  // Project-based
+                    ]
+                  },
+                  // User is creator OR assigned to task
+                  {
+                    $or: [
+                      { $eq: ["$createdBy", userObjectId] },
+                      { $in: [userObjectId, "$assignedTo"] }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            $project: {
+              _id: 1,
+              status: 1,
+            }
+          }
+        ],
+        as: "tasks",
+      },
+    },
+
+    // Stage 4: Calculate task counts
+    {
+      $addFields: {
+        totalTasks: { $size: "$tasks" },
+        completedTasks: {
+          $size: {
+            $filter: {
+              input: "$tasks",
+              as: "task",
+              cond: { $eq: ["$$task.status", "completed"] }
+            }
+          }
+        }
+      }
+    },
+
+    // Stage 5: Calculate progress percentage
+    {
+      $addFields: {
+        progress: {
+          $cond: [
+            { $eq: ["$totalTasks", 0] },
+            0,
+            {
+              $round: [
+                {
+                  $multiply: [
+                    { $divide: ["$completedTasks", "$totalTasks"] },
+                    100
+                  ]
+                },
+                1
+              ]
+            }
+          ]
+        }
+      }
+    },
+
+    // Stage 6: Project final structure
+    {
+      $project: {
+        _id: 1,
+        channelName: 1,
+        totalTasks: 1,
+        completedTasks: 1,
+        progress: 1,
+      }
+    },
+
+    // Stage 7: Sort by channel name alphabetically
+    {
+      $sort: { channelName: 1 }
+    },
+
+    // Stage 8: Use $facet to get both paginated data and total count
+    {
+      $facet: {
+        channels: [
+          { $skip: skip },
+          { $limit: limit }
+        ],
+        metadata: [
+          { $count: "total" }
+        ]
+      }
+    }
+  ];
 };
