@@ -41,6 +41,24 @@ exports.validateGetContributions = (req, res, next) => {
   next();
 };
 
+// Validation for mark all tasks as completed endpoint
+exports.validateMarkAllComplete = (req, res, next) => {
+  const schema = Joi.object({
+    channelId: Joi.string().required().length(24).hex(),
+  });
+
+  const { error } = schema.validate(req.params);
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid parameters",
+      errors: error.details.map((detail) => detail.message),
+    });
+  }
+
+  next();
+};
+
 // Validation for get activities endpoint
 exports.validateGetActivities = (req, res, next) => {
   const schema = Joi.object({
@@ -78,6 +96,24 @@ exports.validateGetActivities = (req, res, next) => {
       success: false,
       message: "Invalid query parameters",
       errors: queryError.details.map((detail) => detail.message),
+    });
+  }
+
+  next();
+};
+
+// Validation for mark all tasks as completed endpoint
+exports.validateMarkAllComplete = (req, res, next) => {
+  const schema = Joi.object({
+    channelId: Joi.string().required().length(24).hex(),
+  });
+
+  const { error } = schema.validate(req.params);
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid parameters",
+      errors: error.details.map((detail) => detail.message),
     });
   }
 

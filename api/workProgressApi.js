@@ -4,12 +4,14 @@ const { Router } = require("express");
 const {
   getContributions,
   getActivities,
+  markAllTasksAsCompleted,
 } = require("../controller/workProgressController");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
 const {
   validateGetContributions,
   validateGetActivities,
+  validateMarkAllComplete,
 } = require("../validation/workProgressValidation");
 
 class WorkProgressApi {
@@ -35,6 +37,14 @@ class WorkProgressApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateGetActivities,
       getActivities
+    );
+
+    // Mark all tasks in channel as completed
+    router.post(
+      "/:channelId/complete-all",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateMarkAllComplete,
+      markAllTasksAsCompleted
     );
   }
 

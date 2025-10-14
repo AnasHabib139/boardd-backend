@@ -1,11 +1,17 @@
-const { generateResponse } = require("../utils");
+const { generateResponse, parseBody } = require("../utils");
 const {
   STATUS_CODES,
   CONTRIBUTION_DURATIONS,
   CONTRIBUTION_CATEGORIES,
+  ACTION_TYPE,
+  TASK_STATUS,
 } = require("../utils/constants");
 const { findChannel } = require("../models/channelModel");
-const { getAllActivities } = require("../models/activityModel");
+const { getAllActivities, createActivity } = require("../models/activityModel");
+const { findManyTasks, updateTask } = require("../models/taskModel");
+const { findManyProjects } = require("../models/projectModel");
+const { findUser } = require("../models/userModel");
+const { generateActivityMessage } = require("../utils");
 const ActivityModel = require("mongoose").model("Activity");
 const {
   getContributionsQuery,
@@ -129,6 +135,47 @@ const generateCompleteDateRange = (startDate, endDate, contributions) => {
   return completeDateRange;
 };
 
+// Helper function to calculate channel task completion progress
+const calculateChannelProgress = async (channelId) => {
+  try {
+    // Get all projects in this channel
+    const projects = await findManyProjects({ channelId });
+    const projectIds = projects.map(p => p._id);
+
+    // Query all tasks in channel (both channel-based and project-based)
+    const allTasks = await findManyTasks({
+      $or: [
+        { channelId, projectId: null }, // Channel-based tasks
+        { projectId: { $in: projectIds } }, // Project-based tasks
+      ],
+      isActive: true,
+    });
+
+    const totalTasks = allTasks.length;
+    const completedTasks = allTasks.filter(
+      (task) => task.status === TASK_STATUS.COMPLETED
+    ).length;
+
+    // Calculate percentage (rounded to 1 decimal)
+    const progress = totalTasks > 0
+      ? Math.round((completedTasks / totalTasks) * 1000) / 10
+      : 0;
+
+    return {
+      progress,
+      totalTasks,
+      completedTasks,
+    };
+  } catch (error) {
+    console.error("Error calculating channel progress:", error);
+    return {
+      progress: 0,
+      totalTasks: 0,
+      completedTasks: 0,
+    };
+  }
+};
+
 // Helper function to calculate summary statistics
 const calculateSummary = (contributions) => {
   // Filter out null entries for calculations (future dates)
@@ -217,6 +264,9 @@ exports.getContributions = async (req, res, next) => {
     // Calculate date range based on duration
     const { startDate, endDate, actualEndDate } = calculateDateRange(duration);
 
+    // Calculate channel task completion progress (time-independent)
+    const channelProgress = await calculateChannelProgress(channelId);
+
     // Get contributions data (use actualEndDate to exclude future dates)
     const query = getContributionsQuery(channelId, startDate, actualEndDate);
     const contributions = await ActivityModel.aggregate(query);
@@ -236,6 +286,7 @@ exports.getContributions = async (req, res, next) => {
       duration,
       startDate: formatDateLocal(startDate),
       endDate: formatDateLocal(actualEndDate), // Show actual end date (today) not full month end
+      progress: channelProgress.progress, // Channel task completion percentage
       clientProgress: {
         totalContributions: summary.totalClientContributions,
         dailyData: completeContributions.map((day) => ({
@@ -265,6 +316,11 @@ exports.getContributions = async (req, res, next) => {
           summary.averageDailyClientContributions,
         averageDailyCompanyContributions:
           summary.averageDailyCompanyContributions,
+      },
+      taskProgress: {
+        totalTasks: channelProgress.totalTasks,
+        completedTasks: channelProgress.completedTasks,
+        percentage: channelProgress.progress,
       },
       context: {
         channel: {
@@ -354,6 +410,130 @@ exports.getActivities = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to fetch activities",
+    });
+  }
+};
+
+/**
+ * Mark all tasks in a channel as completed
+ */
+exports.markAllTasksAsCompleted = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const userId = req.user.id;
+
+    // Validate channel exists and user has access
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Check if user is a member of the channel
+    if (!channel.members.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this channel",
+      });
+    }
+
+    // Get user info for activity messages
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    const userName = user.name || user.email;
+
+    // Get all projects in this channel
+    const projects = await findManyProjects({ channelId });
+    const projectIds = projects.map((p) => p._id);
+
+    // Find all non-completed tasks in channel (both channel-based and project-based)
+    const tasksToComplete = await findManyTasks({
+      $or: [
+        { channelId, projectId: null }, // Channel-based tasks
+        { projectId: { $in: projectIds } }, // Project-based tasks
+      ],
+      isActive: true,
+      status: { $ne: TASK_STATUS.COMPLETED }, // Not already completed
+    });
+
+    let updatedCount = 0;
+    const activities = [];
+
+    // Update each task and create activity
+    for (const task of tasksToComplete) {
+      const previousStatus = task.status;
+
+      // Update task status to completed
+      await updateTask(
+        { _id: task._id },
+        {
+          status: TASK_STATUS.COMPLETED,
+          updatedAt: new Date()
+        }
+      );
+
+      // Generate activity message
+      const message = generateActivityMessage("status", userName, {
+        previousValue: previousStatus,
+        newValue: TASK_STATUS.COMPLETED,
+        taskTitle: task.title,
+        isCreation: false,
+      });
+
+      // Create activity
+      const activityData = {
+        taskId: task._id,
+        userId,
+        actionType: ACTION_TYPE.UPDATE_TASK,
+        field: "status",
+        previousValue: previousStatus,
+        newValue: TASK_STATUS.COMPLETED,
+        message,
+        timestamp: new Date(),
+      };
+
+      // Add projectId or channelId based on task type
+      if (task.projectId) {
+        activityData.projectId = task.projectId;
+      } else {
+        activityData.channelId = task.channelId;
+      }
+
+      const activity = await createActivity(activityData);
+      activities.push(activity);
+      updatedCount++;
+    }
+
+    return generateResponse(
+      {
+        tasksUpdated: updatedCount,
+        totalTasksInChannel: tasksToComplete.length + (await findManyTasks({
+          $or: [
+            { channelId, projectId: null },
+            { projectId: { $in: projectIds } },
+          ],
+          isActive: true,
+          status: TASK_STATUS.COMPLETED,
+        })).length,
+        activitiesCreated: activities.length,
+      },
+      `${updatedCount} task${updatedCount !== 1 ? 's' : ''} marked as completed`,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in markAllTasksAsCompleted:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to mark tasks as completed",
     });
   }
 };
