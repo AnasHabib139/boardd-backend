@@ -43,6 +43,7 @@ const taskSchema = new Schema({
   description: { type: String, default: "" },
   projectId: { type: Types.ObjectId, ref: "Project", required: false },
   channelId: { type: Types.ObjectId, ref: "Channel", required: false },
+  tabId: { type: Types.ObjectId, ref: "ChannelTab", required: false },
   createdBy: { type: Types.ObjectId, ref: "User", required: true },
   assignedTo: [{ type: Types.ObjectId, ref: "User" }],
   status: {

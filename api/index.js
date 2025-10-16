@@ -10,6 +10,7 @@ const CompanyApi = require("./companyApi");
 const ChannelApi = require("./channelApi");
 const ChannelTabsApi = require("./channelTabsApi");
 const TaskApi = require("./taskApi");
+const TaskCommentApi = require("./taskCommentApi");
 const SubtaskApi = require("./subtaskApi");
 const ActivityApi = require("./activityApi");
 const ProjectApi = require("./projectAPi");
@@ -47,6 +48,7 @@ class API {
     this.routeGroups.push(new ChannelApi());
     this.routeGroups.push(new ChannelTabsApi());
     this.routeGroups.push(new TaskApi());
+    this.routeGroups.push(new TaskCommentApi());
     this.routeGroups.push(new SubtaskApi());
     this.routeGroups.push(new ActivityApi());
     this.routeGroups.push(new ProjectApi());

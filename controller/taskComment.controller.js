@@ -1,0 +1,173 @@
+"use strict";
+
+const { parseBody, generateResponse } = require("../utils");
+const { STATUS_CODES, ACTION_TYPE } = require("../utils/constants");
+const { findUser } = require("../models/userModel");
+const { findTask } = require("../models/taskModel");
+const { findProject } = require("../models/projectModel");
+const { findChannelTab } = require("../models/channelTabsModel");
+const { findChannel } = require("../models/channelModel");
+const { createTaskComment, findTaskComment } = require("../models/taskCommentModel");
+const { createActivity } = require("../models/activityModel");
+const { emitTaskEvent } = require("../utils/socket");
+
+/**
+ * Create a new comment on a task
+ * User must be a tab or channel member to comment
+ */
+exports.createTaskComment = async (req, res, next) => {
+  try {
+    const { taskId } = req.params;
+    const { message, attachments, links } = parseBody(req.body);
+    const userId = req.user.id;
+
+    // Find task
+    const task = await findTask({ _id: taskId });
+    if (!task) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Task not found",
+      });
+    }
+
+    // Get user
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Get context - tab, project, and channel for permission checks
+    let project = null;
+    let tab = null;
+    let channel = null;
+
+    if (task.projectId) {
+      // Project-based task
+      project = await findProject({ _id: task.projectId });
+      if (!project) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Project not found",
+        });
+      }
+
+      [tab, channel] = await Promise.all([
+        findChannelTab({ _id: project.tabId }),
+        findChannel({ _id: project.channelId }),
+      ]);
+
+      if (!tab || !channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Tab or channel not found",
+        });
+      }
+    } else if (task.channelId) {
+      // Channel-based task (Open task)
+      channel = await findChannel({ _id: task.channelId });
+      if (!channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Channel not found",
+        });
+      }
+
+      // Get tab from task
+      if (task.tabId) {
+        tab = await findChannelTab({ _id: task.tabId });
+      }
+    } else {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Task has no project or channel association",
+      });
+    }
+
+    // Check permissions: user must be tab or channel member
+    const isTabMember = tab && tab.members.some(id => id.toString() === userId);
+    const isChannelMember = channel.members.some(id => id.toString() === userId);
+
+    if (!isTabMember && !isChannelMember) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You must be a tab or channel member to comment on this task",
+      });
+    }
+
+    // Create comment
+    const comment = await createTaskComment({
+      taskId,
+      userId,
+      message: message || "",
+      attachments: attachments || [],
+      links: links || [],
+    });
+
+    // Populate user details
+    const populatedComment = await findTaskComment({ _id: comment._id })
+      .populate("userId", "name email image coverImage");
+
+    // Create activity
+    const userName = user.name || user.email;
+    const contextPath = project
+      ? `${channel.channelName} / ${tab.tabName} / ${project.name}`
+      : tab
+      ? `${channel.channelName} / ${tab.tabName} / Open`
+      : `${channel.channelName} / Open`;
+
+    const activity = await createActivity({
+      taskId: task._id,
+      userId,
+      actionType: ACTION_TYPE.ADD_COMMENT,
+      message: {
+        forCreator: `You added a comment to "${task.title}"`,
+        forOthers: `${userName} added a comment to "${task.title}"`,
+      },
+      timestamp: new Date(),
+      projectId: task.projectId || null,
+      channelId: task.channelId || null,
+    });
+
+    // Emit socket event for real-time updates
+    try {
+      emitTaskEvent({
+        taskId: task._id,
+        channelId: channel._id,
+        type: "TASK_COMMENT_ADDED",
+        payload: {
+          comment: populatedComment,
+          task: {
+            _id: task._id,
+            title: task.title,
+          },
+          commentedBy: {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+          },
+          activity,
+          contextPath,
+        },
+      });
+    } catch (socketError) {
+      console.error("Error emitting comment socket event:", socketError);
+      // Continue even if socket fails
+    }
+
+    return generateResponse(
+      { comment: populatedComment },
+      "Comment added successfully",
+      res,
+      STATUS_CODES.CREATED
+    );
+  } catch (error) {
+    console.error("Error in createTaskComment:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
