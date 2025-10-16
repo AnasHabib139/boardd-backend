@@ -33,7 +33,7 @@ class TaskCommentApi {
   }
 
   getRouterGroup() {
-    return "/tasks";
+    return "/tasks-comments";
   }
 }
 
