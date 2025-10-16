@@ -73,6 +73,14 @@ const createTaskValidation = Joi.object({
     "string.pattern.name": "Tab ID must be a valid ObjectId",
   }),
 
+  status: Joi.string()
+    .valid(...Object.values(TASK_STATUS))
+    .optional()
+    .default(TASK_STATUS.TODO)
+    .messages({
+      "any.only": `Status must be one of: ${Object.values(TASK_STATUS).join(", ")}`,
+    }),
+
   assignedTo: Joi.array()
     .items(helpers.objectIdValidation)
     .optional()

@@ -75,6 +75,7 @@ exports.createTask = async (req, res, next) => {
       projectId,
       channelId,
       tabId,
+      status,
       assignedTo,
       priority,
       dueDate,
@@ -192,8 +193,8 @@ exports.createTask = async (req, res, next) => {
       });
     }
 
-    // Calculate orderIndex for the task's status (always "todo" for new tasks)
-    const taskStatus = TASK_STATUS.TODO;
+    // Calculate orderIndex for the task's status (default to "todo" if not provided)
+    const taskStatus = status || TASK_STATUS.TODO;
     const orderIndex = await getNextOrderIndex(
       projectId,
       channelId,
