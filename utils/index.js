@@ -295,14 +295,45 @@ exports.generateActivityMessage = (field, userName, data) => {
       };
 
     case "assignedTo":
-      return {
-        forCreator: `You assigned "${taskTitle}" to ${
-          Array.isArray(newValue) ? newValue.join(", ") : newValue
-        }`,
-        forOthers: `${userName} assigned "${taskTitle}" to ${
-          Array.isArray(newValue) ? newValue.join(", ") : newValue
-        }`,
-      };
+      // Handle adding vs removing assignees
+      if (!previousValue || previousValue.length === 0) {
+        // First time assigning
+        return {
+          forCreator: `You assigned "${taskTitle}" to ${
+            Array.isArray(newValue) && newValue.length > 0 ? newValue.join(", ") : "nobody"
+          }`,
+          forOthers: `${userName} assigned "${taskTitle}" to ${
+            Array.isArray(newValue) && newValue.length > 0 ? newValue.join(", ") : "nobody"
+          }`,
+        };
+      } else if (!newValue || newValue.length === 0) {
+        // Removed all assignees
+        return {
+          forCreator: `You removed all assignees from "${taskTitle}"`,
+          forOthers: `${userName} removed all assignees from "${taskTitle}"`,
+        };
+      } else {
+        // Updated assignees - show added/removed
+        const added = newValue.filter(name => !previousValue.includes(name));
+        const removed = previousValue.filter(name => !newValue.includes(name));
+
+        if (added.length > 0 && removed.length === 0) {
+          return {
+            forCreator: `You added ${added.join(", ")} to "${taskTitle}"`,
+            forOthers: `${userName} added ${added.join(", ")} to "${taskTitle}"`,
+          };
+        } else if (removed.length > 0 && added.length === 0) {
+          return {
+            forCreator: `You removed ${removed.join(", ")} from "${taskTitle}"`,
+            forOthers: `${userName} removed ${removed.join(", ")} from "${taskTitle}"`,
+          };
+        } else {
+          return {
+            forCreator: `You updated assignees for "${taskTitle}"`,
+            forOthers: `${userName} updated assignees for "${taskTitle}"`,
+          };
+        }
+      }
 
     case "description":
       if (isCreation || previousValue === null || previousValue === undefined) {

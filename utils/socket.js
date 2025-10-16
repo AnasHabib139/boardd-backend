@@ -386,6 +386,13 @@ const processTaskUpdate = async (socket, data) => {
       processedValue = parseDate(value);
     }
 
+    // Convert assignedTo string IDs to ObjectId instances for database
+    if (field === "assignedTo" && Array.isArray(processedValue)) {
+      processedValue = processedValue.map(id =>
+        Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : id
+      );
+    }
+
     // INSTANT DB UPDATE FOR ALL FIELDS
     const updatedTask = await updateTask(
       { _id: taskId },
@@ -406,25 +413,44 @@ const processTaskUpdate = async (socket, data) => {
     };
 
     // Convert user IDs to names for assignedTo field
-    if (field === "assignedTo" && Array.isArray(processedValue)) {
-      const assigneeUsers = await Promise.all(
-        processedValue.map(id => findUser({ _id: id }))
-      );
-      const assigneeNames = assigneeUsers
-        .filter(user => user) // Filter out null users
-        .map(user => user.name || user.email);
-      
-      activityMessageData.newValue = assigneeNames;
-      
+    if (field === "assignedTo") {
+      // Convert to ObjectIds for proper user lookup (processedValue already has ObjectIds from above)
+      const assigneeIds = Array.isArray(processedValue) ? processedValue : [];
+
+      if (assigneeIds.length > 0) {
+        try {
+          const assigneeUsers = await Promise.all(
+            assigneeIds.map(id => findUser({ _id: id }))
+          );
+          const assigneeNames = assigneeUsers
+            .filter(user => user)
+            .map(user => user.name || user.email);
+
+          activityMessageData.newValue = assigneeNames;
+          console.log(`Converted ${assigneeIds.length} assignee IDs to names:`, assigneeNames);
+        } catch (error) {
+          console.error('Error converting assignee IDs to names:', error);
+        }
+      } else {
+        activityMessageData.newValue = [];
+      }
+
       // Also convert previous value if it exists
-      if (previousValue && Array.isArray(previousValue)) {
-        const prevAssigneeUsers = await Promise.all(
-          previousValue.map(id => findUser({ _id: id }))
+      if (previousValue && Array.isArray(previousValue) && previousValue.length > 0) {
+        const prevIds = previousValue.map(id =>
+          Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : id
         );
-        const prevAssigneeNames = prevAssigneeUsers
-          .filter(user => user) // Filter out null users
-          .map(user => user.name || user.email);
-        activityMessageData.previousValue = prevAssigneeNames;
+        try {
+          const prevAssigneeUsers = await Promise.all(
+            prevIds.map(id => findUser({ _id: id }))
+          );
+          const prevAssigneeNames = prevAssigneeUsers
+            .filter(user => user)
+            .map(user => user.name || user.email);
+          activityMessageData.previousValue = prevAssigneeNames;
+        } catch (error) {
+          console.error('Error converting previous assignee IDs to names:', error);
+        }
       }
     }
 
