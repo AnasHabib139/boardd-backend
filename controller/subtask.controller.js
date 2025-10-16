@@ -34,6 +34,14 @@ exports.createSubtask = async (req, res, next) => {
       });
     }
 
+    // Prevent creating subtasks on archived tasks
+    if (!task.isActive) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Cannot create subtasks on archived tasks",
+      });
+    }
+
     // Check if project exists
     const project = await findProject({ _id: task.projectId });
     if (!project) {

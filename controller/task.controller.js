@@ -1,6 +1,6 @@
 "use strict";
 
-const { parseBody, generateResponse } = require("../utils");
+const { parseBody, generateResponse, deleteFileFromDisk } = require("../utils");
 const {
   STATUS_CODES,
   ACTION_TYPE,
@@ -12,6 +12,7 @@ const {
   createTask,
   findTask,
   updateTask,
+  deleteTask,
   getNextOrderIndex,
 } = require("../models/taskModel");
 const { createActivity } = require("../models/activityModel");
@@ -44,6 +45,7 @@ const { getAllTasks } = require("../models/taskModel");
 const Mailer = require("../utils/mailer");
 const { generateTaskShareEmail } = require("../utils/emailTemplates");
 const { upsertTaskView, getTrendingTasks } = require("../models/taskViewModel");
+const { deleteSubtask } = require("../models/subtaskModel");
 
 // Helper function to parse date strings
 const parseDate = (dateString) => {
@@ -1226,6 +1228,307 @@ exports.getUserPersonalTasksCalendar = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in getUserPersonalTasksCalendar:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Toggle task archive status (archive/unarchive)
+ * Toggles isActive between true and false
+ */
+exports.archiveTask = async (req, res, next) => {
+  try {
+    const { taskId } = req.params;
+    const userId = req.user.id;
+
+    // Find task
+    const task = await findTask({ _id: taskId });
+    if (!task) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Task not found",
+      });
+    }
+
+    // Determine new state (toggle)
+    const newIsActiveState = !task.isActive;
+    const actionVerb = newIsActiveState ? "unarchived" : "archived";
+    const actionVerbPast = newIsActiveState ? "Unarchived" : "Archived";
+
+    // Get user
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Get context - tab, project, and channel for permission checks
+    let project = null;
+    let tab = null;
+    let channel = null;
+
+    if (task.projectId) {
+      // Project-based task
+      project = await findProject({ _id: task.projectId });
+      if (!project) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Project not found",
+        });
+      }
+
+      [tab, channel] = await Promise.all([
+        findChannelTab({ _id: project.tabId }),
+        findChannel({ _id: project.channelId }),
+      ]);
+
+      if (!tab || !channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Tab or channel not found",
+        });
+      }
+    } else if (task.channelId) {
+      // Channel-based task (Open task)
+      channel = await findChannel({ _id: task.channelId });
+      if (!channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Channel not found",
+        });
+      }
+
+      // Get tab from task
+      if (task.tabId) {
+        tab = await findChannelTab({ _id: task.tabId });
+      }
+    } else {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Task has no project or channel association",
+      });
+    }
+
+    // Check permissions: user must be creator, assignee, or tab/channel member
+    const isCreator = task.createdBy.toString() === userId;
+    const isAssignee = task.assignedTo.some(id => id.toString() === userId);
+    const isTabMember = tab && tab.members.some(id => id.toString() === userId);
+    const isChannelMember = channel.members.some(id => id.toString() === userId);
+
+    if (!isCreator && !isAssignee && !isTabMember && !isChannelMember) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You don't have permission to archive this task",
+      });
+    }
+
+    // Toggle the task archive status
+    const updatedTask = await updateTask(
+      { _id: taskId },
+      { isActive: newIsActiveState, updatedAt: new Date() },
+      { new: true }
+    );
+
+    // Create activity
+    const userName = user.name || user.email;
+    const contextPath = project
+      ? `${channel.channelName} / ${tab.tabName} / ${project.name}`
+      : tab
+      ? `${channel.channelName} / ${tab.tabName} / Open`
+      : `${channel.channelName} / Open`;
+
+    const activity = await createActivity({
+      taskId: task._id,
+      userId,
+      actionType: ACTION_TYPE.ARCHIVE_TASK,
+      message: {
+        forCreator: `You ${actionVerb} "${task.title}"`,
+        forOthers: `${userName} ${actionVerb} "${task.title}"`,
+      },
+      timestamp: new Date(),
+      projectId: task.projectId || null,
+      channelId: task.channelId || null,
+    });
+
+    // Emit socket event (so task appears/disappears from lists in real-time)
+    try {
+      emitTaskEvent({
+        taskId: task._id,
+        channelId: channel._id,
+        type: newIsActiveState ? "TASK_UNARCHIVED" : "TASK_ARCHIVED",
+        payload: {
+          task: updatedTask,
+          actionBy: {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+          },
+          activity,
+          contextPath,
+          isActive: newIsActiveState,
+        },
+      });
+    } catch (socketError) {
+      console.error("Error emitting archive/unarchive task socket event:", socketError);
+      // Continue even if socket fails
+    }
+
+    return generateResponse(
+      { task: updatedTask, isActive: newIsActiveState },
+      `Task ${actionVerb} successfully`,
+      res
+    );
+  } catch (error) {
+    console.error("Error in archiveTask:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Delete a task permanently (hard delete)
+ * Also deletes all related records: activities, notifications, subtasks, inbox entries, attachments
+ */
+exports.deleteTaskPermanently = async (req, res, next) => {
+  try {
+    const { taskId } = req.params;
+    const userId = req.user.id;
+
+    // Find task
+    const task = await findTask({ _id: taskId });
+    if (!task) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Task not found",
+      });
+    }
+
+    // Get user
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Get context - tab, project, and channel for permission checks
+    let project = null;
+    let tab = null;
+    let channel = null;
+
+    if (task.projectId) {
+      // Project-based task
+      project = await findProject({ _id: task.projectId });
+      if (!project) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Project not found",
+        });
+      }
+
+      [tab, channel] = await Promise.all([
+        findChannelTab({ _id: project.tabId }),
+        findChannel({ _id: project.channelId }),
+      ]);
+
+      if (!tab || !channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Tab or channel not found",
+        });
+      }
+    } else if (task.channelId) {
+      // Channel-based task (Open task)
+      channel = await findChannel({ _id: task.channelId });
+      if (!channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Channel not found",
+        });
+      }
+
+      // Get tab from task
+      if (task.tabId) {
+        tab = await findChannelTab({ _id: task.tabId });
+      }
+    } else {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Task has no project or channel association",
+      });
+    }
+
+    // Check permissions: user must be creator or channel admin
+    const isCreator = task.createdBy.toString() === userId;
+    const isChannelAdmin = channel.members.some(id => id.toString() === userId); // You may want stricter admin check
+
+    if (!isCreator && !isChannelAdmin) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "Only the task creator or channel admin can permanently delete this task",
+      });
+    }
+
+    // Delete attachments from disk
+    if (task.attachments && task.attachments.length > 0) {
+      for (const attachmentPath of task.attachments) {
+        const deleteResult = deleteFileFromDisk(attachmentPath);
+        if (!deleteResult.success) {
+          console.warn(`Failed to delete attachment file: ${deleteResult.error}`);
+        }
+      }
+    }
+
+    // Delete related records
+    const { Activity } = require("../models/activityModel");
+    const { Notification } = require("../models/notificationModel");
+    const { TaskInbox } = require("../models/taskInboxModel");
+
+    await Promise.all([
+      Activity?.deleteMany({ taskId }) || Promise.resolve(),
+      Notification?.deleteMany({ taskId }) || Promise.resolve(),
+      deleteSubtask({ taskId }),
+      TaskInbox?.deleteMany({ taskId }) || Promise.resolve(),
+    ]);
+
+    // Delete the task
+    await deleteTask({ _id: taskId });
+
+    // Emit socket event (so task is removed from all views)
+    try {
+      emitTaskEvent({
+        taskId: task._id,
+        channelId: channel._id,
+        type: "TASK_DELETED",
+        payload: {
+          taskId: task._id,
+          deletedBy: {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+          },
+        },
+      });
+    } catch (socketError) {
+      console.error("Error emitting delete task socket event:", socketError);
+      // Continue even if socket fails
+    }
+
+    return generateResponse(
+      null,
+      "Task deleted permanently",
+      res
+    );
+  } catch (error) {
+    console.error("Error in deleteTaskPermanently:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

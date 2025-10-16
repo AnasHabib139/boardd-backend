@@ -10,6 +10,8 @@ const {
   getRecentActivities,
   getUserTasksByFilter,
   getUserPersonalTasksCalendar,
+  archiveTask,
+  deleteTaskPermanently,
 } = require("../controller/task.controller");
 const Auth = require("../middlewares/Auth");
 const OptionalAuth = require("../middlewares/OptionalAuth");
@@ -96,6 +98,22 @@ class TaskApi {
       "/user/personal-calendar",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       getUserPersonalTasksCalendar
+    );
+
+    // Toggle archive status (archive/unarchive task - toggles isActive)
+    router.patch(
+      "/:taskId/archive",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateTaskIdParam,
+      archiveTask
+    );
+
+    // Delete task permanently (hard delete - removes from database)
+    router.delete(
+      "/:taskId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateTaskIdParam,
+      deleteTaskPermanently
     );
   }
 
