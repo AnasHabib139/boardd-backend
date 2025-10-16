@@ -842,6 +842,54 @@ exports.getOpenTasksQuery = (channelId) => {
       },
     },
 
+    // Lookup tab to get column definitions
+    {
+      $lookup: {
+        from: "channeltabs",
+        localField: "tabId",
+        foreignField: "_id",
+        as: "tab",
+      },
+    },
+    {
+      $unwind: {
+        path: "$tab",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // Lookup column definitions for this tab
+    {
+      $lookup: {
+        from: "projectstatuscolumns",
+        localField: "tabId",
+        foreignField: "tabId",
+        as: "columnDefinitions",
+        pipeline: [
+          {
+            $match: {
+              isActive: true,
+            },
+          },
+          {
+            $project: {
+              _id: 1,
+              columnKey: 1,
+              columnName: 1,
+              columnType: 1,
+              dropdownOptions: 1,
+              order: 1,
+            },
+          },
+          {
+            $sort: {
+              order: 1,
+            },
+          },
+        ],
+      },
+    },
+
     // Lookup task assignees
     {
       $lookup: {
@@ -885,6 +933,34 @@ exports.getOpenTasksQuery = (channelId) => {
       $unwind: {
         path: "$taskCreator",
         preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // Enrich with columnData (similar to project tasks)
+    {
+      $addFields: {
+        columnData: {
+          $map: {
+            input: "$columnDefinitions",
+            as: "colDef",
+            in: {
+              _id: "$$colDef._id",
+              key: "$$colDef.columnKey",
+              value: {
+                $ifNull: [
+                  { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$statusColumnValues", {}] } } },
+                  null
+                ]
+              },
+              type: "$$colDef.columnType",
+              columnName: "$$colDef.columnName",
+              dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
+            }
+          }
+        },
+        // Add file and link counts
+        fileCount: { $size: { $ifNull: ["$attachments", []] } },
+        linkCount: { $size: { $ifNull: ["$links", []] } },
       },
     },
 
@@ -933,6 +1009,10 @@ exports.getOpenTasksQuery = (channelId) => {
             else: false,
           },
         },
+        // Include column data and counts
+        columnData: 1,
+        fileCount: 1,
+        linkCount: 1,
       },
     },
 
@@ -1057,12 +1137,12 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
       },
     },
 
-    // Lookup column definitions for this project
+    // Lookup column definitions for this tab
     {
       $lookup: {
         from: "projectstatuscolumns",
-        localField: "_id",
-        foreignField: "projectId",
+        localField: "tabId",
+        foreignField: "tabId",
         as: "columnDefinitions",
         pipeline: [
           {
@@ -1073,7 +1153,6 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
           {
             $project: {
               _id: 1,
-              status: 1,
               columnKey: 1,
               columnName: 1,
               columnType: 1,
@@ -1083,7 +1162,6 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
           },
           {
             $sort: {
-              status: 1,
               order: 1,
             },
           },
@@ -1278,14 +1356,10 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
                 {
                   columnData: {
                     $map: {
-                      input: {
-                        $filter: {
-                          input: "$columnDefinitions",
-                          cond: { $eq: ["$$this.status", "$$task.status"] }
-                        }
-                      },
+                      input: "$columnDefinitions",
                       as: "colDef",
                       in: {
+                        _id: "$$colDef._id",
                         key: "$$colDef.columnKey",
                         value: {
                           $ifNull: [
@@ -1314,14 +1388,10 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
                 {
                   columnData: {
                     $map: {
-                      input: {
-                        $filter: {
-                          input: "$columnDefinitions",
-                          cond: { $eq: ["$$this.status", "$$task.status"] }
-                        }
-                      },
+                      input: "$columnDefinitions",
                       as: "colDef",
                       in: {
+                        _id: "$$colDef._id",
                         key: "$$colDef.columnKey",
                         value: {
                           $ifNull: [
@@ -1350,14 +1420,10 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
                 {
                   columnData: {
                     $map: {
-                      input: {
-                        $filter: {
-                          input: "$columnDefinitions",
-                          cond: { $eq: ["$$this.status", "$$task.status"] }
-                        }
-                      },
+                      input: "$columnDefinitions",
                       as: "colDef",
                       in: {
+                        _id: "$$colDef._id",
                         key: "$$colDef.columnKey",
                         value: {
                           $ifNull: [
@@ -1386,14 +1452,10 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
                 {
                   columnData: {
                     $map: {
-                      input: {
-                        $filter: {
-                          input: "$columnDefinitions",
-                          cond: { $eq: ["$$this.status", "$$task.status"] }
-                        }
-                      },
+                      input: "$columnDefinitions",
                       as: "colDef",
                       in: {
+                        _id: "$$colDef._id",
                         key: "$$colDef.columnKey",
                         value: {
                           $ifNull: [
@@ -1689,12 +1751,12 @@ exports.getSingleProjectListQuery = (projectId) => {
       },
     },
 
-    // Lookup column definitions for this project
+    // Lookup column definitions for this tab
     {
       $lookup: {
         from: "projectstatuscolumns",
-        localField: "_id",
-        foreignField: "projectId",
+        localField: "tabId",
+        foreignField: "tabId",
         as: "columnDefinitions",
         pipeline: [
           {
@@ -1705,7 +1767,6 @@ exports.getSingleProjectListQuery = (projectId) => {
           {
             $project: {
               _id: 1,
-              status: 1,
               columnKey: 1,
               columnName: 1,
               columnType: 1,
@@ -1715,7 +1776,6 @@ exports.getSingleProjectListQuery = (projectId) => {
           },
           {
             $sort: {
-              status: 1,
               order: 1,
             },
           },
@@ -1910,14 +1970,10 @@ exports.getSingleProjectListQuery = (projectId) => {
                 {
                   columnData: {
                     $map: {
-                      input: {
-                        $filter: {
-                          input: "$columnDefinitions",
-                          cond: { $eq: ["$$this.status", "$$task.status"] }
-                        }
-                      },
+                      input: "$columnDefinitions",
                       as: "colDef",
                       in: {
+                        _id: "$$colDef._id",
                         key: "$$colDef.columnKey",
                         value: {
                           $ifNull: [
@@ -1946,14 +2002,10 @@ exports.getSingleProjectListQuery = (projectId) => {
                 {
                   columnData: {
                     $map: {
-                      input: {
-                        $filter: {
-                          input: "$columnDefinitions",
-                          cond: { $eq: ["$$this.status", "$$task.status"] }
-                        }
-                      },
+                      input: "$columnDefinitions",
                       as: "colDef",
                       in: {
+                        _id: "$$colDef._id",
                         key: "$$colDef.columnKey",
                         value: {
                           $ifNull: [
@@ -1982,14 +2034,10 @@ exports.getSingleProjectListQuery = (projectId) => {
                 {
                   columnData: {
                     $map: {
-                      input: {
-                        $filter: {
-                          input: "$columnDefinitions",
-                          cond: { $eq: ["$$this.status", "$$task.status"] }
-                        }
-                      },
+                      input: "$columnDefinitions",
                       as: "colDef",
                       in: {
+                        _id: "$$colDef._id",
                         key: "$$colDef.columnKey",
                         value: {
                           $ifNull: [
@@ -2018,14 +2066,10 @@ exports.getSingleProjectListQuery = (projectId) => {
                 {
                   columnData: {
                     $map: {
-                      input: {
-                        $filter: {
-                          input: "$columnDefinitions",
-                          cond: { $eq: ["$$this.status", "$$task.status"] }
-                        }
-                      },
+                      input: "$columnDefinitions",
                       as: "colDef",
                       in: {
+                        _id: "$$colDef._id",
                         key: "$$colDef.columnKey",
                         value: {
                           $ifNull: [

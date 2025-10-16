@@ -4,15 +4,10 @@ const { Schema, model, Types } = require("mongoose");
 const mongoosePaginate = require("mongoose-paginate-v2");
 const aggregatePaginate = require("mongoose-aggregate-paginate-v2");
 const { getMongooseAggregatePaginatedData } = require("../utils");
-const { PROJECT_COLUMN_TYPES, TASK_STATUS } = require("../utils/constants");
+const { PROJECT_COLUMN_TYPES } = require("../utils/constants");
 
 const projectStatusColumnSchema = new Schema({
-  projectId: { type: Types.ObjectId, ref: "Project", required: true },
-  status: {
-    type: String,
-    enum: Object.values(TASK_STATUS),
-    required: true
-  },
+  tabId: { type: Types.ObjectId, ref: "ChannelTab", required: true },
   columnKey: { type: String, required: true },
   columnName: { type: String, required: true },
   columnType: {
@@ -29,9 +24,8 @@ const projectStatusColumnSchema = new Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
-// Compound index for efficient queries per project+status
-projectStatusColumnSchema.index({ projectId: 1, status: 1, columnKey: 1 }, { unique: true });
-projectStatusColumnSchema.index({ projectId: 1, status: 1 });
+// Compound index for efficient queries per tab
+projectStatusColumnSchema.index({ tabId: 1, columnKey: 1 }, { unique: true });
 
 // register pagination plugin
 projectStatusColumnSchema.plugin(mongoosePaginate);
@@ -74,9 +68,9 @@ exports.getProjectStatusColumns = (projectId, status) =>
 exports.getAllProjectColumns = (projectId) =>
   ProjectStatusColumnModel.find({ projectId, isActive: true }).sort({ status: 1, order: 1 });
 
-// get next order index for a project status
-exports.getNextOrderIndex = async (projectId, status) => {
-  const lastColumn = await ProjectStatusColumnModel.findOne({ projectId, status })
+// get next order index for a tab
+exports.getNextOrderIndex = async (tabId) => {
+  const lastColumn = await ProjectStatusColumnModel.findOne({ tabId })
     .sort({ order: -1 });
 
   return lastColumn ? lastColumn.order + 1 : 1;

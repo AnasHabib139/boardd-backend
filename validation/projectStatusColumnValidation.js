@@ -3,6 +3,19 @@
 const Joi = require("joi");
 const { PROJECT_COLUMN_TYPES } = require("../utils/constants");
 
+// Params validation for tabId
+const createProjectStatusColumnParamsValidation = Joi.object({
+  tabId: Joi.string()
+    .hex()
+    .length(24)
+    .required()
+    .messages({
+      "string.hex": "Tab ID must be a valid MongoDB ObjectId",
+      "string.length": "Tab ID must be 24 characters",
+      "any.required": "Tab ID is required",
+    }),
+});
+
 // Create project status column validation
 const createProjectStatusColumnValidation = Joi.object({
   columnName: Joi.string()
@@ -45,6 +58,64 @@ const createProjectStatusColumnValidation = Joi.object({
     .default(false),
 });
 
+// Params validation for tabId and columnId
+const deleteProjectStatusColumnParamsValidation = Joi.object({
+  tabId: Joi.string()
+    .hex()
+    .length(24)
+    .required()
+    .messages({
+      "string.hex": "Tab ID must be a valid MongoDB ObjectId",
+      "string.length": "Tab ID must be 24 characters",
+      "any.required": "Tab ID is required",
+    }),
+  columnId: Joi.string()
+    .hex()
+    .length(24)
+    .required()
+    .messages({
+      "string.hex": "Column ID must be a valid MongoDB ObjectId",
+      "string.length": "Column ID must be 24 characters",
+      "any.required": "Column ID is required",
+    }),
+});
+
+// Update project status column validation
+const updateProjectStatusColumnParamsValidation = Joi.object({
+  tabId: Joi.string()
+    .hex()
+    .length(24)
+    .required()
+    .messages({
+      "string.hex": "Tab ID must be a valid MongoDB ObjectId",
+      "string.length": "Tab ID must be 24 characters",
+      "any.required": "Tab ID is required",
+    }),
+  columnId: Joi.string()
+    .hex()
+    .length(24)
+    .required()
+    .messages({
+      "string.hex": "Column ID must be a valid MongoDB ObjectId",
+      "string.length": "Column ID must be 24 characters",
+      "any.required": "Column ID is required",
+    }),
+});
+
+const updateProjectStatusColumnBodyValidation = Joi.object({
+  columnName: Joi.string()
+    .trim()
+    .min(1)
+    .max(100)
+    .required()
+    .messages({
+      "string.empty": "Column name is required",
+      "string.min": "Column name must be at least 1 character",
+      "string.max": "Column name cannot exceed 100 characters",
+      "any.required": "Column name is required",
+    }),
+});
+
 // Validation middleware function
 const validateRequest = (schema, source = "body") => {
   return (req, res, next) => {
@@ -80,10 +151,24 @@ const validateRequest = (schema, source = "body") => {
 };
 
 module.exports = {
-  validateCreateProjectStatusColumn: validateRequest(createProjectStatusColumnValidation),
+  validateCreateProjectStatusColumn: [
+    validateRequest(createProjectStatusColumnParamsValidation, "params"),
+    validateRequest(createProjectStatusColumnValidation, "body"),
+  ],
+
+  validateDeleteProjectStatusColumn: validateRequest(deleteProjectStatusColumnParamsValidation, "params"),
+
+  validateUpdateProjectStatusColumn: [
+    validateRequest(updateProjectStatusColumnParamsValidation, "params"),
+    validateRequest(updateProjectStatusColumnBodyValidation, "body"),
+  ],
 
   // Export schemas for testing or custom usage
   schemas: {
     createProjectStatusColumnValidation,
+    createProjectStatusColumnParamsValidation,
+    deleteProjectStatusColumnParamsValidation,
+    updateProjectStatusColumnParamsValidation,
+    updateProjectStatusColumnBodyValidation,
   },
 };

@@ -74,6 +74,7 @@ exports.createTask = async (req, res, next) => {
       title,
       projectId,
       channelId,
+      tabId,
       assignedTo,
       priority,
       dueDate,
@@ -137,20 +138,47 @@ exports.createTask = async (req, res, next) => {
         });
       }
     } else {
-      // New flow for channel-based tasks without project
+      // New flow for channel-based tasks without project (Open tasks)
+      // Validate tabId is provided
+      if (!tabId) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "tabId is required for open tasks",
+        });
+      }
+
+      // Validate tab exists
+      tab = await findChannelTab({ _id: tabId });
+      if (!tab) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Tab not found",
+        });
+      }
+
+      // Validate tab belongs to the channel
+      if (tab.channelId.toString() !== channelId.toString()) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "Tab does not belong to this channel",
+        });
+      }
+
+      // Check if user is a member of the tab
+      const isTabMember = tab?.members?.includes(userId);
+      if (!isTabMember) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You are not a member of this tab",
+        });
+      }
+
+      // Get channel
       channel = await findChannel({ _id: channelId });
       if (!channel) {
         return next({
           statusCode: STATUS_CODES.NOT_FOUND,
           message: "Channel not found",
-        });
-      }
-
-      // Check if user is a member of the channel
-      if (!channel.members.includes(userId)) {
-        return next({
-          statusCode: STATUS_CODES.FORBIDDEN,
-          message: "You are not a member of this channel",
         });
       }
     }
@@ -172,12 +200,11 @@ exports.createTask = async (req, res, next) => {
       taskStatus
     );
 
-    // Process column values if provided and projectId exists
+    // Process column values if provided and tab exists (works for both project and open tasks)
     let processedColumnValues = new Map();
-    if (projectId) {
+    if (tab) {
       const columnProcessResult = await processTaskColumnValues(
-        projectId,
-        taskStatus,
+        tab._id,
         columnValues || {}
       );
 
@@ -205,7 +232,8 @@ exports.createTask = async (req, res, next) => {
     const task = await createTask({
       title: title,
       projectId: projectId || null,
-      channelId: channelId || null,
+      channelId: projectId ? project.channelId : channelId,
+      tabId: tab ? tab._id : null,
       assignedTo: assignedTo || [],
       status: taskStatus,
       priority: priority || "medium",
@@ -466,13 +494,24 @@ exports.batchUpdateTask = async (req, res, next) => {
       });
     }
 
-    // Get context based on task type (project-based or channel-based)
+    // Get context - tab, project, and channel
     let project = null;
     let tab = null;
     let channel = null;
 
+    // Get tab directly from task (works for both project and open tasks)
+    if (task.tabId) {
+      tab = await findChannelTab({ _id: task.tabId });
+      if (!tab) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Tab not found",
+        });
+      }
+    }
+
+    // Get project if it's a project-based task
     if (task.projectId) {
-      // Project-based task
       project = await findProject({ _id: task.projectId });
       if (!project) {
         return next({
@@ -480,25 +519,10 @@ exports.batchUpdateTask = async (req, res, next) => {
           message: "Project not found",
         });
       }
+    }
 
-      // Get tab and channel info for context
-      tab = await findChannelTab({ _id: project.tabId });
-      if (!tab) {
-        return next({
-          statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Tab not found",
-        });
-      }
-
-      channel = await findChannel({ _id: project.channelId });
-      if (!channel) {
-        return next({
-          statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Channel not found",
-        });
-      }
-    } else if (task.channelId) {
-      // Channel-based task (Open task)
+    // Get channel
+    if (task.channelId) {
       channel = await findChannel({ _id: task.channelId });
       if (!channel) {
         return next({
@@ -509,7 +533,7 @@ exports.batchUpdateTask = async (req, res, next) => {
     } else {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Task has no project or channel association",
+        message: "Task has no channel association",
       });
     }
 
@@ -524,11 +548,10 @@ exports.batchUpdateTask = async (req, res, next) => {
       updates.dueDate = parseDate(updates.dueDate);
     }
 
-    // Handle column values updates if provided
-    if (updates.columnValues && task.projectId) {
+    // Handle column values updates if provided (works for both project and open tasks)
+    if (updates.columnValues && task.tabId) {
       const columnProcessResult = await processTaskColumnValues(
-        task.projectId,
-        updates.status || task.status,
+        task.tabId,
         updates.columnValues
       );
 
@@ -552,32 +575,6 @@ exports.batchUpdateTask = async (req, res, next) => {
 
       updates.statusColumnValues = mergedColumnValues;
       delete updates.columnValues; // Remove original field
-    }
-
-    // Handle status change column inheritance
-    if (updates.status && updates.status !== task.status && task.projectId) {
-      const {
-        getDefaultColumnValues,
-      } = require("./helpers/tasks/statusColumns.helper");
-      const defaultColumnValues = await getDefaultColumnValues(
-        task.projectId,
-        updates.status
-      );
-
-      if (Object.keys(defaultColumnValues).length > 0) {
-        const existingColumnValues =
-          updates.statusColumnValues || task.statusColumnValues || new Map();
-        const newDefaults = new Map(Object.entries(defaultColumnValues));
-
-        // Only add defaults for columns that don't already have values
-        for (const [key, value] of newDefaults) {
-          if (!existingColumnValues.has(key)) {
-            existingColumnValues.set(key, value);
-          }
-        }
-
-        updates.statusColumnValues = existingColumnValues;
-      }
     }
 
     // Update task with all changes

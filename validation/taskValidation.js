@@ -69,6 +69,10 @@ const createTaskValidation = Joi.object({
     "string.pattern.name": "Channel ID must be a valid ObjectId",
   }),
 
+  tabId: helpers.objectIdValidation.optional().messages({
+    "string.pattern.name": "Tab ID must be a valid ObjectId",
+  }),
+
   assignedTo: Joi.array()
     .items(helpers.objectIdValidation)
     .optional()
@@ -117,24 +121,40 @@ const createTaskValidation = Joi.object({
     }),
 }).custom((value, helpers) => {
   // Custom validation to ensure either projectId or channelId is provided, but not both
-  const { projectId, channelId } = value;
-  
+  const { projectId, channelId, tabId } = value;
+
   if (!projectId && !channelId) {
     return helpers.error('custom.eitherRequired', {
       message: 'Either projectId or channelId must be provided'
     });
   }
-  
+
   if (projectId && channelId) {
     return helpers.error('custom.mutuallyExclusive', {
       message: 'Cannot provide both projectId and channelId'
     });
   }
-  
+
+  // If channelId is provided (open task), tabId is required
+  if (channelId && !tabId) {
+    return helpers.error('custom.tabIdRequired', {
+      message: 'tabId is required when creating an open task (channelId without projectId)'
+    });
+  }
+
+  // If projectId is provided (project task), tabId should not be provided
+  if (projectId && tabId) {
+    return helpers.error('custom.tabIdForbidden', {
+      message: 'tabId should not be provided for project tasks (derived from project)'
+    });
+  }
+
   return value;
 }).messages({
   'custom.eitherRequired': 'Either projectId or channelId must be provided',
-  'custom.mutuallyExclusive': 'Cannot provide both projectId and channelId'
+  'custom.mutuallyExclusive': 'Cannot provide both projectId and channelId',
+  'custom.tabIdRequired': 'tabId is required when creating an open task (channelId without projectId)',
+  'custom.tabIdForbidden': 'tabId should not be provided for project tasks (derived from project)'
 });
 
 // Batch update task validation schema

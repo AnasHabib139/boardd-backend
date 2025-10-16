@@ -259,17 +259,15 @@ const getDefaultValue = (columnType) => {
 
 /**
  * Process and validate column values for a task
- * @param {string} projectId - Project ID
- * @param {string} status - Task status
+ * @param {string} tabId - Tab ID
  * @param {Object} providedColumnValues - Column values from request
  * @returns {Object} { isValid, errors, processedValues }
  */
-exports.processTaskColumnValues = async (projectId, status, providedColumnValues = {}) => {
+exports.processTaskColumnValues = async (tabId, providedColumnValues = {}) => {
   try {
-    // Get all columns for this project and status
+    // Get all columns for this tab
     const projectColumns = await findManyProjectStatusColumns({
-      projectId,
-      status,
+      tabId,
       isActive: true
     });
 
@@ -314,16 +312,14 @@ exports.processTaskColumnValues = async (projectId, status, providedColumnValues
 };
 
 /**
- * Apply default values for all columns in a project+status
- * @param {string} projectId - Project ID
- * @param {string} status - Task status
+ * Apply default values for all columns in a tab
+ * @param {string} tabId - Tab ID
  * @returns {Object} Default column values
  */
-exports.getDefaultColumnValues = async (projectId, status) => {
+exports.getDefaultColumnValues = async (tabId) => {
   try {
     const projectColumns = await findManyProjectStatusColumns({
-      projectId,
-      status,
+      tabId,
       isActive: true
     });
 
