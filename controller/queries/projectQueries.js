@@ -1044,15 +1044,6 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
     },
   ];
 
-  // Add search filter if search term is provided
-  if (search && search.trim()) {
-    pipeline.push({
-      $match: {
-        name: { $regex: search.trim(), $options: "i" }
-      }
-    });
-  }
-
   pipeline.push(
 
     // Lookup company details for context path
@@ -1180,6 +1171,8 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
           {
             $match: {
               isActive: true, // Only active tasks
+              // Add search condition for task title if provided
+              ...(search && search.trim() ? { title: { $regex: search.trim(), $options: "i" } } : {}),
             },
           },
           // Lookup task assignees
@@ -1318,6 +1311,13 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
         ],
       },
     },
+
+    // Filter out projects with no matching tasks (when search is active)
+    ...(search && search.trim() ? [{
+      $match: {
+        "allTasks.0": { $exists: true } // Only projects with at least one task
+      }
+    }] : []),
 
     // Separate tasks by status for better organization
     {
@@ -1544,17 +1544,6 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
       },
     },
   );
-
-  // Add search score calculation if search is provided
-  if (search && search.trim()) {
-    pipeline.push({
-      $addFields: {
-        searchScore: {
-          $subtract: [100, { $strLenCP: "$name" }]
-        }
-      }
-    });
-  }
 
   pipeline.push(
     // Unwind arrays to get single objects
@@ -1794,6 +1783,8 @@ exports.getSingleProjectListQuery = (projectId) => {
           {
             $match: {
               isActive: true, // Only active tasks
+              // Add search condition for task title if provided
+              ...(search && search.trim() ? { title: { $regex: search.trim(), $options: "i" } } : {}),
             },
           },
           // Lookup task assignees
@@ -1932,6 +1923,13 @@ exports.getSingleProjectListQuery = (projectId) => {
         ],
       },
     },
+
+    // Filter out projects with no matching tasks (when search is active)
+    ...(search && search.trim() ? [{
+      $match: {
+        "allTasks.0": { $exists: true } // Only projects with at least one task
+      }
+    }] : []),
 
     // Separate tasks by status for better organization
     {
