@@ -162,7 +162,11 @@ const validateFieldValue = (field, value) => {
       return typeof value === "string";
     case "attachments":
       return (
-        Array.isArray(value) && value.every((item) => typeof item === "string")
+        Array.isArray(value) &&
+        value.every((item) =>
+          typeof item === "object" &&
+          typeof item.url === "string"
+        )
       );
     case "checklist":
       return (
@@ -365,13 +369,17 @@ const processTaskUpdate = async (socket, data) => {
 
     // Handle attachment deletions before updating
     if (field === "attachments") {
+      // Get URLs from new attachment objects
+      const newUrls = value.map(att => att.url);
+
+      // Find attachments that were removed
       const removedAttachments = previousValue.filter(
-        (attachment) => !value.includes(attachment)
+        (attachment) => !newUrls.includes(attachment.url)
       );
 
       // Delete removed attachments from disk
-      for (const attachmentPath of removedAttachments) {
-        const deleteResult = deleteFileFromDisk(attachmentPath);
+      for (const attachment of removedAttachments) {
+        const deleteResult = deleteFileFromDisk(attachment.url);
         if (!deleteResult.success) {
           console.warn(
             `Failed to delete attachment file: ${deleteResult.error}. Continuing with database update.`
@@ -391,6 +399,15 @@ const processTaskUpdate = async (socket, data) => {
       processedValue = processedValue.map(id =>
         Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : id
       );
+    }
+
+    // Process attachments to add uploadedBy and uploadedAt if missing
+    if (field === "attachments" && Array.isArray(processedValue)) {
+      processedValue = processedValue.map(attachment => ({
+        ...attachment,
+        uploadedBy: attachment.uploadedBy || (Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : userId),
+        uploadedAt: attachment.uploadedAt || new Date(),
+      }));
     }
 
     // INSTANT DB UPDATE FOR ALL FIELDS

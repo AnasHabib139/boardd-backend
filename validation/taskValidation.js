@@ -53,6 +53,30 @@ const customFieldSchema = Joi.object({
   }),
 });
 
+// Attachment schema - matches channel files structure
+const attachmentSchema = Joi.object({
+  url: Joi.string().uri().required().messages({
+    "string.uri": "Attachment URL must be a valid URL",
+    "any.required": "Attachment URL is required",
+  }),
+  fileName: Joi.string().trim().max(255).optional().messages({
+    "string.max": "File name cannot exceed 255 characters",
+  }),
+  fileSize: Joi.number().integer().min(0).optional().messages({
+    "number.base": "File size must be a number",
+    "number.min": "File size must be non-negative",
+  }),
+  mimeType: Joi.string().trim().max(100).optional().messages({
+    "string.max": "MIME type cannot exceed 100 characters",
+  }),
+  uploadedBy: helpers.objectIdValidation.optional().messages({
+    "string.pattern.name": "Uploaded by must be a valid user ID",
+  }),
+  uploadedAt: Joi.date().optional().messages({
+    "date.base": "Uploaded at must be a valid date",
+  }),
+});
+
 // Create task validation schema (simplified)
 const createTaskValidation = Joi.object({
   title: Joi.string().trim().min(1).max(200).required().messages({
@@ -103,12 +127,11 @@ const createTaskValidation = Joi.object({
   }),
 
   attachments: Joi.array()
-    .items(Joi.string().uri())
+    .items(attachmentSchema)
     .optional()
     .default([])
     .messages({
-      "array.base": "Attachments must be an array of valid URLs",
-      "string.uri": "Each attachment must be a valid URL",
+      "array.base": "Attachments must be an array of attachment objects",
     }),
 
   links: Joi.array()
@@ -225,9 +248,8 @@ const batchUpdateTaskValidation = Joi.object({
     "string.base": "Type must be a string",
   }),
 
-  attachments: Joi.array().items(Joi.string().uri()).optional().messages({
-    "array.base": "Attachments must be an array of valid URLs",
-    "string.uri": "Each attachment must be a valid URL",
+  attachments: Joi.array().items(attachmentSchema).optional().messages({
+    "array.base": "Attachments must be an array of attachment objects",
   }),
 
   customFields: Joi.array().items(customFieldSchema).optional().messages({

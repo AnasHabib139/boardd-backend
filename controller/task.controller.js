@@ -231,6 +231,13 @@ exports.createTask = async (req, res, next) => {
       completed: taskStatus === "completed" ? orderIndex : 1000,
     };
 
+    // Process attachments to add uploadedBy and uploadedAt if missing
+    const processedAttachments = (attachments || []).map(attachment => ({
+      ...attachment,
+      uploadedBy: attachment.uploadedBy || userId,
+      uploadedAt: attachment.uploadedAt || new Date(),
+    }));
+
     // Create task with simplified fields, using defaults for removed ones
     const task = await createTask({
       title: title,
@@ -241,7 +248,7 @@ exports.createTask = async (req, res, next) => {
       status: taskStatus,
       priority: priority || "medium",
       dueDate: parseDate(dueDate) || null,
-      attachments: attachments || [],
+      attachments: processedAttachments,
       links: links || [],
       statusColumnValues: processedColumnValues,
       // Auto-defaults for removed fields
@@ -578,6 +585,15 @@ exports.batchUpdateTask = async (req, res, next) => {
 
       updates.statusColumnValues = mergedColumnValues;
       delete updates.columnValues; // Remove original field
+    }
+
+    // Process attachments to add uploadedBy and uploadedAt if missing
+    if (updates.attachments) {
+      updates.attachments = updates.attachments.map(attachment => ({
+        ...attachment,
+        uploadedBy: attachment.uploadedBy || userId,
+        uploadedAt: attachment.uploadedAt || new Date(),
+      }));
     }
 
     // Update task with all changes
@@ -1479,8 +1495,8 @@ exports.deleteTaskPermanently = async (req, res, next) => {
 
     // Delete attachments from disk
     if (task.attachments && task.attachments.length > 0) {
-      for (const attachmentPath of task.attachments) {
-        const deleteResult = deleteFileFromDisk(attachmentPath);
+      for (const attachment of task.attachments) {
+        const deleteResult = deleteFileFromDisk(attachment.url);
         if (!deleteResult.success) {
           console.warn(`Failed to delete attachment file: ${deleteResult.error}`);
         }

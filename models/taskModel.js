@@ -60,7 +60,16 @@ const taskSchema = new Schema({
   strokeColor: { type: String, default: "#6C63FF" }, // Default purple
   type: { type: String, default: "task" },
   isActive: { type: Boolean, default: true },
-  attachments: [{ type: String }],
+  attachments: [
+    {
+      url: { type: String, required: true },
+      fileName: { type: String },
+      fileSize: { type: Number },
+      mimeType: { type: String },
+      uploadedBy: { type: Types.ObjectId, ref: "User" },
+      uploadedAt: { type: Date, default: Date.now },
+    },
+  ],
   links: [{ type: String }],
   customFields: [customFieldSchema], // Add custom fields array
   checklist: { type: [checklistItemSchema], default: [] },

@@ -346,12 +346,14 @@ exports.getArchivedChannelsQuery = (userId) => {
 
 /**
  * Get channel files with type filtering
+ * Merges files from both channel.files and task.attachments
  * @param {string} channelId - Channel ID
  * @param {string} type - File type filter (all, photos&images, videos, etc.)
  * @returns {Array} Aggregation pipeline
  */
 exports.getChannelFilesQuery = (channelId, type) => {
   const { getMimeTypeFilter } = require("../helpers/channels/fileTypeMapper");
+  const mimeTypeFilter = getMimeTypeFilter(type);
 
   const pipeline = [
     // Match the specific channel
@@ -361,63 +363,226 @@ exports.getChannelFilesQuery = (channelId, type) => {
       },
     },
 
-    // Unwind files array to work with individual files
+    // Use $facet to create two parallel data streams
     {
-      $unwind: {
-        path: "$files",
-        preserveNullAndEmptyArrays: false,
-      },
-    },
-
-    // Lookup user who uploaded the file
-    {
-      $lookup: {
-        from: "users",
-        localField: "files.uploadedBy",
-        foreignField: "_id",
-        as: "uploadedByUser",
-        pipeline: [
+      $facet: {
+        // Stream 1: Channel files
+        channelFiles: [
+          // Unwind files array
+          {
+            $unwind: {
+              path: "$files",
+              preserveNullAndEmptyArrays: false,
+            },
+          },
+          // Apply MIME type filter if specified
+          ...(mimeTypeFilter ? [{
+            $match: {
+              "files.mimeType": mimeTypeFilter["files.mimeType"]
+            }
+          }] : []),
+          // Lookup uploader user details
+          {
+            $lookup: {
+              from: "users",
+              localField: "files.uploadedBy",
+              foreignField: "_id",
+              as: "uploadedByUser",
+              pipeline: [
+                {
+                  $project: {
+                    _id: 1,
+                    name: 1,
+                    email: 1,
+                    image: 1,
+                    title: 1,
+                    designation: 1,
+                  },
+                },
+              ],
+            },
+          },
+          {
+            $unwind: {
+              path: "$uploadedByUser",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          // Project to standard format
           {
             $project: {
-              _id: 1,
-              name: 1,
-              email: 1,
-              image: 1,
-              title: 1,
-              designation: 1,
+              _id: "$files._id",
+              url: "$files.url",
+              fileName: "$files.fileName",
+              fileSize: "$files.fileSize",
+              mimeType: "$files.mimeType",
+              uploadedBy: "$uploadedByUser",
+              uploadedAt: "$files.uploadedAt",
+              channelId: "$_id",
+              channelName: "$channelName",
+              source: { $literal: "channel" },
+              taskInfo: { $literal: null },
+            },
+          },
+        ],
+
+        // Stream 2: Task attachments
+        taskAttachments: [
+          // Store channel info for later use
+          {
+            $addFields: {
+              channelInfo: {
+                _id: "$_id",
+                channelName: "$channelName",
+              },
+            },
+          },
+          // Lookup tasks associated with this channel (both direct and via project)
+          {
+            $lookup: {
+              from: "tasks",
+              let: { channelId: "$_id" },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $eq: ["$channelId", "$$channelId"] },
+                        { $eq: ["$isActive", true] },
+                        { $gt: [{ $size: { $ifNull: ["$attachments", []] } }, 0] },
+                      ],
+                    },
+                  },
+                },
+                // Unwind attachments array
+                {
+                  $unwind: {
+                    path: "$attachments",
+                    preserveNullAndEmptyArrays: false,
+                  },
+                },
+                // Filter out incomplete attachments (must have url field)
+                {
+                  $match: {
+                    "attachments.url": { $exists: true, $ne: null, $ne: "" }
+                  }
+                },
+                // Apply MIME type filter if specified
+                ...(mimeTypeFilter ? [{
+                  $match: {
+                    "attachments.mimeType": mimeTypeFilter["files.mimeType"]
+                  }
+                }] : []),
+                // Lookup project details for task context
+                {
+                  $lookup: {
+                    from: "projects",
+                    localField: "projectId",
+                    foreignField: "_id",
+                    as: "project",
+                  },
+                },
+                {
+                  $unwind: {
+                    path: "$project",
+                    preserveNullAndEmptyArrays: true,
+                  },
+                },
+                // Lookup uploader user details
+                {
+                  $lookup: {
+                    from: "users",
+                    localField: "attachments.uploadedBy",
+                    foreignField: "_id",
+                    as: "uploadedByUser",
+                    pipeline: [
+                      {
+                        $project: {
+                          _id: 1,
+                          name: 1,
+                          email: 1,
+                          image: 1,
+                          title: 1,
+                          designation: 1,
+                        },
+                      },
+                    ],
+                  },
+                },
+                {
+                  $unwind: {
+                    path: "$uploadedByUser",
+                    preserveNullAndEmptyArrays: true,
+                  },
+                },
+                // Project to standard format
+                {
+                  $project: {
+                    _id: "$attachments._id",
+                    url: "$attachments.url",
+                    fileName: "$attachments.fileName",
+                    fileSize: "$attachments.fileSize",
+                    mimeType: "$attachments.mimeType",
+                    uploadedBy: "$uploadedByUser",
+                    uploadedAt: "$attachments.uploadedAt",
+                    taskInfo: {
+                      taskId: "$_id",
+                      taskTitle: "$title",
+                      projectName: { $ifNull: ["$project.name", "Open"] },
+                    },
+                  },
+                },
+              ],
+              as: "taskFiles",
+            },
+          },
+          // Unwind task files
+          {
+            $unwind: {
+              path: "$taskFiles",
+              preserveNullAndEmptyArrays: false,
+            },
+          },
+          // Add channel info to each task file
+          {
+            $replaceRoot: {
+              newRoot: {
+                $mergeObjects: [
+                  "$taskFiles",
+                  {
+                    channelId: "$channelInfo._id",
+                    channelName: "$channelInfo.channelName",
+                    source: "task",
+                  },
+                ],
+              },
             },
           },
         ],
       },
     },
 
-    // Unwind uploadedByUser (should be one)
-    {
-      $unwind: {
-        path: "$uploadedByUser",
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-
-    // Add uploadedBy user details to file object
-    {
-      $addFields: {
-        "files.uploadedByUser": "$uploadedByUser",
-      },
-    },
-
-    // Project only the file data with channel info
+    // Merge both arrays
     {
       $project: {
-        _id: "$files._id",
-        url: "$files.url",
-        fileName: "$files.fileName",
-        fileSize: "$files.fileSize",
-        mimeType: "$files.mimeType",
-        uploadedBy: "$files.uploadedByUser",
-        uploadedAt: "$files.uploadedAt",
-        channelId: "$_id",
-        channelName: "$channelName",
+        allFiles: {
+          $concatArrays: ["$channelFiles", "$taskAttachments"],
+        },
+      },
+    },
+
+    // Unwind merged array
+    {
+      $unwind: {
+        path: "$allFiles",
+        preserveNullAndEmptyArrays: false,
+      },
+    },
+
+    // Replace root with file object
+    {
+      $replaceRoot: {
+        newRoot: "$allFiles",
       },
     },
 
@@ -426,15 +591,6 @@ exports.getChannelFilesQuery = (channelId, type) => {
       $sort: { uploadedAt: -1 },
     },
   ];
-
-  // Add MIME type filter if not 'all'
-  const mimeTypeFilter = getMimeTypeFilter(type);
-  if (mimeTypeFilter) {
-    // Insert filter after unwind, before lookup
-    pipeline.splice(2, 0, {
-      $match: mimeTypeFilter,
-    });
-  }
 
   return pipeline;
 };
