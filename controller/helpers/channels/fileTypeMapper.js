@@ -40,9 +40,10 @@ const FILE_TYPE_MAPPINGS = {
 /**
  * Get MIME type filter for aggregation query
  * @param {string} type - File type (all, photos&images, videos, etc.)
+ * @param {string} fieldName - Field name to filter on (e.g., "files.mimeType", "attachments.mimeType")
  * @returns {Object|null} MongoDB match condition or null for 'all'
  */
-exports.getMimeTypeFilter = (type) => {
+exports.getMimeTypeFilter = (type, fieldName = "files.mimeType") => {
   // No filter for 'all'
   if (type === "all") {
     return null;
@@ -58,14 +59,14 @@ exports.getMimeTypeFilter = (type) => {
     if (mimeType instanceof RegExp) {
       // Convert regex to MongoDB $regex
       return {
-        "files.mimeType": {
+        [fieldName]: {
           $regex: mimeType.source,
           $options: "i",
         },
       };
     } else {
       // Exact match
-      return { "files.mimeType": mimeType };
+      return { [fieldName]: mimeType };
     }
   });
 

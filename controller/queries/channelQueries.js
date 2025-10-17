@@ -353,7 +353,10 @@ exports.getArchivedChannelsQuery = (userId) => {
  */
 exports.getChannelFilesQuery = (channelId, type) => {
   const { getMimeTypeFilter } = require("../helpers/channels/fileTypeMapper");
-  const mimeTypeFilter = getMimeTypeFilter(type);
+
+  // Get MIME type filters for both channel files and task attachments
+  const channelFilesFilter = getMimeTypeFilter(type, "files.mimeType");
+  const taskAttachmentsFilter = getMimeTypeFilter(type, "attachments.mimeType");
 
   const pipeline = [
     // Match the specific channel
@@ -376,10 +379,8 @@ exports.getChannelFilesQuery = (channelId, type) => {
             },
           },
           // Apply MIME type filter if specified
-          ...(mimeTypeFilter ? [{
-            $match: {
-              "files.mimeType": mimeTypeFilter["files.mimeType"]
-            }
+          ...(channelFilesFilter ? [{
+            $match: channelFilesFilter
           }] : []),
           // Lookup uploader user details
           {
@@ -468,10 +469,8 @@ exports.getChannelFilesQuery = (channelId, type) => {
                   }
                 },
                 // Apply MIME type filter if specified
-                ...(mimeTypeFilter ? [{
-                  $match: {
-                    "attachments.mimeType": mimeTypeFilter["files.mimeType"]
-                  }
+                ...(taskAttachmentsFilter ? [{
+                  $match: taskAttachmentsFilter
                 }] : []),
                 // Lookup project details for task context
                 {
