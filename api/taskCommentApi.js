@@ -1,12 +1,13 @@
 "use strict";
 
 const { Router } = require("express");
-const { createTaskComment } = require("../controller/taskComment.controller");
+const { createTaskComment, getTaskComments } = require("../controller/taskComment.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
 const {
   validateCreateTaskComment,
   validateTaskIdParam,
+  validateGetTaskCommentsQuery,
 } = require("../validation/taskCommentValidation");
 
 class TaskCommentApi {
@@ -17,6 +18,15 @@ class TaskCommentApi {
 
   registerRoutes() {
     let router = this.router;
+
+    // Get all comments for a specific task
+    router.get(
+      "/:taskId/comments",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateTaskIdParam,
+      validateGetTaskCommentsQuery,
+      getTaskComments
+    );
 
     // Create a new comment on a task
     router.post(

@@ -7,7 +7,7 @@ const { findTask } = require("../models/taskModel");
 const { findProject } = require("../models/projectModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
-const { createTaskComment, findTaskComment } = require("../models/taskCommentModel");
+const { createTaskComment, findTaskComment, getAllTaskComments } = require("../models/taskCommentModel");
 const { createActivity } = require("../models/activityModel");
 const { emitTaskEvent } = require("../utils/socket");
 
@@ -165,6 +165,154 @@ exports.createTaskComment = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in createTaskComment:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Get all comments for a specific task
+ * User must be a tab or channel member to view comments
+ */
+exports.getTaskComments = async (req, res, next) => {
+  try {
+    const { taskId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    const userId = req.user.id;
+
+    // Find task
+    const task = await findTask({ _id: taskId });
+    if (!task) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Task not found",
+      });
+    }
+
+    // Get context - tab, project, and channel for permission checks
+    let project = null;
+    let tab = null;
+    let channel = null;
+
+    if (task.projectId) {
+      // Project-based task
+      project = await findProject({ _id: task.projectId });
+      if (!project) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Project not found",
+        });
+      }
+
+      [tab, channel] = await Promise.all([
+        findChannelTab({ _id: project.tabId }),
+        findChannel({ _id: project.channelId }),
+      ]);
+
+      if (!tab || !channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Tab or channel not found",
+        });
+      }
+    } else if (task.channelId) {
+      // Channel-based task (Open task)
+      channel = await findChannel({ _id: task.channelId });
+      if (!channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Channel not found",
+        });
+      }
+
+      // Get tab from task
+      if (task.tabId) {
+        tab = await findChannelTab({ _id: task.tabId });
+      }
+    } else {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Task has no project or channel association",
+      });
+    }
+
+    // Check permissions: user must be tab or channel member
+    const isTabMember = tab && tab.members.some(id => id.toString() === userId);
+    const isChannelMember = channel.members.some(id => id.toString() === userId);
+
+    if (!isTabMember && !isChannelMember) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You must be a tab or channel member to view comments on this task",
+      });
+    }
+
+    // Build aggregation query
+    const query = [
+      {
+        $match: {
+          taskId: require("mongoose").Types.ObjectId.createFromHexString(taskId),
+          isActive: true,
+        },
+      },
+      // Lookup user details
+      {
+        $lookup: {
+          from: "users",
+          localField: "userId",
+          foreignField: "_id",
+          as: "user",
+        },
+      },
+      {
+        $unwind: {
+          path: "$user",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      // Project fields
+      {
+        $project: {
+          _id: 1,
+          taskId: 1,
+          message: 1,
+          attachments: 1,
+          links: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          user: {
+            _id: "$user._id",
+            name: "$user.name",
+            email: "$user.email",
+            image: "$user.image",
+            coverImage: "$user.coverImage",
+            title: "$user.title",
+            designation: "$user.designation",
+          },
+        },
+      },
+      // Sort by most recent first
+      {
+        $sort: { createdAt: -1 },
+      },
+    ];
+
+    // Get paginated comments
+    const { comments, pagination } = await getAllTaskComments({
+      query,
+      page: parseInt(page),
+      limit: parseInt(limit),
+    });
+
+    return generateResponse(
+      { comments, pagination },
+      "Comments retrieved successfully",
+      res
+    );
+  } catch (error) {
+    console.error("Error in getTaskComments:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,
