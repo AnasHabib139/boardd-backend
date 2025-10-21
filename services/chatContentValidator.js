@@ -20,7 +20,7 @@ const ALLOWED_NODES = [
 ];
 
 // Allowed mark types
-const ALLOWED_MARKS = ["bold", "italic", "strike", "code", "link"];
+const ALLOWED_MARKS = ["bold", "italic", "underline", "strike", "code", "link"];
 
 /**
  * Validate and sanitize contentDoc
