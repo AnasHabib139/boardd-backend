@@ -191,7 +191,7 @@ exports.getAllMembersInChannelQuery = (channelId, currentUserId) => {
       // Lookup users collection to get member details + demo users
       $lookup: {
         from: "users",
-        let: { channelMembers: "$members" },
+        let: { channelMembers: "$members", currentChannelId: "$_id" },
         pipeline: [
           {
             $match: {
@@ -217,6 +217,40 @@ exports.getAllMembersInChannelQuery = (channelId, currentUserId) => {
             },
           },
           {
+            // Lookup private tabs where this user is a member
+            $lookup: {
+              from: "channeltabs",
+              let: { userId: "$_id" },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $eq: ["$channelId", "$$currentChannelId"] },
+                        { $eq: ["$isPrivate", true] },
+                        { $eq: ["$isActive", true] },
+                        { $in: ["$$userId", "$members"] },
+                      ],
+                    },
+                  },
+                },
+              ],
+              as: "privateTabs",
+            },
+          },
+          {
+            // Add isPrivate field based on private tab membership
+            $addFields: {
+              isPrivate: {
+                $cond: {
+                  if: { $gt: [{ $size: "$privateTabs" }, 0] },
+                  then: true,
+                  else: false,
+                },
+              },
+            },
+          },
+          {
             $project: {
               _id: 1,
               name: 1,
@@ -232,6 +266,7 @@ exports.getAllMembersInChannelQuery = (channelId, currentUserId) => {
               role: 1,
               isActive: 1,
               isDemo: 1,
+              isPrivate: 1,
             },
           },
         ],
@@ -262,6 +297,7 @@ exports.getAllMembersInChannelQuery = (channelId, currentUserId) => {
         role: "$memberDetails.role",
         isActive: "$memberDetails.isActive",
         isDemo: "$memberDetails.isDemo",
+        isPrivate: "$memberDetails.isPrivate",
         channelInfo: {
           channelId: "$_id",
           channelName: "$channelName",

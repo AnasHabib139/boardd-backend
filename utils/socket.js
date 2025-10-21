@@ -20,6 +20,7 @@ const { createNotification } = require("../models/notificationModel");
 const { findUserMutePreferences } = require("../models/userMutePreferencesModel");
 const { generateActivityMessage, deleteFileFromDisk } = require("../utils");
 const { ACTION_TYPE, TASK_STATUS, TASK_PRIORITY } = require("./constants");
+const { processTaskColumnValues } = require("../controller/helpers/tasks/statusColumns.helper");
 
 let io;
 
@@ -151,7 +152,7 @@ const validateFieldValue = (field, value) => {
     case "status":
       return Object.values(TASK_STATUS).includes(value);
     case "priority":
-      return Object.values(TASK_PRIORITY).includes(value);
+      return typeof value === "string";
     case "assignedTo":
       return Array.isArray(value);
     case "dueDate":
@@ -198,6 +199,8 @@ const validateFieldValue = (field, value) => {
             item.value !== undefined
         )
       );
+    case "columnValues":
+      return typeof value === "object" && value !== null && !Array.isArray(value);
     default:
       return true;
   }
@@ -408,6 +411,54 @@ const processTaskUpdate = async (socket, data) => {
         uploadedBy: attachment.uploadedBy || (Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : userId),
         uploadedAt: attachment.uploadedAt || new Date(),
       }));
+    }
+
+    // Process columnValues - validate and convert to Map (same as HTTP API)
+    if (field === "columnValues" && processedValue) {
+      // Get task's tab to validate column values
+      let tabId = null;
+      if (task.projectId) {
+        const taskProject = await findProject({ _id: task.projectId });
+        tabId = taskProject?.tabId;
+      } else if (task.tabId) {
+        tabId = task.tabId;
+      }
+
+      if (tabId) {
+        // Validate and process column values using the same helper as HTTP API
+        const columnProcessResult = await processTaskColumnValues(tabId, processedValue);
+
+        if (!columnProcessResult.isValid) {
+          socket.emit("task-update-response", {
+            success: false,
+            error: "Column validation failed",
+            errors: columnProcessResult.errors,
+            taskId,
+            field,
+          });
+          pendingUpdates.delete(updateKey);
+          return;
+        }
+
+        // Merge with existing column values (same as HTTP API)
+        const existingColumnValues = task.statusColumnValues || new Map();
+        const newColumnValues = new Map(Object.entries(columnProcessResult.processedValues));
+        const mergedColumnValues = new Map([...existingColumnValues, ...newColumnValues]);
+
+        // Update field to statusColumnValues for DB
+        field = "statusColumnValues";
+        processedValue = mergedColumnValues;
+      } else {
+        // No tab found - cannot validate column values
+        socket.emit("task-update-response", {
+          success: false,
+          error: "Cannot update column values: task has no associated tab",
+          taskId,
+          field,
+        });
+        pendingUpdates.delete(updateKey);
+        return;
+      }
     }
 
     // INSTANT DB UPDATE FOR ALL FIELDS
