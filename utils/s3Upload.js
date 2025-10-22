@@ -31,6 +31,7 @@ const fileFilter = (req, file, cb) => {
     const allowedDocTypes = /pdf|docx?|xlsx?|pptx?/;
     const allowedImageTypes = /jpeg|jpg|png|gif/;
     const allowedVideoTypes = /mp4|mov|avi|mkv|wmv|flv|webm|m4v|3gp/;
+    const allowedAudioTypes = /mp3|wav|ogg|m4a|aac|flac|wma/;
 
     const ext = require("path").extname(file.originalname).toLowerCase();
     const fileType = file.mimetype.split("/")[0];
@@ -50,6 +51,17 @@ const fileFilter = (req, file, cb) => {
         cb(
           new Error(
             "Only MP4, MOV, AVI, MKV, WMV, FLV, WEBM, M4V, and 3GP videos are allowed!"
+          )
+        );
+      }
+    } else if (fileType === "audio") {
+      // Check audio types
+      if (allowedAudioTypes.test(ext.substring(1))) {
+        cb(null, true);
+      } else {
+        cb(
+          new Error(
+            "Only MP3, WAV, OGG, M4A, AAC, FLAC, and WMA audio files are allowed!"
           )
         );
       }
@@ -91,12 +103,15 @@ exports.s3Uploadv3 = async (files, base64 = false) => {
       // Determine file category for path structure
       const isImage = file.mimetype.startsWith("image/");
       const isVideo = file.mimetype.startsWith("video/");
+      const isAudio = file.mimetype.startsWith("audio/");
       let category;
 
       if (isImage) {
         category = "images";
       } else if (isVideo) {
         category = "videos";
+      } else if (isAudio) {
+        category = "audios";
       } else {
         category = "documents";
       }
