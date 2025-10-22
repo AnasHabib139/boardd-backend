@@ -112,16 +112,28 @@ const validateColumnValue = (value, columnDefinition) => {
 
     case PROJECT_COLUMN_TYPES.NUMBER:
     case PROJECT_COLUMN_TYPES.RATING:
-      if (typeof value !== 'number' || isNaN(value)) {
+      // Auto-convert string numbers to actual numbers
+      if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (isNaN(parsed)) {
+          return {
+            isValid: false,
+            error: `${columnName} must be a valid number`
+          };
+        }
+        processedValue = parsed;
+      } else if (typeof value === 'number' && !isNaN(value)) {
+        processedValue = value;
+      } else {
         return {
           isValid: false,
           error: `${columnName} must be a number`
         };
       }
 
-      // Rating specific validation
+      // Rating specific validation (now using processedValue)
       if (columnType === PROJECT_COLUMN_TYPES.RATING) {
-        if (value < 1 || value > 5 || !Number.isInteger(value)) {
+        if (processedValue < 1 || processedValue > 5 || !Number.isInteger(processedValue)) {
           return {
             isValid: false,
             error: `${columnName} must be an integer between 1 and 5`
@@ -141,7 +153,22 @@ const validateColumnValue = (value, columnDefinition) => {
       break;
 
     case PROJECT_COLUMN_TYPES.CHECKBOX:
-      if (typeof value !== 'boolean') {
+      // Auto-convert string booleans to actual booleans
+      if (typeof value === 'string') {
+        const lowerValue = value.toLowerCase();
+        if (lowerValue === 'true') {
+          processedValue = true;
+        } else if (lowerValue === 'false') {
+          processedValue = false;
+        } else {
+          return {
+            isValid: false,
+            error: `${columnName} must be a boolean or "true"/"false" string`
+          };
+        }
+      } else if (typeof value === 'boolean') {
+        processedValue = value;
+      } else {
         return {
           isValid: false,
           error: `${columnName} must be a boolean`

@@ -370,6 +370,9 @@ const processTaskUpdate = async (socket, data) => {
     const contextPath = project ? `${channel.channelName} / ${tab.tabName}` : `${channel.channelName} / Open`;
     const userName = user.name || user.email;
 
+    // Track the actual field name for DB update (may differ from original field)
+    let dbField = field;
+
     // Handle attachment deletions before updating
     if (field === "attachments") {
       // Get URLs from new attachment objects
@@ -445,8 +448,8 @@ const processTaskUpdate = async (socket, data) => {
         const newColumnValues = new Map(Object.entries(columnProcessResult.processedValues));
         const mergedColumnValues = new Map([...existingColumnValues, ...newColumnValues]);
 
-        // Update field to statusColumnValues for DB
-        field = "statusColumnValues";
+        // Update dbField to statusColumnValues for DB (keep original field for logging)
+        dbField = "statusColumnValues";
         processedValue = mergedColumnValues;
       } else {
         // No tab found - cannot validate column values
@@ -465,7 +468,7 @@ const processTaskUpdate = async (socket, data) => {
     const updatedTask = await updateTask(
       { _id: taskId },
       {
-        [field]: processedValue,
+        [dbField]: processedValue,
         updatedAt: new Date(),
         version: (task.version || 0) + 1,
       },
