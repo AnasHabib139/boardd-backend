@@ -298,9 +298,9 @@ function validateStructure(node, errors = []) {
     }
   }
 
-  // text nodes must have text content
-  if (node.type === "text" && !node.text) {
-    errors.push("text node must have text content");
+  // text nodes must have text property (but can be empty string for attachment-only messages)
+  if (node.type === "text" && (node.text === undefined || node.text === null)) {
+    errors.push("text node must have text property");
   }
 
   // doc must have content
