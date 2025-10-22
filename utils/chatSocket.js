@@ -62,10 +62,13 @@ const processChatMessageSend = async (socket, data, io) => {
       return;
     }
 
-    // Check if message has content
-    if (!hasContent(contentDoc)) {
+    // Check if message has content (text OR attachments)
+    const hasTextContent = hasContent(contentDoc);
+    const hasAttachments = attachmentsUrls && attachmentsUrls.length > 0;
+
+    if (!hasTextContent && !hasAttachments) {
       socket.emit("chat:message:error", {
-        error: "Message cannot be empty",
+        error: "Message cannot be empty. Please add text or attach a file.",
         clientMsgId,
       });
       return;
@@ -254,6 +257,17 @@ const processChatMessageEdit = async (socket, data, io) => {
       socket.emit("chat:message:error", {
         error: "Invalid message content",
         details: validation.errors,
+      });
+      return;
+    }
+
+    // Check if edited message has content (text OR attachments)
+    const hasTextContent = hasContent(validation.sanitized);
+    const hasAttachments = attachmentsUrls && attachmentsUrls.length > 0;
+
+    if (!hasTextContent && !hasAttachments) {
+      socket.emit("chat:message:error", {
+        error: "Message cannot be empty. Please add text or attach a file.",
       });
       return;
     }
