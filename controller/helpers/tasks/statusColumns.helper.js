@@ -301,12 +301,20 @@ exports.processTaskColumnValues = async (tabId, providedColumnValues = {}) => {
     const processedValues = {};
     const errors = [];
 
-    // Process each column definition
-    for (const column of projectColumns) {
-      const { columnKey } = column;
+    // Only process columns that are actually provided (partial update support)
+    for (const columnKey in providedColumnValues) {
       const providedValue = providedColumnValues[columnKey];
 
-      // Validate the provided value (or apply default)
+      // Find the column definition
+      const column = projectColumns.find(col => col.columnKey === columnKey);
+
+      // Skip if column doesn't exist or isn't active
+      if (!column) {
+        errors.push(`Unknown or inactive column: ${columnKey}`);
+        continue;
+      }
+
+      // Validate the provided value
       const validation = validateColumnValue(providedValue, column);
 
       if (!validation.isValid) {
@@ -314,12 +322,8 @@ exports.processTaskColumnValues = async (tabId, providedColumnValues = {}) => {
         continue;
       }
 
-      // Use processed value if provided, otherwise get default
-      if (providedValue !== undefined && providedValue !== null) {
-        processedValues[columnKey] = validation.processedValue;
-      } else {
-        processedValues[columnKey] = getDefaultValue(column.columnType);
-      }
+      // Only add provided values (no defaults for unprovided columns)
+      processedValues[columnKey] = validation.processedValue;
     }
 
     return {
