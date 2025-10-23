@@ -7,13 +7,14 @@ const http = require("http");
 /**
  * Generate Clockup Report PDF
  * @param {Array} entries - Time entries with children
- * @param {Object} userInfo - User information {userId, name, email}
+ * @param {Object} userInfo - User information {userId, name, email, image}
  * @param {String} startDate - Report start date
  * @param {String} endDate - Report end date
  * @param {String} weekTotal - Total duration formatted as HH:MM:SS
+ * @param {Object} options - Optional settings {totalLabel: 'ENTRY TOTAL', isSingleEntry: true}
  * @returns {Promise<Buffer>} PDF buffer
  */
-exports.generateClockupReportPDF = async (entries, userInfo, startDate, endDate, weekTotal) => {
+exports.generateClockupReportPDF = async (entries, userInfo, startDate, endDate, weekTotal, options = {}) => {
   return new Promise(async (resolve, reject) => {
     try {
       // Create PDF document
@@ -249,11 +250,12 @@ exports.generateClockupReportPDF = async (entries, userInfo, startDate, endDate,
 
       doc.moveDown(0.5);
 
-      // Total Hours
+      // Total Hours (label can be customized via options)
+      const totalLabel = options.totalLabel || "TOTAL HOURS:";
       doc
         .fontSize(14)
         .font("Helvetica-Bold")
-        .text("TOTAL HOURS:", 50, doc.y, { continued: true })
+        .text(totalLabel, 50, doc.y, { continued: true })
         .text(weekTotal, { align: "right" });
 
       doc.moveDown(2);

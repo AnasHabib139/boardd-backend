@@ -12,6 +12,7 @@ const {
   duplicateTimeEntry,
   getClockupReports,
   downloadClockupReports,
+  downloadSingleClockupEntry,
 } = require("../controller/clockup.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -87,6 +88,14 @@ class ClockupApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateClockupReportsQuery,
       downloadClockupReports
+    );
+
+    // Download single entry as PDF - Generate PDF for one time entry
+    router.get(
+      "/reports/:entryId/download",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateTimeEntryIdParam,
+      downloadSingleClockupEntry
     );
 
     // Get children time entries - Retrieve paginated child entries for a parent time entry

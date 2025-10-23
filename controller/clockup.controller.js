@@ -26,6 +26,7 @@ const {
   getChildrenTimeEntriesQuery,
   getUserTimeEntriesReportQuery,
   getUserTimeEntriesWithChildrenForDownloadQuery,
+  getSingleTimeEntryWithChildrenForDownloadQuery,
 } = require("./queries/timeEntriesQueries");
 const { generateClockupReportPDF } = require("../services/pdfGenerator");
 
@@ -1083,6 +1084,128 @@ exports.downloadClockupReports = async (req, res, next) => {
     res.send(pdfBuffer);
   } catch (error) {
     console.error("Error in downloadClockupReports:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Download single clockup entry as PDF
+ * Generates a PDF for one time entry with its children
+ *
+ * Admin Access:
+ * - Can download any entry from users in their company
+ *
+ * Employee Access:
+ * - Can download their own entries only
+ *
+ * @route GET /api/clockup/reports/:entryId/download
+ * @param {String} req.params.entryId - Time entry ID
+ * @returns {Buffer} PDF file
+ */
+exports.downloadSingleClockupEntry = async (req, res, next) => {
+  try {
+    const { entryId } = req.params;
+    const loggedInUserId = req?.user?.id;
+    const loggedInUserRole = req?.user?.role;
+
+    // Validate logged-in user exists
+    const loggedInUser = await findUser({ _id: loggedInUserId });
+    if (!loggedInUser) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Get the aggregation query for single entry (includes children)
+    const query = getSingleTimeEntryWithChildrenForDownloadQuery(entryId);
+
+    // Execute query to get single entry
+    const TimeEntry = require("../models/timeEntryModel");
+    const result = await TimeEntry.TimeEntry.aggregate(query);
+
+    if (!result || result.length === 0) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Time entry not found or not completed",
+      });
+    }
+
+    const entry = result[0];
+
+    // Check access permissions
+    // Employee: can only download their own entries
+    // Admin: can download entries from users in their company
+    if (loggedInUserRole !== "admin") {
+      // Employee check
+      if (entry.userId.toString() !== loggedInUserId) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You can only download your own time entries",
+        });
+      }
+    } else {
+      // Admin check - same company
+      if (entry.companyId?.toString() !== loggedInUser.companyId?.toString()) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You can only download entries for users in your company",
+        });
+      }
+    }
+
+    // Calculate entry total (parent + children)
+    const totalMinutes = entry.totalTimeMinutes || 0;
+    const childrenTotal = entry.children.reduce(
+      (sum, child) => sum + (child.totalTimeMinutes || 0),
+      0
+    );
+    const entryTotalMinutes = totalMinutes + childrenTotal;
+
+    // Format as HH:MM:SS
+    const hours = Math.floor(entryTotalMinutes / 60);
+    const minutes = Math.floor(entryTotalMinutes % 60);
+    const seconds = Math.floor((entryTotalMinutes % 1) * 60);
+    const entryTotal = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+    // User info for PDF
+    const userInfo = {
+      userId: entry.userId,
+      name: entry.userName,
+      email: entry.userEmail,
+      image: entry.userImage || null,
+    };
+
+    // Format entry date as YYYY-MM-DD for consistency
+    const entryDate = new Date(entry.entryDate);
+    const formattedDate = entryDate.toISOString().split('T')[0];
+
+    // Generate PDF with single entry (wrap in array for PDF generator)
+    const pdfBuffer = await generateClockupReportPDF(
+      [entry],
+      userInfo,
+      formattedDate,
+      formattedDate, // Same date for start and end
+      entryTotal,
+      { totalLabel: "ENTRY TOTAL", isSingleEntry: true }
+    );
+
+    // Generate filename with single date
+    const sanitizedName = entry.userName.replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `Clockup_Report_${sanitizedName}_${formattedDate}.pdf`;
+
+    // Set response headers for file download
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Length", pdfBuffer.length);
+
+    // Send PDF buffer
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("Error in downloadSingleClockupEntry:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,
