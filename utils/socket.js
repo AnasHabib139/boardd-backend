@@ -609,10 +609,63 @@ const processTaskUpdate = async (socket, data) => {
       activities: [activity],
     });
 
+    // Transform statusColumnValues to columnData array if this is a columnValues update
+    let taskWithColumnData = updatedTask;
+    if (field === "columnValues" && updatedTask.statusColumnValues) {
+      try {
+        // Get tab ID to fetch column definitions
+        let tabIdForColumns = null;
+        if (updatedTask.projectId) {
+          const taskProject = await findProject({ _id: updatedTask.projectId });
+          tabIdForColumns = taskProject?.tabId;
+        } else if (updatedTask.tabId) {
+          tabIdForColumns = updatedTask.tabId;
+        }
+
+        if (tabIdForColumns) {
+          // Fetch column definitions for this tab
+          const { findManyProjectStatusColumns } = require("../models/projectStatusColumnModel");
+          const columns = await findManyProjectStatusColumns({
+            tabId: tabIdForColumns,
+            isActive: true
+          });
+
+          // Transform statusColumnValues Map to columnData array
+          const statusColumnValuesMap = updatedTask.statusColumnValues instanceof Map
+            ? updatedTask.statusColumnValues
+            : new Map(Object.entries(updatedTask.statusColumnValues));
+
+          const columnData = [];
+          for (const column of columns) {
+            const value = statusColumnValuesMap.get(column.columnKey);
+            if (value !== undefined) {
+              columnData.push({
+                _id: column._id,
+                key: column.columnKey,
+                value: value,
+                type: column.columnType,
+                columnName: column.columnName,
+                dropdownOptions: column.dropdownOptions || [],
+              });
+            }
+          }
+
+          // Add columnData to task object for emission
+          taskWithColumnData = {
+            ...updatedTask.toObject ? updatedTask.toObject() : updatedTask,
+            columnData,
+          };
+        }
+      } catch (error) {
+        console.error("Error transforming statusColumnValues to columnData:", error);
+        // Continue with original task if transformation fails
+      }
+    }
+
     // Emit to channel room (covers all tabs and open tasks)
     io.to(`channel:${channel._id}`).emit("tab-activity", {
       type: "TASK_UPDATED",
-      task: updatedTask,
+      task: taskWithColumnData,
       activities: [activity],
       field,
       previousValue,
