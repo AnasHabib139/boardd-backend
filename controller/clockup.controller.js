@@ -26,6 +26,7 @@ const {
   getChildrenTimeEntriesQuery,
   getUserTimeEntriesReportQuery,
   getUserTimeEntriesWithChildrenForDownloadQuery,
+  getUserSelectedTimeEntriesForDownloadQuery,
   getSingleTimeEntryWithChildrenForDownloadQuery,
 } = require("./queries/timeEntriesQueries");
 const { generateClockupReportPDF } = require("../services/pdfGenerator");
@@ -943,13 +944,14 @@ exports.getClockupReports = async (req, res, next) => {
  *
  * @route GET /api/clockup/reports/download
  * @param {String} req.query.userId - Target user ID (optional, admin only)
- * @param {String} req.query.startDate - Start date (YYYY-MM-DD)
- * @param {String} req.query.endDate - End date (YYYY-MM-DD)
+ * @param {String[]} req.query.selectedEntries - Optional array of entry IDs to download
+ * @param {String} req.query.startDate - Start date (YYYY-MM-DD) when not using selectedEntries
+ * @param {String} req.query.endDate - End date (YYYY-MM-DD) when not using selectedEntries
  * @returns {Buffer} PDF file
  */
 exports.downloadClockupReports = async (req, res, next) => {
   try {
-    const { userId: requestedUserId, startDate, endDate } = req.query;
+    const { userId: requestedUserId, startDate, endDate, selectedEntries } = req.query;
     const loggedInUserId = req?.user?.id;
     const loggedInUserRole = req?.user?.role;
 
@@ -993,6 +995,81 @@ exports.downloadClockupReports = async (req, res, next) => {
       }
     }
 
+    const TimeEntry = require("../models/timeEntryModel");
+
+    // Normalize selectedEntries to array (supports single string or array)
+    const selectedIds = selectedEntries
+      ? (Array.isArray(selectedEntries) ? selectedEntries : [selectedEntries])
+      : [];
+
+    // Branch: Selected entries mode
+    if (selectedIds.length > 0) {
+      // Enforce 100-entry limit (defense-in-depth; Joi also validates)
+      if (selectedIds.length > 100) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "Cannot select more than 100 entries",
+        });
+      }
+
+      // Deduplicate IDs
+      const uniqueEntryIds = [...new Set(selectedIds)];
+
+      // Build and run aggregation
+      const query = getUserSelectedTimeEntriesForDownloadQuery(targetUserId, uniqueEntryIds);
+      const entries = await TimeEntry.TimeEntry.aggregate(query);
+
+      if (!entries || entries.length === 0) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "No time entries found for the selected IDs",
+        });
+      }
+
+      // Ensure all requested IDs are valid/authorized
+      if (entries.length !== uniqueEntryIds.length) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "Some selected entries were not found or you don't have access to them",
+        });
+      }
+
+      // Calculate total time from parent entries
+      const totalMinutes = entries.reduce((sum, entry) => sum + (entry.totalTimeMinutes || 0), 0);
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = Math.floor(totalMinutes % 60);
+      const seconds = Math.floor((totalMinutes % 1) * 60);
+      const weekTotal = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+      // Compute report period from selected entries (min/max date)
+      const timestamps = entries.map(e => new Date(e.rawStartTime).getTime());
+      const minTs = Math.min(...timestamps);
+      const maxTs = Math.max(...timestamps);
+      const periodStart = new Date(minTs).toISOString().split('T')[0];
+      const periodEnd = new Date(maxTs).toISOString().split('T')[0];
+
+      // User info for PDF
+      const userInfo = {
+        userId: targetUser._id,
+        name: targetUser.name,
+        email: targetUser.email,
+        image: entries[0]?.userImage || null,
+      };
+
+      // Generate PDF
+      const pdfBuffer = await generateClockupReportPDF(entries, userInfo, periodStart, periodEnd, weekTotal);
+
+      // Filename uses 'Selected'
+      const sanitizedName = targetUser.name.replace(/[^a-zA-Z0-9]/g, '_');
+      const filename = `Clockup_Report_${sanitizedName}_Selected.pdf`;
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Length", pdfBuffer.length);
+      return res.send(pdfBuffer);
+    }
+
+    // Date range mode
     // Validate date range
     if (!startDate || !endDate) {
       return next({
@@ -1032,7 +1109,6 @@ exports.downloadClockupReports = async (req, res, next) => {
     const query = getUserTimeEntriesWithChildrenForDownloadQuery(targetUserId, startDate, endDate);
 
     // Execute query to get all entries (no pagination)
-    const TimeEntry = require("../models/timeEntryModel");
     const entries = await TimeEntry.TimeEntry.aggregate(query);
 
     if (!entries || entries.length === 0) {

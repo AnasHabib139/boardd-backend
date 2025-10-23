@@ -63,15 +63,24 @@ const clockupReportsQueryValidation = Joi.object({
     "string.pattern.base": "Invalid user ID format",
   }),
 
-  startDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required().messages({
-    "any.required": "Start date is required",
+  startDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional().messages({
     "string.pattern.base": "Start date must be in YYYY-MM-DD format",
   }),
 
-  endDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required().messages({
-    "any.required": "End date is required",
+  endDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional().messages({
     "string.pattern.base": "End date must be in YYYY-MM-DD format",
   }),
+
+  selectedEntries: Joi.array()
+    .items(Joi.string().pattern(/^[0-9a-fA-F]{24}$/))
+    .single()
+    .max(100)
+    .optional()
+    .messages({
+      "array.base": "Selected entries must be an array",
+      "string.pattern.base": "Each entry ID must be a valid MongoDB ObjectId",
+      "array.max": "Cannot select more than 100 entries",
+    }),
 
   page: Joi.number().integer().min(1).default(1).messages({
     "number.base": "Page must be a number",
@@ -85,7 +94,13 @@ const clockupReportsQueryValidation = Joi.object({
     "number.min": "Limit must be at least 1",
     "number.max": "Limit cannot exceed 100",
   }),
-});
+})
+  .xor("selectedEntries", "startDate")
+  .and("startDate", "endDate")
+  .messages({
+    "object.xor": "Provide either selectedEntries OR date range (startDate and endDate)",
+    "object.and": "Both startDate and endDate are required when using date range",
+  });
 
 // Validation middleware function
 const validateRequest = (schema, source = "body") => {
