@@ -10,6 +10,7 @@ const {
   getChildrenTimeEntries,
   deleteTimeEntry,
   duplicateTimeEntry,
+  getClockupReports,
 } = require("../controller/clockup.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -18,6 +19,7 @@ const {
   validateStopClock,
   validateEditTimeEntry,
   validateTimeEntryIdParam,
+  validateClockupReportsQuery,
 } = require("../validation/clockupValidation");
 
 class ClockupApi {
@@ -68,6 +70,14 @@ class ClockupApi {
       "/entries",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       getUserTimeEntries
+    );
+
+    // Get clockup reports - Retrieve time entries report with date range filtering
+    router.get(
+      "/reports",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateClockupReportsQuery,
+      getClockupReports
     );
 
     // Get children time entries - Retrieve paginated child entries for a parent time entry

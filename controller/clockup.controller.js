@@ -24,6 +24,7 @@ const {
 const {
   getUserTimeEntriesQuery,
   getChildrenTimeEntriesQuery,
+  getUserTimeEntriesReportQuery,
 } = require("./queries/timeEntriesQueries");
 
 /**
@@ -767,6 +768,113 @@ exports.deleteTimeEntry = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in deleteTimeEntry:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Get clockup reports for a user with date range filtering
+ * Shows completed time entries with user and company details
+ * Calculates week total duration
+ *
+ * @route GET /api/clockup/reports
+ * @param {String} req.query.startDate - Start date (YYYY-MM-DD)
+ * @param {String} req.query.endDate - End date (YYYY-MM-DD)
+ * @param {Number} req.query.page - Page number (default: 1)
+ * @param {Number} req.query.limit - Items per page (default: 10)
+ * @returns {Object} Time entries with week total
+ */
+exports.getClockupReports = async (req, res, next) => {
+  try {
+    const { startDate, endDate, page = 1, limit = 10 } = req.query;
+    const userId = req?.user?.id;
+
+    // Validate user exists
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Validate date range
+    if (!startDate || !endDate) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "startDate and endDate are required",
+      });
+    }
+
+    // Validate date format
+    const startDateObj = new Date(startDate);
+    const endDateObj = new Date(endDate);
+
+    if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Invalid date format. Use YYYY-MM-DD",
+      });
+    }
+
+    if (startDateObj > endDateObj) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "startDate cannot be after endDate",
+      });
+    }
+
+    // Get the aggregation query for time entries report
+    const query = getUserTimeEntriesReportQuery(userId, startDate, endDate);
+
+    // Get paginated time entries
+    const result = await getAllTimeEntries({
+      query,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      responseKey: "entries",
+    });
+
+    // Calculate week total from all entries (sum of totalTimeMinutes)
+    let weekTotalMinutes = 0;
+    if (result.entries && result.entries.length > 0) {
+      weekTotalMinutes = result.entries.reduce((sum, entry) => {
+        return sum + (entry.totalTimeMinutes || 0);
+      }, 0);
+    }
+
+    // Format week total as HH:MM:SS
+    const hours = Math.floor(weekTotalMinutes / 60);
+    const minutes = Math.floor(weekTotalMinutes % 60);
+    const seconds = Math.floor((weekTotalMinutes % 1) * 60);
+
+    const weekTotal = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+    // Remove totalTimeMinutes from response (internal use only)
+    const entries = result.entries.map(entry => {
+      const { totalTimeMinutes, ...rest } = entry;
+      return rest;
+    });
+
+    return generateResponse(
+      {
+        entries,
+        weekTotal,
+        pagination: result.pagination,
+        filters: {
+          startDate,
+          endDate,
+        },
+      },
+      "Time entries report retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getClockupReports:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

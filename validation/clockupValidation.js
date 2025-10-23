@@ -57,6 +57,32 @@ const timeEntryIdParamValidation = Joi.object({
   }),
 });
 
+// Clockup reports query validation schema
+const clockupReportsQueryValidation = Joi.object({
+  startDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required().messages({
+    "any.required": "Start date is required",
+    "string.pattern.base": "Start date must be in YYYY-MM-DD format",
+  }),
+
+  endDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required().messages({
+    "any.required": "End date is required",
+    "string.pattern.base": "End date must be in YYYY-MM-DD format",
+  }),
+
+  page: Joi.number().integer().min(1).default(1).messages({
+    "number.base": "Page must be a number",
+    "number.integer": "Page must be an integer",
+    "number.min": "Page must be at least 1",
+  }),
+
+  limit: Joi.number().integer().min(1).max(100).default(10).messages({
+    "number.base": "Limit must be a number",
+    "number.integer": "Limit must be an integer",
+    "number.min": "Limit must be at least 1",
+    "number.max": "Limit cannot exceed 100",
+  }),
+});
+
 // Validation middleware function
 const validateRequest = (schema, source = "body") => {
   return (req, res, next) => {
@@ -106,6 +132,7 @@ module.exports = {
   validateStopClock: validateRequest(stopClockValidation),
   validateEditTimeEntry: validateRequest(editTimeEntryValidation),
   validateTimeEntryIdParam: validateRequest(timeEntryIdParamValidation, "params"),
+  validateClockupReportsQuery: validateRequest(clockupReportsQueryValidation, "query"),
 
   // Export schemas for testing or custom usage
   schemas: {
@@ -113,5 +140,6 @@ module.exports = {
     stopClockValidation,
     editTimeEntryValidation,
     timeEntryIdParamValidation,
+    clockupReportsQueryValidation,
   },
 };

@@ -368,3 +368,144 @@ exports.getChildrenTimeEntriesQuery = (parentEntryId) => {
 
   return queryArray;
 };
+
+// Get time entries report for a user with date range filtering
+exports.getUserTimeEntriesReportQuery = (userId, startDate, endDate) => {
+  let queryArray = [];
+
+  // Match completed parent entries within date range
+  queryArray.push({
+    $match: {
+      userId: Types.ObjectId.createFromHexString(userId),
+      parentEntryId: null, // Only parent entries
+      endTime: { $exists: true, $ne: null }, // Completed entries only
+      startTime: {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate),
+      },
+    },
+  });
+
+  // Lookup user details
+  queryArray.push({
+    $lookup: {
+      from: "users",
+      localField: "userId",
+      foreignField: "_id",
+      as: "userDetails",
+    },
+  });
+
+  // Unwind user details
+  queryArray.push({
+    $unwind: {
+      path: "$userDetails",
+      preserveNullAndEmptyArrays: true,
+    },
+  });
+
+  // Lookup company details
+  queryArray.push({
+    $lookup: {
+      from: "companies",
+      localField: "userDetails.companyId",
+      foreignField: "_id",
+      as: "companyDetails",
+    },
+  });
+
+  // Unwind company details
+  queryArray.push({
+    $unwind: {
+      path: "$companyDetails",
+      preserveNullAndEmptyArrays: true,
+    },
+  });
+
+  // Add formatted fields
+  queryArray.push({
+    $addFields: {
+      // Format date as "August 01, 2025"
+      formattedDate: {
+        $dateToString: {
+          format: "%B %d, %Y",
+          date: "$startTime",
+        },
+      },
+      // Format duration as HH:MM:SS
+      formattedDuration: {
+        $cond: {
+          if: { $ne: ["$totalTime", null] },
+          then: {
+            $let: {
+              vars: {
+                hours: { $floor: { $divide: ["$totalTime", 60] } },
+                minutes: { $floor: { $mod: ["$totalTime", 60] } },
+                seconds: {
+                  $floor: { $multiply: [{ $mod: ["$totalTime", 1] }, 60] },
+                },
+              },
+              in: {
+                $concat: [
+                  // Hours (pad with zero if < 10)
+                  {
+                    $cond: {
+                      if: { $lt: ["$$hours", 10] },
+                      then: { $concat: ["0", { $toString: "$$hours" }] },
+                      else: { $toString: "$$hours" },
+                    },
+                  },
+                  ":",
+                  // Minutes (pad with zero if < 10)
+                  {
+                    $cond: {
+                      if: { $lt: ["$$minutes", 10] },
+                      then: { $concat: ["0", { $toString: "$$minutes" }] },
+                      else: { $toString: "$$minutes" },
+                    },
+                  },
+                  ":",
+                  // Seconds (pad with zero if < 10)
+                  {
+                    $cond: {
+                      if: { $lt: ["$$seconds", 10] },
+                      then: { $concat: ["0", { $toString: "$$seconds" }] },
+                      else: { $toString: "$$seconds" },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+          else: "00:00:00",
+        },
+      },
+    },
+  });
+
+  // Project final fields
+  queryArray.push({
+    $project: {
+      _id: 1,
+      date: "$formattedDate",
+      title: 1,
+      description: 1,
+      duration: "$formattedDuration",
+      totalTimeMinutes: "$totalTime", // Keep for week total calculation
+      userName: "$userDetails.name",
+      userEmail: "$userDetails.email",
+      companyName: "$companyDetails.companyName",
+      startTime: 1, // Keep for sorting
+      createdAt: 1,
+    },
+  });
+
+  // Sort by startTime descending (newest first)
+  queryArray.push({
+    $sort: {
+      startTime: -1,
+    },
+  });
+
+  return queryArray;
+};
