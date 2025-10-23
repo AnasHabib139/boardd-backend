@@ -509,3 +509,243 @@ exports.getUserTimeEntriesReportQuery = (userId, startDate, endDate) => {
 
   return queryArray;
 };
+
+// Get time entries with children for PDF download
+exports.getUserTimeEntriesWithChildrenForDownloadQuery = (userId, startDate, endDate) => {
+  let queryArray = [];
+
+  // Match completed parent entries within date range
+  queryArray.push({
+    $match: {
+      userId: Types.ObjectId.createFromHexString(userId),
+      parentEntryId: null, // Only parent entries
+      endTime: { $exists: true, $ne: null }, // Completed entries only
+      startTime: {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate),
+      },
+    },
+  });
+
+  // Lookup children entries
+  queryArray.push({
+    $lookup: {
+      from: "timeentries",
+      localField: "_id",
+      foreignField: "parentEntryId",
+      as: "children",
+    },
+  });
+
+  // Lookup user details
+  queryArray.push({
+    $lookup: {
+      from: "users",
+      localField: "userId",
+      foreignField: "_id",
+      as: "userDetails",
+    },
+  });
+
+  // Unwind user details
+  queryArray.push({
+    $unwind: {
+      path: "$userDetails",
+      preserveNullAndEmptyArrays: true,
+    },
+  });
+
+  // Lookup company details
+  queryArray.push({
+    $lookup: {
+      from: "companies",
+      localField: "userDetails.companyId",
+      foreignField: "_id",
+      as: "companyDetails",
+    },
+  });
+
+  // Unwind company details
+  queryArray.push({
+    $unwind: {
+      path: "$companyDetails",
+      preserveNullAndEmptyArrays: true,
+    },
+  });
+
+  // Add formatted date for grouping
+  queryArray.push({
+    $addFields: {
+      formattedDate: {
+        $dateToString: {
+          format: "%B %d, %Y",
+          date: "$startTime",
+        },
+      },
+      formattedStartTime: {
+        $dateToString: {
+          format: "%H:%M",
+          date: "$startTime",
+        },
+      },
+      formattedEndTime: {
+        $dateToString: {
+          format: "%H:%M",
+          date: "$endTime",
+        },
+      },
+      // Format totalTime as HH:MM:SS for parent
+      formattedDuration: {
+        $cond: {
+          if: { $ne: ["$totalTime", null] },
+          then: {
+            $let: {
+              vars: {
+                hours: { $floor: { $divide: ["$totalTime", 60] } },
+                minutes: { $floor: { $mod: ["$totalTime", 60] } },
+                seconds: {
+                  $floor: { $multiply: [{ $mod: ["$totalTime", 1] }, 60] },
+                },
+              },
+              in: {
+                $concat: [
+                  {
+                    $cond: {
+                      if: { $lt: ["$$hours", 10] },
+                      then: { $concat: ["0", { $toString: "$$hours" }] },
+                      else: { $toString: "$$hours" },
+                    },
+                  },
+                  ":",
+                  {
+                    $cond: {
+                      if: { $lt: ["$$minutes", 10] },
+                      then: { $concat: ["0", { $toString: "$$minutes" }] },
+                      else: { $toString: "$$minutes" },
+                    },
+                  },
+                  ":",
+                  {
+                    $cond: {
+                      if: { $lt: ["$$seconds", 10] },
+                      then: { $concat: ["0", { $toString: "$$seconds" }] },
+                      else: { $toString: "$$seconds" },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+          else: "00:00:00",
+        },
+      },
+      // Format children with their times
+      formattedChildren: {
+        $map: {
+          input: "$children",
+          as: "child",
+          in: {
+            _id: "$$child._id",
+            title: "$$child.title",
+            description: "$$child.description",
+            startTime: {
+              $dateToString: {
+                format: "%H:%M",
+                date: "$$child.startTime",
+              },
+            },
+            endTime: {
+              $cond: {
+                if: { $ne: ["$$child.endTime", null] },
+                then: {
+                  $dateToString: {
+                    format: "%H:%M",
+                    date: "$$child.endTime",
+                  },
+                },
+                else: "In Progress",
+              },
+            },
+            duration: {
+              $cond: {
+                if: { $ne: ["$$child.totalTime", null] },
+                then: {
+                  $let: {
+                    vars: {
+                      hours: { $floor: { $divide: ["$$child.totalTime", 60] } },
+                      minutes: { $floor: { $mod: ["$$child.totalTime", 60] } },
+                      seconds: {
+                        $floor: {
+                          $multiply: [{ $mod: ["$$child.totalTime", 1] }, 60],
+                        },
+                      },
+                    },
+                    in: {
+                      $concat: [
+                        {
+                          $cond: {
+                            if: { $lt: ["$$hours", 10] },
+                            then: { $concat: ["0", { $toString: "$$hours" }] },
+                            else: { $toString: "$$hours" },
+                          },
+                        },
+                        ":",
+                        {
+                          $cond: {
+                            if: { $lt: ["$$minutes", 10] },
+                            then: { $concat: ["0", { $toString: "$$minutes" }] },
+                            else: { $toString: "$$minutes" },
+                          },
+                        },
+                        ":",
+                        {
+                          $cond: {
+                            if: { $lt: ["$$seconds", 10] },
+                            then: { $concat: ["0", { $toString: "$$seconds" }] },
+                            else: { $toString: "$$seconds" },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+                else: "00:00:00",
+              },
+            },
+            totalTimeMinutes: "$$child.totalTime",
+          },
+        },
+      },
+    },
+  });
+
+  // Project final fields for PDF generation
+  queryArray.push({
+    $project: {
+      _id: 1,
+      title: 1,
+      description: 1,
+      date: "$formattedDate",
+      startTime: "$formattedStartTime",
+      endTime: "$formattedEndTime",
+      duration: "$formattedDuration",
+      totalTimeMinutes: "$totalTime",
+      children: "$formattedChildren",
+      childrenCount: { $size: "$children" },
+      userName: "$userDetails.name",
+      userEmail: "$userDetails.email",
+      userImage: "$userDetails.image",
+      companyName: "$companyDetails.name",
+      rawStartTime: "$startTime", // Keep for sorting
+    },
+  });
+
+  // Sort by startTime descending (newest first)
+  queryArray.push({
+    $sort: {
+      rawStartTime: -1,
+    },
+  });
+
+  return queryArray;
+};

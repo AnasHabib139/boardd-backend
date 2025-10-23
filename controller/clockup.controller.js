@@ -25,7 +25,9 @@ const {
   getUserTimeEntriesQuery,
   getChildrenTimeEntriesQuery,
   getUserTimeEntriesReportQuery,
+  getUserTimeEntriesWithChildrenForDownloadQuery,
 } = require("./queries/timeEntriesQueries");
+const { generateClockupReportPDF } = require("../services/pdfGenerator");
 
 /**
  * Start clock - Begin time tracking
@@ -920,6 +922,167 @@ exports.getClockupReports = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in getClockupReports:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Download clockup reports as PDF
+ * Generates a professional PDF with company branding, parent entries, and children
+ *
+ * Admin Access:
+ * - Can download reports for any user in their company by passing userId
+ * - Downloads their own reports if userId is not provided
+ *
+ * Employee Access:
+ * - Always downloads their own reports (userId parameter ignored)
+ *
+ * @route GET /api/clockup/reports/download
+ * @param {String} req.query.userId - Target user ID (optional, admin only)
+ * @param {String} req.query.startDate - Start date (YYYY-MM-DD)
+ * @param {String} req.query.endDate - End date (YYYY-MM-DD)
+ * @returns {Buffer} PDF file
+ */
+exports.downloadClockupReports = async (req, res, next) => {
+  try {
+    const { userId: requestedUserId, startDate, endDate } = req.query;
+    const loggedInUserId = req?.user?.id;
+    const loggedInUserRole = req?.user?.role;
+
+    // Validate logged-in user exists
+    const loggedInUser = await findUser({ _id: loggedInUserId });
+    if (!loggedInUser) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Determine target userId based on role and request
+    let targetUserId = loggedInUserId;
+
+    if (loggedInUserRole === "admin") {
+      // Admin can download reports for other users in their company
+      if (requestedUserId) {
+        targetUserId = requestedUserId;
+      }
+      // If no userId provided, admin downloads their own reports (targetUserId already set)
+    }
+    // Employees always download their own reports (targetUserId already set to loggedInUserId)
+
+    // Validate target user exists
+    const targetUser = await findUser({ _id: targetUserId });
+    if (!targetUser) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Target user not found",
+      });
+    }
+
+    // If admin is downloading another user's reports, validate same company
+    if (loggedInUserRole === "admin" && targetUserId !== loggedInUserId) {
+      if (targetUser.companyId?.toString() !== loggedInUser.companyId?.toString()) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You can only download reports for users in your company",
+        });
+      }
+    }
+
+    // Validate date range
+    if (!startDate || !endDate) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "startDate and endDate are required",
+      });
+    }
+
+    // Validate date format
+    const startDateObj = new Date(startDate);
+    const endDateObj = new Date(endDate);
+
+    if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Invalid date format. Use YYYY-MM-DD",
+      });
+    }
+
+    if (startDateObj > endDateObj) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "startDate cannot be after endDate",
+      });
+    }
+
+    // Validate date range is not too large (max 90 days)
+    const daysDiff = Math.ceil((endDateObj - startDateObj) / (1000 * 60 * 60 * 24));
+    if (daysDiff > 90) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Date range cannot exceed 90 days",
+      });
+    }
+
+    // Get the aggregation query for download (includes children)
+    const query = getUserTimeEntriesWithChildrenForDownloadQuery(targetUserId, startDate, endDate);
+
+    // Execute query to get all entries (no pagination)
+    const TimeEntry = require("../models/timeEntryModel");
+    const entries = await TimeEntry.TimeEntry.aggregate(query);
+
+    if (!entries || entries.length === 0) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "No time entries found for the specified date range",
+      });
+    }
+
+    // Check if entry count is too large for PDF generation
+    const MAX_ENTRIES_FOR_PDF = 500;
+    if (entries.length > MAX_ENTRIES_FOR_PDF) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: `Too many entries to generate PDF (${entries.length} entries). Please narrow your date range. Maximum allowed: ${MAX_ENTRIES_FOR_PDF} entries.`,
+      });
+    }
+
+    // Calculate total time (sum of all parent entries' totalTimeMinutes)
+    const totalMinutes = entries.reduce((sum, entry) => sum + (entry.totalTimeMinutes || 0), 0);
+
+    // Format as HH:MM:SS
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = Math.floor(totalMinutes % 60);
+    const seconds = Math.floor((totalMinutes % 1) * 60);
+    const weekTotal = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+    // User info for PDF
+    const userInfo = {
+      userId: targetUser._id,
+      name: targetUser.name,
+      email: targetUser.email,
+      image: entries[0]?.userImage || null,
+    };
+
+    // Generate PDF
+    const pdfBuffer = await generateClockupReportPDF(entries, userInfo, startDate, endDate, weekTotal);
+
+    // Generate filename
+    const sanitizedName = targetUser.name.replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `Clockup_Report_${sanitizedName}_${startDate}_${endDate}.pdf`;
+
+    // Set response headers for file download
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Length", pdfBuffer.length);
+
+    // Send PDF buffer
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("Error in downloadClockupReports:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

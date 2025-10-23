@@ -11,6 +11,7 @@ const {
   deleteTimeEntry,
   duplicateTimeEntry,
   getClockupReports,
+  downloadClockupReports,
 } = require("../controller/clockup.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -78,6 +79,14 @@ class ClockupApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateClockupReportsQuery,
       getClockupReports
+    );
+
+    // Download clockup reports as PDF - Generate and download professional PDF report
+    router.get(
+      "/reports/download",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateClockupReportsQuery,
+      downloadClockupReports
     );
 
     // Get children time entries - Retrieve paginated child entries for a parent time entry

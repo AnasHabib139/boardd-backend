@@ -35,6 +35,7 @@ const CompanySchema = new Schema(
   {
     name: { type: String, required: true },
     domain: { type: String, required: true, unique: true }, // e.g. workspin.net
+    logo: { type: String, required: false }, // URL to company logo image
     adminUser: { type: Types.ObjectId, ref: "User" },
     joinToken: { type: String, required: true, unique: true }, // e.g. 32-byte hex
     generalQuestions: { type: generalQuestionsSchema, required: false },
