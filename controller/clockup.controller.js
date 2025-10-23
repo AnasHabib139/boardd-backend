@@ -780,25 +780,65 @@ exports.deleteTimeEntry = async (req, res, next) => {
  * Shows completed time entries with user and company details
  * Calculates week total duration
  *
+ * Admin Access:
+ * - Can view reports for any user in their company by passing userId
+ * - Views their own reports if userId is not provided
+ *
+ * Employee Access:
+ * - Always views their own reports (userId parameter ignored)
+ *
  * @route GET /api/clockup/reports
+ * @param {String} req.query.userId - Target user ID (optional, admin only)
  * @param {String} req.query.startDate - Start date (YYYY-MM-DD)
  * @param {String} req.query.endDate - End date (YYYY-MM-DD)
  * @param {Number} req.query.page - Page number (default: 1)
  * @param {Number} req.query.limit - Items per page (default: 10)
- * @returns {Object} Time entries with week total
+ * @returns {Object} Time entries with week total and user info
  */
 exports.getClockupReports = async (req, res, next) => {
   try {
-    const { startDate, endDate, page = 1, limit = 10 } = req.query;
-    const userId = req?.user?.id;
+    const { userId: requestedUserId, startDate, endDate, page = 1, limit = 10 } = req.query;
+    const loggedInUserId = req?.user?.id;
+    const loggedInUserRole = req?.user?.role;
 
-    // Validate user exists
-    const user = await findUser({ _id: userId });
-    if (!user) {
+    // Validate logged-in user exists
+    const loggedInUser = await findUser({ _id: loggedInUserId });
+    if (!loggedInUser) {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
         message: "User not found",
       });
+    }
+
+    // Determine target userId based on role and request
+    let targetUserId = loggedInUserId;
+
+    if (loggedInUserRole === "admin") {
+      // Admin can view reports for other users in their company
+      if (requestedUserId) {
+        targetUserId = requestedUserId;
+      }
+      // If no userId provided, admin views their own reports (targetUserId already set)
+    }
+    // Employees always view their own reports (targetUserId already set to loggedInUserId)
+
+    // Validate target user exists
+    const targetUser = await findUser({ _id: targetUserId });
+    if (!targetUser) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Target user not found",
+      });
+    }
+
+    // If admin is viewing another user's reports, validate same company
+    if (loggedInUserRole === "admin" && targetUserId !== loggedInUserId) {
+      if (targetUser.companyId?.toString() !== loggedInUser.companyId?.toString()) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You can only view reports for users in your company",
+        });
+      }
     }
 
     // Validate date range
@@ -828,7 +868,7 @@ exports.getClockupReports = async (req, res, next) => {
     }
 
     // Get the aggregation query for time entries report
-    const query = getUserTimeEntriesReportQuery(userId, startDate, endDate);
+    const query = getUserTimeEntriesReportQuery(targetUserId, startDate, endDate);
 
     // Get paginated time entries
     const result = await getAllTimeEntries({
@@ -861,6 +901,11 @@ exports.getClockupReports = async (req, res, next) => {
 
     return generateResponse(
       {
+        userInfo: {
+          userId: targetUser._id,
+          name: targetUser.name,
+          email: targetUser.email,
+        },
         entries,
         weekTotal,
         pagination: result.pagination,

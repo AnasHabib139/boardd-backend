@@ -59,6 +59,10 @@ const timeEntryIdParamValidation = Joi.object({
 
 // Clockup reports query validation schema
 const clockupReportsQueryValidation = Joi.object({
+  userId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).optional().messages({
+    "string.pattern.base": "Invalid user ID format",
+  }),
+
   startDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required().messages({
     "any.required": "Start date is required",
     "string.pattern.base": "Start date must be in YYYY-MM-DD format",
