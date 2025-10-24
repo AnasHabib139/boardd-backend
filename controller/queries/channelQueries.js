@@ -93,6 +93,30 @@ exports.getAllChannelsOfUserQuery = (userId) => {
       },
     },
     {
+      $lookup: {
+        from: "chatconversations",
+        let: { channelId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$channelId", "$$channelId"] },
+                  { $eq: ["$type", "channel"] },
+                ],
+              },
+            },
+          },
+          {
+            $project: {
+              _id: 1,
+            },
+          },
+        ],
+        as: "conversationDetails",
+      },
+    },
+    {
       $unwind: {
         path: "$creatorDetails",
         preserveNullAndEmptyArrays: true,
@@ -101,6 +125,12 @@ exports.getAllChannelsOfUserQuery = (userId) => {
     {
       $unwind: {
         path: "$companyDetails",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $unwind: {
+        path: "$conversationDetails",
         preserveNullAndEmptyArrays: true,
       },
     },
@@ -122,6 +152,7 @@ exports.getAllChannelsOfUserQuery = (userId) => {
         channelDescription: 1,
         isPrivate: 1,
         channelToken: 1,
+        conversationId: "$conversationDetails._id",
         createdAt: 1,
         updatedAt: 1,
         totalMembers: 1,
