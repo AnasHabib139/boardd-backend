@@ -7,8 +7,11 @@
 
 const { generateResponse } = require("../../utils");
 const { STATUS_CODES } = require("../../utils/constants");
-const ChatMessage = require("../../models/chatMessageModel");
-const ChatConversation = require("../../models/chatConversationModel");
+const chatMessageHelpers = require("../../models/chatMessageModel");
+const chatConversationHelpers = require("../../models/chatConversationModel");
+const { model: mongooseModel } = require("mongoose");
+const ChatMessage = mongooseModel("ChatMessage");
+const ChatConversation = mongooseModel("ChatConversation");
 const { mapTwilioStatus } = require("../../providers/whatsapp.twilio");
 
 /**
