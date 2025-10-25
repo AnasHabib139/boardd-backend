@@ -36,6 +36,7 @@ const {
   extractLinks,
   generatePreview,
 } = require("../services/chatContentProcessor");
+const clientMessageRouter = require("../services/clientMessageRouter");
 
 /**
  * Process: Send Message
@@ -50,6 +51,11 @@ const processChatMessageSend = async (socket, data, io) => {
     clientMsgId,
     parentMessageId = null,
     userId,
+    // Client chat multi-channel delivery params (optional)
+    deliveryModes = [],
+    emailSubject,
+    recipient = {},
+    whatsappTemplate,
   } = data;
 
   try {
@@ -100,6 +106,63 @@ const processChatMessageSend = async (socket, data, io) => {
       return;
     }
 
+    // Validate client chat multi-channel delivery params
+    if (conversation.type === "client" && deliveryModes.length > 0) {
+      // Validate delivery modes
+      const validChannels = ["board", "email", "sms", "whatsapp"];
+      const invalidChannels = deliveryModes.filter(
+        (mode) => !validChannels.includes(mode)
+      );
+      if (invalidChannels.length > 0) {
+        socket.emit("chat:message:error", {
+          error: `Invalid delivery channels: ${invalidChannels.join(", ")}`,
+          clientMsgId,
+        });
+        return;
+      }
+
+      // Validate email delivery requirements
+      if (deliveryModes.includes("email")) {
+        if (!emailSubject || emailSubject.trim() === "") {
+          socket.emit("chat:message:error", {
+            error: "Email delivery requires emailSubject",
+            clientMsgId,
+          });
+          return;
+        }
+        if (!recipient.email) {
+          socket.emit("chat:message:error", {
+            error: "Email delivery requires recipient.email",
+            clientMsgId,
+          });
+          return;
+        }
+      }
+
+      // Validate SMS delivery requirements
+      if (deliveryModes.includes("sms")) {
+        if (!recipient.phoneE164) {
+          socket.emit("chat:message:error", {
+            error: "SMS delivery requires recipient.phoneE164 in E.164 format",
+            clientMsgId,
+          });
+          return;
+        }
+      }
+
+      // Validate WhatsApp delivery requirements
+      if (deliveryModes.includes("whatsapp")) {
+        if (!recipient.whatsappE164) {
+          socket.emit("chat:message:error", {
+            error:
+              "WhatsApp delivery requires recipient.whatsappE164 in E.164 format",
+            clientMsgId,
+          });
+          return;
+        }
+      }
+    }
+
     // Validate and sanitize contentDoc
     const validation = validateAndSanitize(contentDoc, {
       conversationType: conversation.type,
@@ -132,9 +195,39 @@ const processChatMessageSend = async (socket, data, io) => {
       links,
       clientMsgId,
       parentMessageId,
+      ...(emailSubject && { emailSubject }), // Add emailSubject for client chat email delivery
     };
 
     const message = await createChatMessage(messageData);
+
+    // Client chat multi-channel delivery
+    // Route message to external channels (email, SMS, WhatsApp) if requested
+    if (conversation.type === "client" && deliveryModes.length > 0) {
+      try {
+        await clientMessageRouter.routeMessage({
+          messageId: message._id.toString(),
+          conversationId: conversation._id.toString(),
+          deliveryModes,
+          recipient,
+          emailSubject,
+          whatsappTemplate,
+          content: validation.sanitized, // TipTap JSON content
+          lastClientInboundAt: conversation.lastClientInboundAt,
+          io,
+          companyId: conversation.companyId.toString(),
+        });
+      } catch (routerError) {
+        // Log error but don't fail the entire message send
+        // Message is already saved to DB and will appear in board chat
+        console.error("Client message router error:", routerError);
+
+        // Emit error notification to sender
+        socket.emit("chat:message:delivery:error", {
+          messageId: message._id.toString(),
+          error: routerError.message || "Failed to deliver to some channels",
+        });
+      }
+    }
 
     // Populate author info
     const author = await findUser({ _id: userId });

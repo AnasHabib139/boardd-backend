@@ -144,6 +144,7 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
  * Get user's DM and Group DM conversations (like WhatsApp/Slack sidebar)
  * Returns all conversations with unread counts, participant details, and chat names
  * Uses $facet to calculate totalUnreadCount in same query
+ * NOTE: Client chat conversations are excluded from this list
  * @param {string} userId - Current user ID
  * @param {string} companyId - Company ID
  * @param {number} page - Page number for pagination
@@ -154,12 +155,12 @@ exports.getUserConversationsQuery = (userId, companyId, page = 1, limit = 20) =>
   const userObjectId = Types.ObjectId.createFromHexString(userId);
 
   return [
-    // Match conversations user is part of (DM and Group DM only)
+    // Match conversations user is part of (DM and Group DM only, exclude client chat)
     {
       $match: {
         companyId: Types.ObjectId.createFromHexString(companyId),
-        type: { $in: ["dm", "group_dm"] },
-        participantIds: userObjectId,
+        type: { $in: ["dm", "group_dm"] }, // Removed "client"
+        "participants.userId": userObjectId,
       },
     },
 
@@ -258,10 +259,14 @@ exports.getUserConversationsQuery = (userId, companyId, page = 1, limit = 20) =>
         },
         // Compute chat name based on type
         chatName: {
-          $cond: {
-            if: { $eq: ["$type", "dm"] },
-            then: { $arrayElemAt: ["$participants.name", 0] }, // DM: other person's name
-            else: {
+          $switch: {
+            branches: [
+              {
+                case: { $eq: ["$type", "dm"] },
+                then: { $arrayElemAt: ["$participants.name", 0] }, // DM: other person's name
+              },
+            ],
+            default: {
               // Group DM: comma-separated names
               $reduce: {
                 input: "$participants",

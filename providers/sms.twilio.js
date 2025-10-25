@@ -1,0 +1,140 @@
+"use strict";
+
+/**
+ * Twilio SMS Provider for Client Chat
+ * Handles SMS sending via Twilio with status callback support
+ */
+
+const twilio = require("twilio");
+
+// Initialize Twilio client
+let twilioClient = null;
+if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+  twilioClient = twilio(
+    process.env.TWILIO_ACCOUNT_SID,
+    process.env.TWILIO_AUTH_TOKEN
+  );
+} else {
+  console.warn("Twilio credentials not set - SMS sending will fail");
+}
+
+/**
+ * Send SMS via Twilio
+ * @param {Object} params - SMS parameters
+ * @param {String} params.to - Recipient phone number (E.164 format)
+ * @param {String} params.textContent - SMS message body
+ * @param {String} params.messageId - Internal message ID for status callback tracking
+ * @returns {Promise<Object>} { success, providerMessageId, status, error }
+ */
+exports.sendSms = async (params) => {
+  const { to, textContent, messageId } = params;
+
+  try {
+    // Validate required params
+    if (!to || !textContent) {
+      throw new Error("Missing required SMS parameters: to, textContent");
+    }
+
+    // Validate Twilio is configured
+    if (!twilioClient) {
+      throw new Error("Twilio client not initialized - check credentials");
+    }
+
+    const fromPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
+    if (!fromPhoneNumber) {
+      throw new Error("TWILIO_PHONE_NUMBER not configured");
+    }
+
+    // Validate phone number format (E.164)
+    if (!isValidE164(to)) {
+      throw new Error(`Invalid phone number format. Expected E.164 (e.g., +15551234567), got: ${to}`);
+    }
+
+    // Truncate message if too long (SMS limit is 1600 chars for concatenated messages)
+    let messageBody = textContent;
+    const MAX_SMS_LENGTH = 1600;
+    if (messageBody.length > MAX_SMS_LENGTH) {
+      messageBody = messageBody.substring(0, MAX_SMS_LENGTH - 3) + "...";
+      console.warn(`SMS message truncated from ${textContent.length} to ${MAX_SMS_LENGTH} characters`);
+    }
+
+    // Build status callback URL (for delivery tracking)
+    const statusCallbackUrl = process.env.BACKEND_URL
+      ? `${process.env.BACKEND_URL}/api/webhooks/sms/twilio?messageId=${messageId}`
+      : null;
+
+    // Send SMS via Twilio
+    const message = await twilioClient.messages.create({
+      body: messageBody,
+      from: fromPhoneNumber,
+      to: to,
+      ...(statusCallbackUrl && { statusCallback: statusCallbackUrl }),
+    });
+
+    console.log(`SMS sent successfully via Twilio to ${to}, SID: ${message.sid}`);
+
+    return {
+      success: true,
+      providerMessageId: message.sid,
+      status: mapTwilioStatus(message.status),
+      sentAt: new Date(),
+    };
+  } catch (error) {
+    console.error("Twilio SMS send error:", error);
+
+    // Extract error message
+    let errorMessage = error.message || "Unknown Twilio error";
+    if (error.code) {
+      errorMessage = `Twilio Error ${error.code}: ${error.message}`;
+    }
+
+    return {
+      success: false,
+      status: "failed",
+      error: errorMessage,
+    };
+  }
+};
+
+/**
+ * Map Twilio message status to our internal status
+ * @param {String} twilioStatus - Twilio status (queued, sending, sent, delivered, failed, etc.)
+ * @returns {String} Internal status (pending, queued, sent, delivered, failed)
+ */
+function mapTwilioStatus(twilioStatus) {
+  const statusMap = {
+    queued: "queued",
+    sending: "queued",
+    sent: "sent",
+    delivered: "delivered",
+    undelivered: "failed",
+    failed: "failed",
+    accepted: "queued",
+    scheduled: "pending",
+    read: "delivered", // WhatsApp feature
+    received: "delivered",
+  };
+
+  return statusMap[twilioStatus?.toLowerCase()] || "pending";
+}
+
+/**
+ * Validate E.164 phone number format
+ * @param {String} phoneNumber - Phone number to validate
+ * @returns {Boolean} True if valid E.164 format
+ */
+function isValidE164(phoneNumber) {
+  if (!phoneNumber || typeof phoneNumber !== "string") return false;
+
+  // E.164 format: +[country code][subscriber number]
+  // Length: 7-15 digits (including country code)
+  const e164Regex = /^\+[1-9]\d{6,14}$/;
+
+  return e164Regex.test(phoneNumber);
+}
+
+/**
+ * Export helper for use in webhooks
+ */
+exports.mapTwilioStatus = mapTwilioStatus;
+exports.isValidE164 = isValidE164;

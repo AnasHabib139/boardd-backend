@@ -73,12 +73,12 @@ exports.getConversationMessages = async (req, res, next) => {
 };
 
 /**
- * Resolve conversation (find or create DM/Group DM)
+ * Resolve conversation (find or create DM/Group DM/Client Chat)
  * POST /api/chat/conversations/resolve
  */
 exports.resolveConversation = async (req, res, next) => {
   try {
-    const { type, participantIds } = req.body;
+    const { type, participantIds, channelId, clientContact } = req.body;
     const userId = req.user.id.toString();
 
     // Verify user is authenticated
@@ -90,13 +90,143 @@ exports.resolveConversation = async (req, res, next) => {
     }
 
     // Validate input
-    if (!type || !["dm", "group_dm"].includes(type)) {
+    if (!type || !["dm", "group_dm", "client"].includes(type)) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Type must be either 'dm' or 'group_dm'",
+        message: "Type must be either 'dm', 'group_dm', or 'client'",
       });
     }
 
+    // Get user's company ID
+    const { findUser } = require("../models/userModel");
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // ==================== CLIENT CHAT TYPE ====================
+    if (type === "client") {
+      // Validate channelId is provided
+      if (!channelId) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "channelId is required for client conversations",
+        });
+      }
+
+      // Verify channel exists and user has access
+      const { findChannel } = require("../models/channelModel");
+      const channel = await findChannel({ _id: channelId });
+      if (!channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Channel not found",
+        });
+      }
+
+      // Verify user is a channel member
+      const isChannelMember = channel.members.some(
+        (memberId) => memberId.toString() === userId
+      );
+      if (!isChannelMember) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You don't have access to this channel",
+        });
+      }
+
+      // Verify channel belongs to user's company
+      if (channel.companyId.toString() !== user.companyId.toString()) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "Channel must belong to your company",
+        });
+      }
+
+      // CHECK-ONLY MODE: If no participantIds provided, check if conversation exists
+      if (!participantIds || participantIds.length === 0) {
+        const { resolveConversation } = require("../models/chatConversationModel");
+        const result = await resolveConversation(
+          {
+            companyId: user.companyId,
+            type: "client",
+            channelId,
+            createdBy: userId,
+          },
+          false // Don't create, just check
+        );
+
+        return generateResponse(
+          {
+            exists: !!result.conversation,
+            requiresSetup: !result.conversation,
+            conversation: result.conversation || null,
+          },
+          result.conversation
+            ? "Client conversation exists"
+            : "Client conversation requires setup",
+          res,
+          STATUS_CODES.SUCCESS
+        );
+      }
+
+      // CREATE MODE: participantIds provided, create/find conversation
+      // Only admins can create client conversations
+      if (user.role !== "admin") {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "Only admins can create or modify client conversations",
+        });
+      }
+
+      // Validate all participants exist and are in the same company
+      for (const participantId of participantIds) {
+        const participant = await findUser({ _id: participantId });
+        if (!participant) {
+          return next({
+            statusCode: STATUS_CODES.BAD_REQUEST,
+            message: `User with ID ${participantId} not found`,
+          });
+        }
+        if (participant.companyId.toString() !== user.companyId.toString()) {
+          return next({
+            statusCode: STATUS_CODES.FORBIDDEN,
+            message: "All participants must be from the same company",
+          });
+        }
+      }
+
+      // Resolve client conversation
+      const { resolveConversation } = require("../models/chatConversationModel");
+      const result = await resolveConversation(
+        {
+          companyId: user.companyId,
+          type: "client",
+          channelId,
+          participantIds,
+          clientContact: clientContact || null,
+          createdBy: userId,
+        },
+        true // createIfMissing = true
+      );
+
+      return generateResponse(
+        {
+          conversation: result.conversation,
+          created: result.created,
+        },
+        result.created
+          ? "Client conversation created successfully"
+          : "Client conversation found",
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+
+    // ==================== DM / GROUP DM TYPES ====================
     if (!participantIds || !Array.isArray(participantIds) || participantIds.length === 0) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
@@ -128,16 +258,6 @@ exports.resolveConversation = async (req, res, next) => {
       });
     }
 
-    // Get user's company ID
-    const { findUser } = require("../models/userModel");
-    const user = await findUser({ _id: userId });
-    if (!user) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "User not found",
-      });
-    }
-
     // Verify all participants exist and are in the same company
     for (const participantId of participantIds) {
       const participant = await findUser({ _id: participantId });
@@ -157,12 +277,15 @@ exports.resolveConversation = async (req, res, next) => {
 
     // Resolve conversation (find or create)
     const { resolveConversation } = require("../models/chatConversationModel");
-    const result = await resolveConversation({
-      companyId: user.companyId,
-      type,
-      participantIds,
-      createdBy: userId,
-    }, true); // createIfMissing = true
+    const result = await resolveConversation(
+      {
+        companyId: user.companyId,
+        type,
+        participantIds,
+        createdBy: userId,
+      },
+      true // createIfMissing = true
+    );
 
     return generateResponse(
       {
@@ -264,6 +387,15 @@ exports.getConversations = async (req, res, next) => {
 async function verifyConversationAccess(conversation, userId) {
   // For channel conversations, check Channel.members dynamically
   if (conversation.type === "channel") {
+    const { findChannel } = require("../models/channelModel");
+    const channel = await findChannel({ _id: conversation.channelId });
+    if (!channel) return false;
+
+    return channel.members.some((memberId) => memberId.toString() === userId);
+  }
+
+  // For client conversations, check Channel.members (client chat is channel-based)
+  if (conversation.type === "client") {
     const { findChannel } = require("../models/channelModel");
     const channel = await findChannel({ _id: conversation.channelId });
     if (!channel) return false;

@@ -46,6 +46,39 @@ const attachmentMetaSchema = new Schema(
   { _id: false }
 );
 
+// Delivery status subdocument schema for client chat multi-channel delivery
+const deliverySchema = new Schema(
+  {
+    channel: {
+      type: String,
+      enum: ["board", "email", "whatsapp", "sms"],
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ["pending", "queued", "sent", "delivered", "failed"],
+      default: "pending",
+    },
+    provider: {
+      type: String,
+      enum: ["nodemailer", "sendgrid", "twilio", "internal"],
+    },
+    providerMessageId: {
+      type: String,
+    },
+    error: {
+      type: String,
+    },
+    sentAt: {
+      type: Date,
+    },
+    deliveredAt: {
+      type: Date,
+    },
+  },
+  { _id: false }
+);
+
 const chatMessageSchema = new Schema(
   {
     companyId: {
@@ -131,6 +164,24 @@ const chatMessageSchema = new Schema(
       ref: "User",
       default: null,
     },
+    // Client chat multi-channel delivery tracking
+    deliveries: [deliverySchema],
+    // Message direction (for client chat)
+    direction: {
+      type: String,
+      enum: ["outbound", "inbound"],
+      default: "outbound",
+    },
+    // Sender role (for client chat)
+    senderRole: {
+      type: String,
+      enum: ["team", "client"],
+      default: "team",
+    },
+    // Email subject (required when email in deliveries)
+    emailSubject: {
+      type: String,
+    },
   },
   {
     timestamps: true,
@@ -156,6 +207,9 @@ chatMessageSchema.index({ conversationId: 1, parentMessageId: 1, createdAt: 1, _
 
 // 5. Content search (text index)
 chatMessageSchema.index({ contentText: "text" });
+
+// 6. Delivery channel lookups (for client chat delivery tracking)
+chatMessageSchema.index({ "deliveries.channel": 1, createdAt: -1 });
 
 // 6. Author's messages
 chatMessageSchema.index({ authorId: 1, createdAt: -1 });

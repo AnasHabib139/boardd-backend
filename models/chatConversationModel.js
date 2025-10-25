@@ -31,14 +31,14 @@ const chatConversationSchema = new Schema(
     },
     type: {
       type: String,
-      enum: ["channel", "dm", "group_dm"],
+      enum: ["channel", "dm", "group_dm", "client"],
       required: true,
     },
-    // For channel type conversations
+    // For channel and client type conversations
     channelId: {
       type: Types.ObjectId,
       ref: "Channel",
-      sparse: true, // Only for channel type
+      sparse: true, // Only for channel and client types
     },
     // For dm and group_dm types
     participantIds: [
@@ -64,6 +64,22 @@ const chatConversationSchema = new Schema(
       ref: "User",
       required: true,
     },
+    // Client chat specific fields (type='client')
+    clientContact: {
+      name: { type: String },
+      email: { type: String },
+      phoneE164: { type: String },
+      whatsappE164: { type: String },
+    },
+    externalContacts: {
+      emails: [{ type: String }],
+      phoneE164s: [{ type: String }],
+      whatsappE164s: [{ type: String }],
+    },
+    lastClientInboundAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -71,7 +87,7 @@ const chatConversationSchema = new Schema(
 );
 
 // Indexes for performance
-// 1. For channel conversations lookup
+// 1. For channel and client conversations lookup (unique per channel)
 chatConversationSchema.index(
   { companyId: 1, type: 1, channelId: 1 },
   { sparse: true, unique: true }
@@ -137,18 +153,24 @@ exports.aggregateChatConversations = (pipeline) =>
 
 /**
  * Find or create a conversation based on type and participants
- * @param {Object} params - { companyId, type, channelId?, participantIds?, createdBy }
+ * @param {Object} params - { companyId, type, channelId?, participantIds?, createdBy, clientContact? }
  * @param {Boolean} createIfMissing - Create if not found
  * @returns {Promise<Object>} Conversation document
  */
 exports.resolveConversation = async (params, createIfMissing = false) => {
-  const { companyId, type, channelId, participantIds, createdBy } = params;
+  const { companyId, type, channelId, participantIds, createdBy, clientContact } = params;
 
   let query = { companyId, type };
 
   if (type === "channel") {
     if (!channelId) {
       throw new Error("channelId is required for channel conversations");
+    }
+    query.channelId = channelId;
+  } else if (type === "client") {
+    // Client conversations are unique per channel (one client chat per channel)
+    if (!channelId) {
+      throw new Error("channelId is required for client conversations");
     }
     query.channelId = channelId;
   } else {
@@ -182,8 +204,24 @@ exports.resolveConversation = async (params, createIfMissing = false) => {
 
     if (type === "channel") {
       conversationData.channelId = channelId;
+    } else if (type === "client") {
+      // Client conversations include channelId and participantIds (team + client guest users)
+      conversationData.channelId = channelId;
+
+      if (participantIds && participantIds.length > 0) {
+        // Sort and store participantIds (team members + client guest)
+        conversationData.participantIds = [...participantIds]
+          .map((id) => id.toString())
+          .sort()
+          .map((id) => new Types.ObjectId(id));
+      }
+
+      // Store client contact info for display
+      if (clientContact) {
+        conversationData.clientContact = clientContact;
+      }
     } else {
-      // Sort and store participantIds
+      // Sort and store participantIds for dm/group_dm
       conversationData.participantIds = [...participantIds]
         .map((id) => id.toString())
         .sort()

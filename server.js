@@ -1,3 +1,6 @@
+// Load environment variables FIRST (before any other imports)
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
@@ -11,7 +14,6 @@ const { initSocket } = require("./utils/socket");
 const migrationRunner = require("./utils/migrationRunner");
 const { initializeCronJobs } = require("./utils/cronJobs");
 const { initRedis } = require("./utils/redis");
-require("dotenv").config();
 const PORT = process.env.PORT;
 
 const app = express();
