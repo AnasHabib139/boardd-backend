@@ -59,7 +59,7 @@ exports.createSubaccount = async (companyId, friendlyName = null) => {
     console.log(`✓ Subaccount created: ${subaccount.sid}`);
 
     // Create API Key for the subaccount (preferred over auth token)
-    const apiKey = await masterClient
+    const apiKey = await masterClient.api
       .accounts(subaccount.sid)
       .keys
       .create({

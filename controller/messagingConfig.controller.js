@@ -31,7 +31,7 @@ const {
 exports.provisionSmsSubaccount = async (req, res, next) => {
   try {
     const { companyId } = req;
-    const { error, value } = smsProvisionSchema.validate(req.body);
+    const { error, value } = smsProvisionSchema.validate(req.body || {});
 
     if (error) {
       return next({
@@ -42,7 +42,7 @@ exports.provisionSmsSubaccount = async (req, res, next) => {
 
     const result = await twilioProvisioning.createSubaccount(
       companyId,
-      value.friendlyName
+      value?.friendlyName
     );
 
     return res.status(200).json({
@@ -68,7 +68,7 @@ exports.provisionSmsSubaccount = async (req, res, next) => {
 exports.searchPhoneNumbers = async (req, res, next) => {
   try {
     const { companyId } = req;
-    const { error, value } = phoneNumberSearchSchema.validate(req.query);
+    const { error, value } = phoneNumberSearchSchema.validate(req.query || {});
 
     if (error) {
       return next({
@@ -78,9 +78,9 @@ exports.searchPhoneNumbers = async (req, res, next) => {
     }
 
     const result = await twilioProvisioning.searchPhoneNumbers(companyId, {
-      areaCode: value.areaCode,
-      country: value.country,
-      limit: value.limit || 10,
+      areaCode: value?.areaCode,
+      country: value?.country,
+      limit: value?.limit || 10,
     });
 
     return res.status(200).json({
@@ -104,7 +104,7 @@ exports.searchPhoneNumbers = async (req, res, next) => {
 exports.purchasePhoneNumber = async (req, res, next) => {
   try {
     const { companyId } = req;
-    const { error, value } = phoneNumberPurchaseSchema.validate(req.body);
+    const { error, value } = phoneNumberPurchaseSchema.validate(req.body || {});
 
     if (error) {
       return next({
@@ -115,8 +115,8 @@ exports.purchasePhoneNumber = async (req, res, next) => {
 
     const result = await twilioProvisioning.purchasePhoneNumber(
       companyId,
-      value.phoneNumber,
-      value.type
+      value?.phoneNumber,
+      value?.type
     );
 
     return res.status(200).json({
@@ -166,7 +166,7 @@ exports.createMessagingService = async (req, res, next) => {
 exports.sendTestSms = async (req, res, next) => {
   try {
     const { companyId } = req;
-    const { error, value } = testMessageSchema.validate(req.body);
+    const { error, value } = testMessageSchema.validate(req.body || {});
 
     if (error) {
       return next({
@@ -177,8 +177,8 @@ exports.sendTestSms = async (req, res, next) => {
 
     const result = await twilioProvisioning.sendTestSms(
       companyId,
-      value.to,
-      value.message
+      value?.to,
+      value?.message
     );
 
     return res.status(200).json({
@@ -204,7 +204,7 @@ exports.sendTestSms = async (req, res, next) => {
 exports.provisionWhatsapp = async (req, res, next) => {
   try {
     const { companyId } = req;
-    const { error, value } = whatsappProvisionSchema.validate(req.body);
+    const { error, value } = whatsappProvisionSchema.validate(req.body || {});
 
     if (error) {
       return next({
@@ -251,7 +251,7 @@ exports.provisionWhatsapp = async (req, res, next) => {
 exports.createWhatsappTemplate = async (req, res, next) => {
   try {
     const { companyId } = req;
-    const { error, value } = whatsappTemplateSchema.validate(req.body);
+    const { error, value } = whatsappTemplateSchema.validate(req.body || {});
 
     if (error) {
       return next({
@@ -371,7 +371,7 @@ exports.deleteWhatsappTemplate = async (req, res, next) => {
 exports.configureEmail = async (req, res, next) => {
   try {
     const { companyId } = req;
-    const { error, value } = emailConfigSchema.validate(req.body);
+    const { error, value } = emailConfigSchema.validate(req.body || {});
 
     if (error) {
       return next({
@@ -382,9 +382,9 @@ exports.configureEmail = async (req, res, next) => {
 
     const result = await emailProvisioning.configureSender(
       companyId,
-      value.fromEmail,
-      value.fromName,
-      value.replyTo
+      value?.fromEmail,
+      value?.fromName,
+      value?.replyTo
     );
 
     return res.status(200).json({
@@ -456,7 +456,7 @@ exports.getEmailDnsRecords = async (req, res, next) => {
 exports.sendTestEmail = async (req, res, next) => {
   try {
     const { companyId } = req;
-    const { to } = req.body;
+    const { to } = req.body || {};
 
     const result = await emailProvisioning.testEmailConfiguration(
       companyId,
