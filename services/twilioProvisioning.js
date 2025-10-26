@@ -86,13 +86,13 @@ exports.createSubaccount = async (companyId, friendlyName = null) => {
     }
 
     // Create API Key for the subaccount (preferred over auth token)
+    // Must authenticate AS the subaccount to create its API keys
     console.log(`Creating API key for subaccount ${subaccount.sid}...`);
-    apiKey = await masterClient.api
-      .accounts(subaccount.sid)
-      .keys
-      .create({
-        friendlyName: `API Key for ${company.name}`
-      });
+
+    const subaccountClient = twilio(subaccount.sid, subaccount.authToken);
+    apiKey = await subaccountClient.newKeys.create({
+      friendlyName: `API Key for ${company.name}`
+    });
 
     console.log(`✓ API Key created: ${apiKey.sid}`);
 
