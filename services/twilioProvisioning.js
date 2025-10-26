@@ -48,18 +48,46 @@ exports.createSubaccount = async (companyId, friendlyName = null) => {
     }
 
     const subaccountName = friendlyName || `${company.name} (ID: ${companyId})`;
+    let subaccount;
+    let apiKey;
 
     console.log(`Creating Twilio subaccount for company ${companyId}: ${subaccountName}`);
 
-    // Create subaccount via Twilio API
-    const subaccount = await masterClient.api.accounts.create({
-      friendlyName: subaccountName
-    });
+    // Try to create subaccount via Twilio API
+    try {
+      subaccount = await masterClient.api.accounts.create({
+        friendlyName: subaccountName
+      });
+      console.log(`✓ Subaccount created: ${subaccount.sid}`);
+    } catch (createError) {
+      // If subaccount limit reached, try to find existing one
+      if (createError.code === 21480) {
+        console.log("⚠️ Subaccount limit reached, searching for existing subaccount...");
 
-    console.log(`✓ Subaccount created: ${subaccount.sid}`);
+        // List all subaccounts to find one with matching name
+        const subaccounts = await masterClient.api.accounts.list({
+          friendlyName: subaccountName,
+          limit: 1
+        });
+
+        if (subaccounts.length > 0) {
+          subaccount = subaccounts[0];
+          console.log(`✓ Found existing subaccount: ${subaccount.sid}`);
+        } else {
+          throw new Error(
+            "Twilio subaccount limit reached. " +
+            "Please delete unused subaccounts from Twilio Console (console.twilio.com → Account → Subaccounts) " +
+            "or upgrade your Twilio account to create more subaccounts."
+          );
+        }
+      } else {
+        throw createError;
+      }
+    }
 
     // Create API Key for the subaccount (preferred over auth token)
-    const apiKey = await masterClient.api
+    console.log(`Creating API key for subaccount ${subaccount.sid}...`);
+    apiKey = await masterClient.api
       .accounts(subaccount.sid)
       .keys
       .create({
