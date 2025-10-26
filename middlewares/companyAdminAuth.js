@@ -30,7 +30,7 @@ const User = mongooseModel("User");
 async function requireCompanyAdmin(req, res, next) {
   try {
     // User must be authenticated (Auth middleware should have run)
-    if (!req.user || !req.user._id) {
+    if (!req.user || !req.user.id) {
       return res.status(401).json({
         success: false,
         error: "Authentication required"
@@ -53,13 +53,13 @@ async function requireCompanyAdmin(req, res, next) {
 
     // Platform super-admins can access any company (for support)
     if (req.user.role === "super_admin" || req.user.role === "admin") {
-      console.log(`Super admin ${req.user._id} accessing company ${companyId}`);
+      console.log(`Super admin ${req.user.id} accessing company ${companyId}`);
       req.companyId = companyId; // Attach to request for handlers
       return next();
     }
 
     // Regular user: must be admin of THIS company
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user.id);
 
     if (!user) {
       return res.status(401).json({
@@ -113,7 +113,7 @@ async function requireCompanyAdmin(req, res, next) {
  */
 async function requireCompanyAccess(req, res, next) {
   try {
-    if (!req.user || !req.user._id) {
+    if (!req.user || !req.user.id) {
       return res.status(401).json({
         success: false,
         error: "Authentication required"
@@ -140,7 +140,7 @@ async function requireCompanyAccess(req, res, next) {
     }
 
     // Regular user: must belong to this company
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user.id);
 
     if (!user || user.companyId.toString() !== companyId.toString()) {
       return res.status(403).json({
