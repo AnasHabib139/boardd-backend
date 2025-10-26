@@ -31,11 +31,16 @@ exports.handleSmsStatusCallback = async (req, res, next) => {
       ErrorMessage,
     } = req.body;
 
+    // Extract company from middleware (for logging)
+    const company = req.twilioCompany;
+    const companyId = company?._id || null;
+
     console.log("Twilio SMS status callback:", {
       messageId,
       MessageSid,
       MessageStatus,
       ErrorCode,
+      companyId: companyId?.toString() || "legacy",
     });
 
     // Validate required params
@@ -132,12 +137,17 @@ exports.handleInboundSms = async (req, res, next) => {
       NumMedia, // Number of media attachments (MMS)
     } = req.body;
 
+    // Extract company from middleware (for multi-tenant routing)
+    const company = req.twilioCompany;
+    const companyId = company?._id || null;
+
     console.log("Inbound SMS received:", {
       From,
       To,
       Body: Body?.substring(0, 100),
       MessageSid,
       NumMedia,
+      companyId: companyId?.toString() || "legacy",
     });
 
     // Validate required params
@@ -146,11 +156,19 @@ exports.handleInboundSms = async (req, res, next) => {
       return res.status(200).send("OK");
     }
 
-    // Find conversation by matching external phone number
-    const conversation = await ChatConversation.findOne({
+    // Build conversation query with company filter for security
+    const conversationQuery = {
       type: "client",
       "externalContacts.phoneE164s": From,
-    });
+    };
+
+    // Add companyId filter if multi-tenant mode
+    if (companyId) {
+      conversationQuery.companyId = companyId;
+    }
+
+    // Find conversation by matching external phone number
+    const conversation = await ChatConversation.findOne(conversationQuery);
 
     if (!conversation) {
       console.warn(`No client conversation found for SMS from ${From}`);

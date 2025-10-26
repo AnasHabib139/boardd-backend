@@ -79,6 +79,7 @@ exports.routeMessage = async (params) => {
 
           case "email":
             result = await deliverToEmail({
+              companyId,
               messageId,
               conversationId,
               recipient,
@@ -89,6 +90,7 @@ exports.routeMessage = async (params) => {
 
           case "sms":
             result = await deliverToSms({
+              companyId,
               messageId,
               recipient,
               content,
@@ -97,6 +99,7 @@ exports.routeMessage = async (params) => {
 
           case "whatsapp":
             result = await deliverToWhatsapp({
+              companyId,
               messageId,
               recipient,
               content,
@@ -245,12 +248,13 @@ async function deliverToBoard({ messageId }) {
  * @param {Object} params
  * @returns {Promise<Object>} Delivery result
  */
-async function deliverToEmail({ messageId, conversationId, recipient, emailSubject, content }) {
+async function deliverToEmail({ companyId, messageId, conversationId, recipient, emailSubject, content }) {
   // Convert TipTap JSON to email HTML
   const htmlContent = tiptapRenderer.toEmailHtml(content);
   const textContent = tiptapRenderer.toPlainText(content);
 
   return emailProvider.sendEmail({
+    companyId,
     to: recipient.email,
     subject: emailSubject,
     htmlContent,
@@ -265,11 +269,12 @@ async function deliverToEmail({ messageId, conversationId, recipient, emailSubje
  * @param {Object} params
  * @returns {Promise<Object>} Delivery result
  */
-async function deliverToSms({ messageId, recipient, content }) {
+async function deliverToSms({ companyId, messageId, recipient, content }) {
   // Convert TipTap JSON to SMS text
   const textContent = tiptapRenderer.toSmsText(content);
 
   return smsProvider.sendSms({
+    companyId,
     to: recipient.phoneE164,
     textContent,
     messageId,
@@ -282,6 +287,7 @@ async function deliverToSms({ messageId, recipient, content }) {
  * @returns {Promise<Object>} Delivery result
  */
 async function deliverToWhatsapp({
+  companyId,
   messageId,
   recipient,
   content,
@@ -292,6 +298,7 @@ async function deliverToWhatsapp({
   const textContent = tiptapRenderer.toWhatsappText(content);
 
   return whatsappProvider.sendWhatsapp({
+    companyId,
     to: recipient.whatsappE164,
     textContent: whatsappTemplate ? null : textContent, // Only send text if not using template
     template: whatsappTemplate || null,

@@ -31,11 +31,16 @@ exports.handleWhatsappStatusCallback = async (req, res, next) => {
       ErrorMessage,
     } = req.body;
 
+    // Extract company from middleware (for logging)
+    const company = req.twilioCompany;
+    const companyId = company?._id || null;
+
     console.log("Twilio WhatsApp status callback:", {
       messageId,
       MessageSid,
       MessageStatus,
       ErrorCode,
+      companyId: companyId?.toString() || "legacy",
     });
 
     // Validate required params
@@ -134,6 +139,10 @@ exports.handleInboundWhatsapp = async (req, res, next) => {
       ProfileName, // WhatsApp profile name
     } = req.body;
 
+    // Extract company from middleware (for multi-tenant routing)
+    const company = req.twilioCompany;
+    const companyId = company?._id || null;
+
     console.log("Inbound WhatsApp received:", {
       From,
       To,
@@ -141,6 +150,7 @@ exports.handleInboundWhatsapp = async (req, res, next) => {
       MessageSid,
       NumMedia,
       ProfileName,
+      companyId: companyId?.toString() || "legacy",
     });
 
     // Validate required params
@@ -152,11 +162,19 @@ exports.handleInboundWhatsapp = async (req, res, next) => {
     // Extract E.164 phone number from WhatsApp format (whatsapp:+1234567890)
     const whatsappNumber = From.replace(/^whatsapp:/, "");
 
-    // Find conversation by matching external WhatsApp number
-    const conversation = await ChatConversation.findOne({
+    // Build conversation query with company filter for security
+    const conversationQuery = {
       type: "client",
       "externalContacts.whatsappE164s": whatsappNumber,
-    });
+    };
+
+    // Add companyId filter if multi-tenant mode
+    if (companyId) {
+      conversationQuery.companyId = companyId;
+    }
+
+    // Find conversation by matching external WhatsApp number
+    const conversation = await ChatConversation.findOne(conversationQuery);
 
     if (!conversation) {
       console.warn(`No client conversation found for WhatsApp from ${whatsappNumber}`);

@@ -43,6 +43,91 @@ const CompanySchema = new Schema(
       { type: String, required: false, enum: Object.values(CHANNEL_PREFERENCE) },
     ],
     howDidYouHearAboutUs: { type: String, required: false, maxlength: 200 },
+
+    // Multi-tenant Twilio Configuration
+    twilioConfig: {
+      // Subaccount Credentials (ENCRYPTED - use select: false)
+      subAccountSid: { type: String, index: true },
+      authToken: { type: String, select: false }, // Used for webhook signature verification
+      apiKeySid: { type: String }, // Preferred over authToken
+      apiKeySecret: { type: String, select: false }, // ENCRYPTED
+
+      // Messaging Service
+      messagingServiceSid: { type: String, index: true },
+
+      // Phone Numbers
+      fromNumbers: [{ type: String }], // E.164 format: ['+15551234567']
+      phoneNumberSids: [{ type: String }], // Twilio SIDs: ['PN...']
+
+      // WhatsApp Senders
+      whatsappSenders: [{
+        number: { type: String }, // E.164: '+15551234567'
+        twilioNumber: { type: String }, // 'whatsapp:+15551234567'
+        status: { type: String, enum: ['pending', 'active', 'failed'], default: 'pending' },
+        wabaId: { type: String }, // WhatsApp Business Account ID
+        failedReason: { type: String }
+      }],
+
+      // Compliance
+      a2p: {
+        brandId: { type: String }, // TrustHub Brand SID
+        campaignId: { type: String }, // TrustHub Campaign SID
+        status: {
+          type: String,
+          enum: ['pending', 'approved', 'rejected', 'provisionally-approved'],
+          default: 'pending'
+        },
+        tollFreeVerificationStatus: { type: String }
+      },
+
+      // Operational
+      active: { type: Boolean, default: false },
+      useTwilioSubaccount: { type: Boolean, default: false }, // Migration flag
+      lastHealthCheck: { type: Date },
+      healthCheckStatus: {
+        type: String,
+        enum: ['healthy', 'degraded', 'failed'],
+        default: 'healthy'
+      },
+      notes: { type: String }
+    },
+
+    // Multi-tenant Email Configuration
+    emailConfig: {
+      provider: {
+        type: String,
+        enum: ['sendgrid', 'smtp', 'none'],
+        default: 'none'
+      },
+
+      // SendGrid Config
+      sendgrid: {
+        apiKey: { type: String, select: false }, // ENCRYPTED
+        fromEmail: { type: String },
+        fromName: { type: String },
+        domainVerified: { type: Boolean, default: false },
+        replyTo: { type: String }
+      },
+
+      // SMTP Config (Nodemailer)
+      smtp: {
+        host: { type: String },
+        port: { type: Number },
+        secure: { type: Boolean }, // true for 465, false for other ports
+        user: { type: String },
+        password: { type: String, select: false }, // ENCRYPTED
+        fromEmail: { type: String },
+        fromName: { type: String }
+      },
+
+      // Inbound Email Parse
+      inbound: {
+        enabled: { type: Boolean, default: false },
+        domain: { type: String }, // e.g., 'chat.company.com'
+        parseWebhookUrl: { type: String }
+      }
+    },
+
     isActive: { type: Boolean, default: true },
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
@@ -53,6 +138,11 @@ const CompanySchema = new Schema(
 
 CompanySchema.plugin(mongoosePaginate);
 CompanySchema.plugin(aggregatePaginate);
+
+// Add indexes for multi-tenant Twilio configuration
+CompanySchema.index({ 'twilioConfig.subAccountSid': 1 });
+CompanySchema.index({ 'twilioConfig.messagingServiceSid': 1 });
+CompanySchema.index({ 'twilioConfig.useTwilioSubaccount': 1, 'twilioConfig.active': 1 });
 
 const CompanyModel = model("Company", CompanySchema);
 

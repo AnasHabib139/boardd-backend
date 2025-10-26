@@ -3,11 +3,17 @@
 /**
  * SendGrid Email Provider for Client Chat
  * Handles email sending via SendGrid with delivery tracking
+ * Supports multi-tenant architecture with per-company email clients
  */
 
 const sgMail = require("@sendgrid/mail");
+const {
+  getEmailClientForCompany,
+  getLegacySendGridClient,
+  sendEmailViaClient,
+} = require("./emailClientFactory");
 
-// Initialize SendGrid with API key from environment
+// Initialize legacy SendGrid with API key from environment
 if (process.env.SENDGRID_API_KEY) {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 } else {
@@ -15,23 +21,27 @@ if (process.env.SENDGRID_API_KEY) {
 }
 
 /**
- * Send email via SendGrid
+ * Send email via SendGrid or SMTP (Multi-tenant version)
  * @param {Object} params - Email parameters
+ * @param {String} params.companyId - Company ID (for multi-tenant routing)
  * @param {String} params.to - Recipient email address
  * @param {String} params.subject - Email subject
  * @param {String} params.htmlContent - HTML email body
  * @param {String} params.textContent - Plain text email body (fallback)
  * @param {String} params.conversationId - For reply tracking
+ * @param {String} params.messageId - Internal message ID
  * @param {Array} params.attachmentsUrls - Optional attachment URLs
- * @returns {Promise<Object>} { success, providerMessageId, error }
+ * @returns {Promise<Object>} { success, providerMessageId, error, from }
  */
 exports.sendEmail = async (params) => {
   const {
+    companyId,
     to,
     subject,
     htmlContent,
     textContent,
     conversationId,
+    messageId,
     attachmentsUrls = [],
   } = params;
 
@@ -41,59 +51,65 @@ exports.sendEmail = async (params) => {
       throw new Error("Missing required email parameters: to, subject, htmlContent");
     }
 
-    // Validate SendGrid is configured
-    if (!process.env.SENDGRID_API_KEY) {
-      throw new Error("SendGrid API key not configured");
+    // Get company-specific email client or use legacy
+    let emailClient;
+    let fromEmail;
+    let fromName;
+
+    if (companyId) {
+      // Multi-tenant mode: Use company-specific email client
+      try {
+        emailClient = await getEmailClientForCompany(companyId);
+        fromEmail = emailClient.from.email;
+        fromName = emailClient.from.name;
+        console.log(
+          `Using ${emailClient.type} email client for company ${companyId}`
+        );
+      } catch (error) {
+        console.warn(
+          `Failed to get company email client for ${companyId}: ${error.message}. Falling back to legacy.`
+        );
+        emailClient = getLegacySendGridClient();
+        fromEmail = emailClient.from.email;
+        fromName = emailClient.from.name;
+      }
+    } else {
+      // Legacy mode: Use global SendGrid client
+      emailClient = getLegacySendGridClient();
+      fromEmail = emailClient.from.email;
+      fromName = emailClient.from.name;
+      console.log("Using legacy SendGrid client for email");
     }
 
-    const fromEmail = process.env.SENDGRID_FROM_EMAIL || "noreply@boardd.com";
-    const fromName = process.env.SENDGRID_FROM_NAME || "Boardd Support";
+    // Build reply-to address for conversation threading
+    let replyToEmail = null;
+    if (conversationId) {
+      replyToEmail = `chat+${conversationId}@${extractDomain(fromEmail)}`;
+    }
 
-    // Build email message
-    const msg = {
+    // Build email options for the abstraction layer
+    const mailOptions = {
       to,
-      from: {
-        email: fromEmail,
-        name: fromName,
-      },
       subject,
-      text: textContent || stripHtml(htmlContent), // Fallback to stripped HTML if no text provided
+      text: textContent || stripHtml(htmlContent),
       html: htmlContent,
-      // Add custom headers for tracking and threading
-      customArgs: {
-        conversationId: conversationId || "",
-        source: "client_chat",
-      },
-      // Support reply tracking via custom reply-to
-      // Format: chat+<conversationId>@yourdomain.com
-      ...(conversationId && {
-        replyTo: {
-          email: `chat+${conversationId}@${extractDomain(fromEmail)}`,
-          name: fromName,
-        },
-      }),
+      replyTo: replyToEmail,
+      conversationId,
+      messageId,
     };
 
-    // TODO: Add attachments support if needed
-    // if (attachmentsUrls && attachmentsUrls.length > 0) {
-    //   msg.attachments = await processAttachments(attachmentsUrls);
-    // }
+    // Send email using the client abstraction
+    const result = await sendEmailViaClient(emailClient, mailOptions);
 
-    // Send email via SendGrid
-    const response = await sgMail.send(msg);
-
-    // SendGrid returns array of responses (one per recipient)
-    const sendGridResponse = response[0];
-
-    // Extract message ID from headers
-    const messageId = sendGridResponse.headers?.["x-message-id"] || null;
-
-    console.log(`Email sent successfully via SendGrid to ${to}, messageId: ${messageId}`);
+    console.log(
+      `Email sent successfully via ${result.provider} to ${to}, messageId: ${result.messageId}`
+    );
 
     return {
       success: true,
-      providerMessageId: messageId,
-      status: "sent", // SendGrid returns 202 Accepted, actual delivery tracked via webhook
+      providerMessageId: result.messageId,
+      status: "sent",
+      from: fromEmail,
       sentAt: new Date(),
     };
   } catch (error) {

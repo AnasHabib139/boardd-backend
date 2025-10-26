@@ -78,6 +78,8 @@ exports.handleInboundEmail = async (req, res, next) => {
     }
 
     // Fallback: Try to find by matching sender email in externalContacts
+    // Note: Email webhooks don't have Twilio signature verification,
+    // so we rely on reply-to or externalContacts matching
     if (!conversation) {
       conversation = await ChatConversation.findOne({
         type: "client",

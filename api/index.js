@@ -29,6 +29,7 @@ const ChannelGroupApi = require("./channelGroupApi");
 const ProjectStatusColumnApi = require("./projectStatusColumnAPI");
 const ChatApi = require("./chatApi");
 const WebhookApi = require("./webhookApi");
+const MessagingConfigApi = require("./messagingConfigApi");
 // FileServeApi is now mounted directly in server.js at /uploadFiles
 // const FileServeApi = require("./fileServeApi");
 // all API routing files import here like above
@@ -68,6 +69,7 @@ class API {
     this.routeGroups.push(new ProjectStatusColumnApi());
     this.routeGroups.push(new ChatApi());
     this.routeGroups.push(new WebhookApi());
+    this.routeGroups.push(new MessagingConfigApi());
     // FileServeApi is now mounted directly in server.js
     // this.routeGroups.push(new FileServeApi());
     // all routes register here like above

@@ -8,6 +8,11 @@
 
 const { Router } = require("express");
 
+// Import Twilio webhook authentication middleware
+const {
+  verifyTwilioSignature,
+} = require("../middlewares/twilioWebhookAuth");
+
 // Import webhook controllers
 const {
   handleSmsStatusCallback,
@@ -38,14 +43,16 @@ class WebhookApi {
      * POST /api/webhooks/sms/twilio
      * Twilio SMS status callback (delivery updates)
      * Query param: messageId - Internal message ID for status update
+     * Middleware: verifyTwilioSignature - validates webhook signature and routes to company
      */
-    router.post("/sms/twilio", handleSmsStatusCallback);
+    router.post("/sms/twilio", verifyTwilioSignature, handleSmsStatusCallback);
 
     /**
      * POST /api/webhooks/sms/twilio/inbound
      * Twilio inbound SMS webhook (client replies)
+     * Middleware: verifyTwilioSignature - validates webhook signature and routes to company
      */
-    router.post("/sms/twilio/inbound", handleInboundSms);
+    router.post("/sms/twilio/inbound", verifyTwilioSignature, handleInboundSms);
 
     // ==================== TWILIO WHATSAPP WEBHOOKS ====================
 
@@ -53,14 +60,16 @@ class WebhookApi {
      * POST /api/webhooks/whatsapp/twilio
      * Twilio WhatsApp status callback (delivery updates)
      * Query param: messageId - Internal message ID for status update
+     * Middleware: verifyTwilioSignature - validates webhook signature and routes to company
      */
-    router.post("/whatsapp/twilio", handleWhatsappStatusCallback);
+    router.post("/whatsapp/twilio", verifyTwilioSignature, handleWhatsappStatusCallback);
 
     /**
      * POST /api/webhooks/whatsapp/twilio/inbound
      * Twilio inbound WhatsApp webhook (client replies)
+     * Middleware: verifyTwilioSignature - validates webhook signature and routes to company
      */
-    router.post("/whatsapp/twilio/inbound", handleInboundWhatsapp);
+    router.post("/whatsapp/twilio/inbound", verifyTwilioSignature, handleInboundWhatsapp);
 
     // ==================== SENDGRID EMAIL WEBHOOKS ====================
 
