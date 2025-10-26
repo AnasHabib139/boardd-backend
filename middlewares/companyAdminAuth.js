@@ -37,12 +37,22 @@ async function requireCompanyAdmin(req, res, next) {
       });
     }
 
+    // Fetch full user to get companyId (JWT token may not include it)
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: "User not found"
+      });
+    }
+
     // Extract companyId from request (params, body, or query)
     const companyId =
-      req.params.companyId ||
-      req.body.companyId ||
-      req.query.companyId ||
-      req.user.companyId; // Fallback to user's company
+      (req.params && req.params.companyId) ||
+      (req.body && req.body.companyId) ||
+      (req.query && req.query.companyId) ||
+      user.companyId; // Fallback to user's company
 
     if (!companyId) {
       return res.status(400).json({
@@ -56,16 +66,6 @@ async function requireCompanyAdmin(req, res, next) {
       console.log(`Super admin ${req.user.id} accessing company ${companyId}`);
       req.companyId = companyId; // Attach to request for handlers
       return next();
-    }
-
-    // Regular user: must be admin of THIS company
-    const user = await User.findById(req.user.id);
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        error: "User not found"
-      });
     }
 
     // Check if user belongs to this company
@@ -120,11 +120,21 @@ async function requireCompanyAccess(req, res, next) {
       });
     }
 
+    // Fetch full user to get companyId (JWT token may not include it)
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: "User not found"
+      });
+    }
+
     const companyId =
-      req.params.companyId ||
-      req.body.companyId ||
-      req.query.companyId ||
-      req.user.companyId;
+      (req.params && req.params.companyId) ||
+      (req.body && req.body.companyId) ||
+      (req.query && req.query.companyId) ||
+      user.companyId;
 
     if (!companyId) {
       return res.status(400).json({
@@ -140,9 +150,7 @@ async function requireCompanyAccess(req, res, next) {
     }
 
     // Regular user: must belong to this company
-    const user = await User.findById(req.user.id);
-
-    if (!user || user.companyId.toString() !== companyId.toString()) {
+    if (user.companyId.toString() !== companyId.toString()) {
       return res.status(403).json({
         success: false,
         error: "Access denied: You do not belong to this company"
