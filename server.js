@@ -55,6 +55,7 @@ app.use(cookieParser());
 const FileServeApi = require("./api/fileServeApi");
 app.use("/uploadFiles", new FileServeApi().getRouter());
 app.use("/assets", express.static("assets"));
+app.use(express.static("public")); // Serve OAuth success/error pages
 app.use(
   cookieSession({
     name: "session",

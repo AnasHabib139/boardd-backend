@@ -68,6 +68,16 @@ const taskSchema = new Schema({
       mimeType: { type: String },
       uploadedBy: { type: Types.ObjectId, ref: "User" },
       uploadedAt: { type: Date, default: Date.now },
+      // Cloud storage integration fields
+      source: {
+        type: String,
+        enum: ["local", "google_drive", "dropbox"],
+        default: "local",
+      },
+      cloudFileId: { type: String }, // File ID in cloud storage
+      cloudIntegrationId: { type: Types.ObjectId, ref: "CloudIntegration" }, // Reference to cloud integration
+      webViewLink: { type: String }, // Direct link to view in cloud provider
+      thumbnailLink: { type: String }, // Preview thumbnail URL
     },
   ],
   links: [{ type: String }],

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth Error - Boardd</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            padding: 60px 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .error-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 30px;
+            background: #ef4444;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: scaleIn 0.5s ease-out 0.2s both;
+        }
+
+        @keyframes scaleIn {
+            from {
+                transform: scale(0);
+            }
+            to {
+                transform: scale(1);
+            }
+        }
+
+        .error-icon svg {
+            width: 40px;
+            height: 40px;
+            stroke: white;
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+        }
+
+        h1 {
+            font-size: 28px;
+            color: #1f2937;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+
+        .provider-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #fef2f2;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #991b1b;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .provider-name {
+            color: #dc2626;
+            font-weight: 700;
+            text-transform: capitalize;
+        }
+
+        p {
+            color: #6b7280;
+            line-height: 1.6;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .error-box {
+            background: #fef2f2;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            border-left: 4px solid #ef4444;
+        }
+
+        .error-box p {
+            margin: 0;
+            font-size: 14px;
+            color: #991b1b;
+        }
+
+        .info-box {
+            background: #f9fafb;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            border-left: 4px solid #6b7280;
+            text-align: left;
+        }
+
+        .info-box p {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #374151;
+        }
+
+        .info-box p:last-child {
+            margin-bottom: 0;
+        }
+
+        .info-box strong {
+            display: block;
+            margin-bottom: 10px;
+            color: #1f2937;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .button {
+            display: inline-block;
+            padding: 14px 32px;
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+        }
+
+        .button-primary {
+            background: #ef4444;
+        }
+
+        .button-primary:hover {
+            background: #dc2626;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(239, 68, 68, 0.3);
+        }
+
+        .button-secondary {
+            background: #6b7280;
+        }
+
+        .button-secondary:hover {
+            background: #4b5563;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(107, 114, 128, 0.3);
+        }
+
+        .details {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            font-size: 14px;
+        }
+
+        .detail-label {
+            color: #9ca3af;
+            font-weight: 500;
+        }
+
+        .detail-value {
+            color: #374151;
+            font-weight: 600;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 40px 30px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .error-icon {
+                width: 70px;
+                height: 70px;
+            }
+
+            .error-icon svg {
+                width: 35px;
+                height: 35px;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            .button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="error-icon">
+            <svg viewBox="0 0 24 24">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+        </div>
+
+        <h1>Connection Failed</h1>
+
+        <div class="provider-badge">
+            <span class="provider-name" id="providerName">Google Drive</span> Connection Error
+        </div>
+
+        <p>
+            We couldn't connect your cloud storage account. This might have happened because you denied access or there was an issue during the authorization process.
+        </p>
+
+        <div class="error-box">
+            <p>
+                <strong>⚠️ Authorization was not completed</strong><br>
+                The connection process was interrupted or cancelled.
+            </p>
+        </div>
+
+        <div class="info-box">
+            <p><strong>Possible reasons:</strong></p>
+            <p>• You clicked "Deny" or "Cancel" on the authorization page</p>
+            <p>• The authorization session expired</p>
+            <p>• Network connection was interrupted</p>
+            <p>• Invalid OAuth credentials (check server configuration)</p>
+        </div>
+
+        <div class="info-box">
+            <p><strong>What to do next:</strong></p>
+            <p>• Try connecting again and click "Allow" when prompted</p>
+            <p>• Make sure you're logged into the correct account</p>
+            <p>• Check your internet connection</p>
+            <p>• If the problem persists, contact support</p>
+        </div>
+
+        <div class="button-group">
+            <a href="javascript:location.reload();" class="button button-primary">Try Again</a>
+            <a href="javascript:window.close();" class="button button-secondary">Close Window</a>
+        </div>
+
+        <div class="details">
+            <div class="detail-item">
+                <span class="detail-label">Status</span>
+                <span class="detail-value" style="color: #ef4444;">✗ Failed</span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Provider</span>
+                <span class="detail-value" id="providerDetail">Google Drive</span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Error Time</span>
+                <span class="detail-value" id="timestamp">Just now</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get provider from URL params
+        const urlParams = new URLSearchParams(window.location.search);
+        const provider = urlParams.get('provider') || 'google_drive';
+
+        // Format provider name
+        const providerNames = {
+            'google_drive': 'Google Drive',
+            'dropbox': 'Dropbox'
+        };
+
+        const providerName = providerNames[provider] || provider;
+
+        // Update provider name in the page
+        document.getElementById('providerName').textContent = providerName;
+        document.getElementById('providerDetail').textContent = providerName;
+
+        // Set timestamp
+        const now = new Date();
+        document.getElementById('timestamp').textContent = now.toLocaleString();
+
+        // Update the "Try Again" link to go back to auth endpoint
+        const tryAgainBtn = document.querySelector('.button-primary');
+        const authEndpoints = {
+            'google_drive': '/api/cloud-integrations/google-drive/auth',
+            'dropbox': '/api/cloud-integrations/dropbox/auth'
+        };
+
+        if (authEndpoints[provider]) {
+            tryAgainBtn.href = authEndpoints[provider];
+        }
+    </script>
+</body>
+</html>
