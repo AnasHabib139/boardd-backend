@@ -17,7 +17,7 @@ const projectSchema = new Schema({
   endDate: { type: Date, required: true },
   priority: {
     type: String,
-    enum: ["low", "medium", "high"],
+    enum: ["none", "low", "medium", "high", "urgent"],
     default: "medium",
   },
   color: { type: String, required: true },
