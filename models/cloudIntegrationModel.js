@@ -6,6 +6,7 @@ const { encrypt, decrypt } = require("../utils/encryption");
 const CLOUD_PROVIDERS = {
   GOOGLE_DRIVE: "google_drive",
   DROPBOX: "dropbox",
+  ONEDRIVE: "onedrive",
 };
 
 const cloudIntegrationSchema = new Schema(

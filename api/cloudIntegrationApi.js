@@ -6,10 +6,13 @@ const {
   googleDriveCallback,
   initiateDropboxAuth,
   dropboxCallback,
+  initiateOneDriveAuth,
+  oneDriveCallback,
   getConnectedServices,
   disconnectService,
   browseGoogleDriveFiles,
   browseDropboxFiles,
+  browseOneDriveFiles,
   getFileMetadata,
 } = require("../controller/cloudIntegration.controller");
 const { ROLES } = require("../utils/constants");
@@ -53,6 +56,15 @@ class CloudIntegrationAPI {
 
     router.get("/dropbox/callback", dropboxCallback);
 
+    // OneDrive OAuth routes
+    router.get(
+      "/onedrive/auth",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
+      initiateOneDriveAuth
+    );
+
+    router.get("/onedrive/callback", oneDriveCallback);
+
     // Disconnect service
     router.post(
       "/:integrationId/disconnect",
@@ -73,6 +85,13 @@ class CloudIntegrationAPI {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
       validateBrowseFiles,
       browseDropboxFiles
+    );
+
+    router.get(
+      "/onedrive/browse",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
+      validateBrowseFiles,
+      browseOneDriveFiles
     );
 
     // Get file metadata from cloud storage
