@@ -58,11 +58,11 @@ const createProjectValidation = Joi.object({
     }),
 
   priority: Joi.string()
-    .valid("none", "low", "medium", "high", "urgent")
+    .valid("none", "low", "medium", "high", "urgent", "critical")
     .optional()
     .default("medium")
     .messages({
-      "any.only": "Priority must be one of: none, low, medium, high, urgent",
+      "any.only": "Priority must be one of: none, low, medium, high, urgent, critical",
     }),
 
   status: Joi.string()
@@ -162,10 +162,10 @@ const updateProjectValidation = Joi.object({
     }),
 
   priority: Joi.string()
-    .valid("none", "low", "medium", "high", "urgent")
+    .valid("none", "low", "medium", "high", "urgent", "critical")
     .optional()
     .messages({
-      "any.only": "Priority must be one of: none, low, medium, high, urgent",
+      "any.only": "Priority must be one of: none, low, medium, high, urgent, critical",
     }),
 
   status: Joi.string()
@@ -277,10 +277,10 @@ const getProjectsQueryValidation = Joi.object({
     }),
 
   priority: Joi.string()
-    .valid("none", "low", "medium", "high", "urgent")
+    .valid("none", "low", "medium", "high", "urgent", "critical")
     .optional()
     .messages({
-      "any.only": "Priority must be one of: none, low, medium, high, urgent",
+      "any.only": "Priority must be one of: none, low, medium, high, urgent, critical",
     }),
 
   createdBy: helpers.objectIdValidation.optional().messages({
