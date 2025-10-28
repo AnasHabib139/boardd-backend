@@ -1541,6 +1541,16 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
         },
         // Add default value for isPinned if missing
         isPinned: { $ifNull: ["$isPinned", false] },
+        // Collect all unique assignees from all tasks (combines assignees from todo, in_progress, and completed tasks)
+        assignedTo: {
+          $reduce: {
+            input: "$allTasks",
+            initialValue: [],
+            in: {
+              $setUnion: ["$$value", { $ifNull: ["$$this.assignees", []] }]
+            }
+          }
+        },
       },
     },
 
@@ -1963,6 +1973,7 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
         inProgressTasks: 1,
         completedTasks: 1,
         taskStats: 1,
+        assignedTo: 1, // Combined unique assignees from all tasks
         progress: {
           $round: ["$progress", 1], // Round to 1 decimal place
         },
