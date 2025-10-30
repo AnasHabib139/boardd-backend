@@ -280,15 +280,127 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
           $cond: {
             if: { $eq: ["$conversationDetails.type", "client"] },
             then: {
-              fromClientModel: {
-                $ifNull: [
-                  { $arrayElemAt: ["$clientDetails.personalDetails", 0] },
-                  []
-                ]
-              },
-              fromConversation: {
-                clientContact: { $ifNull: ["$conversationDetails.clientContact", null] },
-                externalContacts: { $ifNull: ["$conversationDetails.externalContacts", null] }
+              $let: {
+                vars: {
+                  clientContact: "$conversationDetails.clientContact",
+                  externalContacts: "$conversationDetails.externalContacts",
+                  clientModelData: { $arrayElemAt: ["$clientDetails.personalDetails", 0] }
+                },
+                in: {
+                  // SMS numbers from all sources
+                  smsNumbers: {
+                    $concatArrays: [
+                      // Primary client phone
+                      {
+                        $cond: {
+                          if: { $ne: ["$$clientContact.phoneE164", null] },
+                          then: [{
+                            number: "$$clientContact.phoneE164",
+                            name: { $ifNull: ["$$clientContact.name", null] },
+                            source: "primary"
+                          }],
+                          else: []
+                        }
+                      },
+                      // Tracked SMS numbers
+                      {
+                        $map: {
+                          input: { $ifNull: ["$$externalContacts.phoneE164s", []] },
+                          as: "phone",
+                          in: {
+                            number: "$$phone",
+                            source: "tracked"
+                          }
+                        }
+                      },
+                      // Client model phones
+                      {
+                        $cond: {
+                          if: { $ne: ["$$clientModelData.phone.number", null] },
+                          then: [{
+                            number: {
+                              $concat: [
+                                { $ifNull: ["$$clientModelData.phone.countryCode", ""] },
+                                { $ifNull: ["$$clientModelData.phone.number", ""] }
+                              ]
+                            },
+                            name: { $ifNull: ["$$clientModelData.name", null] },
+                            source: "clientModel"
+                          }],
+                          else: []
+                        }
+                      }
+                    ]
+                  },
+                  // WhatsApp numbers from all sources
+                  whatsappNumbers: {
+                    $concatArrays: [
+                      // Primary WhatsApp
+                      {
+                        $cond: {
+                          if: { $ne: ["$$clientContact.whatsappE164", null] },
+                          then: [{
+                            number: "$$clientContact.whatsappE164",
+                            name: { $ifNull: ["$$clientContact.name", null] },
+                            source: "primary"
+                          }],
+                          else: []
+                        }
+                      },
+                      // Tracked WhatsApp numbers
+                      {
+                        $map: {
+                          input: { $ifNull: ["$$externalContacts.whatsappE164s", []] },
+                          as: "whatsapp",
+                          in: {
+                            number: "$$whatsapp",
+                            source: "tracked"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  // Emails from all sources
+                  emails: {
+                    $concatArrays: [
+                      // Primary email
+                      {
+                        $cond: {
+                          if: { $ne: ["$$clientContact.email", null] },
+                          then: [{
+                            email: "$$clientContact.email",
+                            name: { $ifNull: ["$$clientContact.name", null] },
+                            source: "primary"
+                          }],
+                          else: []
+                        }
+                      },
+                      // Tracked emails
+                      {
+                        $map: {
+                          input: { $ifNull: ["$$externalContacts.emails", []] },
+                          as: "email",
+                          in: {
+                            email: "$$email",
+                            source: "tracked"
+                          }
+                        }
+                      },
+                      // Client model email
+                      {
+                        $cond: {
+                          if: { $ne: ["$$clientModelData.email", null] },
+                          then: [{
+                            email: "$$clientModelData.email",
+                            name: { $ifNull: ["$$clientModelData.name", null] },
+                            source: "clientModel"
+                          }],
+                          else: []
+                        }
+                      }
+                    ]
+                  }
+                }
               }
             },
             else: "$$REMOVE"
