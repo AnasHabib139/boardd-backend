@@ -199,7 +199,37 @@ exports.checkVerificationStatus = async (companyId) => {
     }
 
     // Check for senders array (new multi-sender model)
-    const senders = company.emailConfig?.sendgrid?.senders || [];
+    let senders = company.emailConfig?.sendgrid?.senders || [];
+
+    // BACKWARDS COMPATIBILITY: Migrate old single-email format to new senders array
+    if (senders.length === 0 && company.emailConfig?.sendgrid?.fromEmail) {
+      console.log(`Migrating old email format to new senders array for company ${companyId}`);
+
+      const oldEmail = company.emailConfig.sendgrid.fromEmail;
+      const oldName = company.emailConfig.sendgrid.fromName || "Support";
+      const oldDomain = oldEmail.split("@")[1];
+
+      // Create sender object from old format
+      const migratedSender = {
+        email: oldEmail,
+        name: oldName,
+        domain: oldDomain,
+        domainVerified: company.emailConfig.sendgrid.domainVerified || false,
+        domainId: company.emailConfig.sendgrid.domainId || null,
+        verifiedAt: company.emailConfig.verifiedAt || null,
+        isDefault: true
+      };
+
+      // Update database with migrated data
+      await Company.findByIdAndUpdate(companyId, {
+        $set: {
+          "emailConfig.sendgrid.senders": [migratedSender]
+        }
+      });
+
+      senders = [migratedSender];
+      console.log(`✓ Migrated ${oldEmail} to new senders array format`);
+    }
 
     if (senders.length === 0) {
       return {
@@ -319,7 +349,37 @@ exports.getDnsRecords = async (companyId, specificDomain = null) => {
     }
 
     // Check for senders array (new multi-sender model)
-    const senders = company.emailConfig?.sendgrid?.senders || [];
+    let senders = company.emailConfig?.sendgrid?.senders || [];
+
+    // BACKWARDS COMPATIBILITY: Migrate old single-email format to new senders array
+    if (senders.length === 0 && company.emailConfig?.sendgrid?.fromEmail) {
+      console.log(`Migrating old email format to new senders array for company ${companyId}`);
+
+      const oldEmail = company.emailConfig.sendgrid.fromEmail;
+      const oldName = company.emailConfig.sendgrid.fromName || "Support";
+      const oldDomain = oldEmail.split("@")[1];
+
+      // Create sender object from old format
+      const migratedSender = {
+        email: oldEmail,
+        name: oldName,
+        domain: oldDomain,
+        domainVerified: company.emailConfig.sendgrid.domainVerified || false,
+        domainId: company.emailConfig.sendgrid.domainId || null,
+        verifiedAt: company.emailConfig.verifiedAt || null,
+        isDefault: true
+      };
+
+      // Update database with migrated data
+      await Company.findByIdAndUpdate(companyId, {
+        $set: {
+          "emailConfig.sendgrid.senders": [migratedSender]
+        }
+      });
+
+      senders = [migratedSender];
+      console.log(`✓ Migrated ${oldEmail} to new senders array format`);
+    }
 
     if (senders.length === 0) {
       throw new Error("No email senders configured. Configure sender email first.");
@@ -454,14 +514,47 @@ exports.verifyDomainManually = async (companyId) => {
       throw new Error("Company not found");
     }
 
-    if (!company.emailConfig?.sendgrid?.fromEmail) {
+    // Check for senders array (new multi-sender model)
+    let senders = company.emailConfig?.sendgrid?.senders || [];
+
+    // BACKWARDS COMPATIBILITY: Migrate old single-email format to new senders array
+    if (senders.length === 0 && company.emailConfig?.sendgrid?.fromEmail) {
+      console.log(`Migrating old email format to new senders array for company ${companyId}`);
+
+      const oldEmail = company.emailConfig.sendgrid.fromEmail;
+      const oldName = company.emailConfig.sendgrid.fromName || "Support";
+      const oldDomain = oldEmail.split("@")[1];
+
+      // Create sender object from old format
+      const migratedSender = {
+        email: oldEmail,
+        name: oldName,
+        domain: oldDomain,
+        domainVerified: company.emailConfig.sendgrid.domainVerified || false,
+        domainId: company.emailConfig.sendgrid.domainId || null,
+        verifiedAt: company.emailConfig.verifiedAt || null,
+        isDefault: true
+      };
+
+      // Update database with migrated data
+      await Company.findByIdAndUpdate(companyId, {
+        $set: {
+          "emailConfig.sendgrid.senders": [migratedSender]
+        }
+      });
+
+      senders = [migratedSender];
+      console.log(`✓ Migrated ${oldEmail} to new senders array format`);
+    }
+
+    if (senders.length === 0) {
       throw new Error("No email configured. Please configure email first.");
     }
 
-    const fromEmail = company.emailConfig.sendgrid.fromEmail;
-    const domain = fromEmail.split("@")[1];
+    // Get all unique domains from senders
+    const uniqueDomains = [...new Set(senders.map(s => s.domain))];
 
-    console.log(`Manually verifying domain authentication for: ${domain}`);
+    console.log(`Manually verifying domain authentication for: ${uniqueDomains.join(", ")}`);
 
     const sgClient = getApiClient();
 
@@ -472,70 +565,61 @@ exports.verifyDomainManually = async (companyId) => {
     });
 
     if (body && Array.isArray(body)) {
-      const authenticatedDomain = body.find(d => d.domain === domain);
+      const authenticatedDomains = body.filter(d => d.valid === true);
 
-      if (!authenticatedDomain) {
-        // Domain not even set up in SendGrid yet
-        return {
-          success: false,
-          verified: false,
-          status: "not_configured",
-          message: `Domain ${domain} not found in SendGrid. Please call /api/messaging/email/dns-records first to set up domain authentication.`
-        };
-      }
+      // Update all senders based on their domain authentication
+      const updatedSenders = senders.map(sender => {
+        const authenticatedDomain = authenticatedDomains.find(d => d.domain === sender.domain);
 
-      const isVerified = authenticatedDomain.valid === true;
+        if (authenticatedDomain) {
+          return {
+            ...sender,
+            domainVerified: true,
+            domainId: authenticatedDomain.id,
+            verifiedAt: sender.verifiedAt || new Date()
+          };
+        }
 
-      if (isVerified) {
-        // Domain is now verified! Update all senders with this domain
-        const senders = company.emailConfig?.sendgrid?.senders || [];
-        const updatedSenders = senders.map(sender => {
-          if (sender.domain === domain) {
-            return {
-              ...sender,
-              domainVerified: true,
-              domainId: authenticatedDomain.id,
-              verifiedAt: sender.verifiedAt || new Date()
-            };
-          }
-          return sender;
-        });
+        return sender;
+      });
 
-        await Company.findByIdAndUpdate(companyId, {
-          $set: {
-            "emailConfig.sendgrid.senders": updatedSenders,
-            "emailConfig.lastVerificationCheck": new Date()
-          }
-        });
+      const verifiedSendersCount = updatedSenders.filter(s => s.domainVerified).length;
+      const totalSendersCount = updatedSenders.length;
 
-        console.log(`✓ Domain ${domain} is now verified for company ${companyId}`);
+      await Company.findByIdAndUpdate(companyId, {
+        $set: {
+          "emailConfig.sendgrid.senders": updatedSenders,
+          "emailConfig.lastVerificationCheck": new Date()
+        }
+      });
 
-        const verifiedSenders = updatedSenders.filter(s => s.domain === domain);
+      if (verifiedSendersCount > 0) {
+        console.log(`✓ ${verifiedSendersCount} sender(s) verified for company ${companyId}`);
+
+        const verifiedSenders = updatedSenders.filter(s => s.domainVerified).map(s => s.email);
 
         return {
           success: true,
-          verified: true,
-          status: "verified",
-          domain: domain,
+          verified: verifiedSendersCount === totalSendersCount,
+          status: verifiedSendersCount === totalSendersCount ? "verified" : "partial",
+          domain: uniqueDomains[0],
+          domains: uniqueDomains,
           verifiedSenders: verifiedSenders,
-          message: `Success! Domain ${domain} is authenticated. ${verifiedSenders.length} sender(s) are now ready to use.`
+          message: verifiedSendersCount === totalSendersCount
+            ? `Success! All domains authenticated. ${verifiedSendersCount} sender(s) ready to use.`
+            : `${verifiedSendersCount}/${totalSendersCount} sender(s) verified. Some domains still need DNS authentication.`
         };
       } else {
-        // Domain exists but not yet verified (DNS not propagated or incorrect)
-        await Company.findByIdAndUpdate(companyId, {
-          $set: {
-            "emailConfig.lastVerificationCheck": new Date()
-          }
-        });
-
-        console.log(`⚠️ Domain ${domain} not yet verified for company ${companyId}`);
+        // No domains verified yet
+        console.log(`⚠️ No domains verified yet for company ${companyId}`);
 
         return {
           success: false,
           verified: false,
           status: "pending",
-          domain: domain,
-          message: `Domain ${domain} is not yet authenticated. Please ensure you've added the DNS records correctly. DNS changes can take 24-48 hours to propagate.`,
+          domain: uniqueDomains[0],
+          domains: uniqueDomains,
+          message: `No domains authenticated yet. Please ensure you've added the DNS records correctly. DNS changes can take 24-48 hours to propagate.`,
           nextStep: "Double-check the CNAME records in your DNS provider, or wait longer for DNS propagation"
         };
       }
@@ -567,16 +651,52 @@ exports.testEmailConfiguration = async (companyId, testRecipient = null) => {
       throw new Error("Company not found");
     }
 
-    if (!company.emailConfig?.sendgrid?.fromEmail) {
+    // Check for senders array (new multi-sender model)
+    let senders = company.emailConfig?.sendgrid?.senders || [];
+
+    // BACKWARDS COMPATIBILITY: Migrate old single-email format to new senders array
+    if (senders.length === 0 && company.emailConfig?.sendgrid?.fromEmail) {
+      console.log(`Migrating old email format to new senders array for company ${companyId}`);
+
+      const oldEmail = company.emailConfig.sendgrid.fromEmail;
+      const oldName = company.emailConfig.sendgrid.fromName || "Support";
+      const oldDomain = oldEmail.split("@")[1];
+
+      // Create sender object from old format
+      const migratedSender = {
+        email: oldEmail,
+        name: oldName,
+        domain: oldDomain,
+        domainVerified: company.emailConfig.sendgrid.domainVerified || false,
+        domainId: company.emailConfig.sendgrid.domainId || null,
+        verifiedAt: company.emailConfig.verifiedAt || null,
+        isDefault: true
+      };
+
+      // Update database with migrated data
+      await Company.findByIdAndUpdate(companyId, {
+        $set: {
+          "emailConfig.sendgrid.senders": [migratedSender]
+        }
+      });
+
+      senders = [migratedSender];
+      console.log(`✓ Migrated ${oldEmail} to new senders array format`);
+    }
+
+    if (senders.length === 0) {
       throw new Error("No email configured");
     }
 
-    if (!company.emailConfig.sendgrid.domainVerified) {
-      throw new Error("Email not verified. Please verify email first by clicking the link sent to your inbox.");
+    // Get default sender or first sender
+    const defaultSender = senders.find(s => s.isDefault) || senders[0];
+
+    if (!defaultSender.domainVerified) {
+      throw new Error("Email not verified. Please verify domain authentication first.");
     }
 
-    const fromEmail = company.emailConfig.sendgrid.fromEmail;
-    const fromName = company.emailConfig.sendgrid.fromName;
+    const fromEmail = defaultSender.email;
+    const fromName = defaultSender.name;
     const recipient = testRecipient || fromEmail; // Send to self if no recipient specified
 
     console.log(`Sending test email for company ${companyId} from ${fromEmail} to ${recipient}`);
