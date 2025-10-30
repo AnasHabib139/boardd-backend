@@ -30,25 +30,11 @@ async function pollDomainVerifications() {
     console.log("Time:", new Date().toISOString());
 
     // Find companies with pending domain authentication
-    // Support both old format (fromEmail) and new format (senders array)
     const pendingCompanies = await Company.find({
-      $or: [
-        {
-          // Old format: single email with pending verification
-          "emailConfig.sendgrid.fromEmail": { $exists: true },
-          "emailConfig.sendgrid.domainVerified": false,
-          "emailConfig.verificationStatus": {
-            $in: ["pending_domain_authentication", "pending"]
-          }
-        },
-        {
-          // New format: senders array with at least one unverified sender
-          "emailConfig.sendgrid.senders": {
-            $exists: true,
-            $elemMatch: { domainVerified: false }
-          }
-        }
-      ]
+      "emailConfig.sendgrid.senders": {
+        $exists: true,
+        $elemMatch: { domainVerified: false }
+      }
     }).select("_id name emailConfig");
 
     console.log(`Found ${pendingCompanies.length} companies with pending domain verification`);
@@ -88,97 +74,59 @@ async function pollDomainVerifications() {
     // Check each pending company
     for (const company of pendingCompanies) {
       try {
-        // Handle both old and new formats
         const senders = company.emailConfig?.sendgrid?.senders || [];
 
-        // Old format: single email
-        if (senders.length === 0 && company.emailConfig?.sendgrid?.fromEmail) {
-          const fromEmail = company.emailConfig.sendgrid.fromEmail;
-          const domain = fromEmail.split("@")[1];
-
-          console.log(`\nChecking ${company.name} (${company._id}): ${domain} [OLD FORMAT]`);
-
-          // Check if this domain is in the authenticated list
-          const authenticatedDomain = authenticatedDomains.find(d => d.domain === domain);
-
-          if (authenticatedDomain) {
-            // Domain is now verified!
-            console.log(`  ✓ Domain ${domain} is now authenticated!`);
-
-            await Company.findByIdAndUpdate(company._id, {
-              $set: {
-                "emailConfig.sendgrid.domainVerified": true,
-                "emailConfig.sendgrid.domainId": authenticatedDomain.id,
-                "emailConfig.verificationStatus": "verified",
-                "emailConfig.verifiedAt": new Date(),
-                "emailConfig.lastVerificationCheck": new Date()
-              }
-            });
-
-            verified++;
-            console.log(`  ✓ Updated company ${company.name} - email is now ready to use`);
-          } else {
-            // Still not verified
-            console.log(`  ⚠️ Domain ${domain} still not authenticated`);
-
-            await Company.findByIdAndUpdate(company._id, {
-              $set: {
-                "emailConfig.lastVerificationCheck": new Date()
-              }
-            });
-
-            stillPending++;
-          }
+        if (senders.length === 0) {
+          console.log(`\nSkipping ${company.name} (${company._id}): No senders configured`);
+          continue;
         }
-        // New format: senders array
-        else if (senders.length > 0) {
-          const domains = [...new Set(senders.map(s => s.domain))];
-          console.log(`\nChecking ${company.name} (${company._id}): ${domains.join(", ")} [NEW FORMAT]`);
 
-          let anyVerified = false;
+        const domains = [...new Set(senders.map(s => s.domain))];
+        console.log(`\nChecking ${company.name} (${company._id}): ${domains.join(", ")}`);
 
-          // Update each sender based on domain authentication
-          const updatedSenders = senders.map(sender => {
-            const authenticatedDomain = authenticatedDomains.find(d => d.domain === sender.domain);
+        let anyVerified = false;
 
-            if (authenticatedDomain && !sender.domainVerified) {
-              console.log(`  ✓ Domain ${sender.domain} is now authenticated!`);
-              anyVerified = true;
+        // Update each sender based on domain authentication
+        const updatedSenders = senders.map(sender => {
+          const authenticatedDomain = authenticatedDomains.find(d => d.domain === sender.domain);
 
-              return {
-                ...sender,
-                domainVerified: true,
-                domainId: authenticatedDomain.id,
-                verifiedAt: sender.verifiedAt || new Date()
-              };
+          if (authenticatedDomain && !sender.domainVerified) {
+            console.log(`  ✓ Domain ${sender.domain} is now authenticated!`);
+            anyVerified = true;
+
+            return {
+              ...sender,
+              domainVerified: true,
+              domainId: authenticatedDomain.id,
+              verifiedAt: sender.verifiedAt || new Date()
+            };
+          }
+
+          return sender;
+        });
+
+        if (anyVerified) {
+          await Company.findByIdAndUpdate(company._id, {
+            $set: {
+              "emailConfig.sendgrid.senders": updatedSenders,
+              "emailConfig.verificationStatus": updatedSenders.every(s => s.domainVerified) ? "verified" : "pending_domain_authentication",
+              "emailConfig.lastVerificationCheck": new Date()
             }
-
-            return sender;
           });
 
-          if (anyVerified) {
-            await Company.findByIdAndUpdate(company._id, {
-              $set: {
-                "emailConfig.sendgrid.senders": updatedSenders,
-                "emailConfig.verificationStatus": updatedSenders.every(s => s.domainVerified) ? "verified" : "pending_domain_authentication",
-                "emailConfig.lastVerificationCheck": new Date()
-              }
-            });
+          verified++;
+          console.log(`  ✓ Updated company ${company.name} - sender(s) verified`);
+        } else {
+          // Still not verified
+          console.log(`  ⚠️ No domains authenticated yet`);
 
-            verified++;
-            console.log(`  ✓ Updated company ${company.name} - sender(s) verified`);
-          } else {
-            // Still not verified
-            console.log(`  ⚠️ No domains authenticated yet`);
+          await Company.findByIdAndUpdate(company._id, {
+            $set: {
+              "emailConfig.lastVerificationCheck": new Date()
+            }
+          });
 
-            await Company.findByIdAndUpdate(company._id, {
-              $set: {
-                "emailConfig.lastVerificationCheck": new Date()
-              }
-            });
-
-            stillPending++;
-          }
+          stillPending++;
         }
       } catch (companyError) {
         console.error(`Error checking company ${company._id}:`, companyError.message);

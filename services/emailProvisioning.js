@@ -38,40 +38,8 @@ exports.configureSender = async (companyId, fromEmail, fromName) => {
 
     console.log(`Configuring email sender for company ${companyId}: ${fromEmail}`);
 
-    // Check for senders array (new multi-sender model)
-    let existingSenders = company.emailConfig?.sendgrid?.senders || [];
-
-    // BACKWARDS COMPATIBILITY: Migrate old single-email format to new senders array
-    if (existingSenders.length === 0 && company.emailConfig?.sendgrid?.fromEmail) {
-      console.log(`Migrating old email format to new senders array for company ${companyId}`);
-
-      const oldEmail = company.emailConfig.sendgrid.fromEmail;
-      const oldName = company.emailConfig.sendgrid.fromName || "Support";
-      const oldDomain = oldEmail.split("@")[1];
-
-      // Create sender object from old format
-      const migratedSender = {
-        email: oldEmail,
-        name: oldName,
-        domain: oldDomain,
-        domainVerified: company.emailConfig.sendgrid.domainVerified || false,
-        domainId: company.emailConfig.sendgrid.domainId || null,
-        verifiedAt: company.emailConfig.verifiedAt || null,
-        isDefault: true
-      };
-
-      // Update database with migrated data
-      await Company.findByIdAndUpdate(companyId, {
-        $set: {
-          "emailConfig.sendgrid.senders": [migratedSender]
-        }
-      });
-
-      existingSenders = [migratedSender];
-      console.log(`✓ Migrated ${oldEmail} to new senders array format`);
-    }
-
-    // Check if this email is already configured
+    // Get existing senders array
+    const existingSenders = company.emailConfig?.sendgrid?.senders || [];
     const existingSender = existingSenders.find(s => s.email === fromEmail);
 
     if (existingSender && existingSender.domainVerified) {
@@ -230,38 +198,8 @@ exports.checkVerificationStatus = async (companyId) => {
       throw new Error("Company not found");
     }
 
-    // Check for senders array (new multi-sender model)
-    let senders = company.emailConfig?.sendgrid?.senders || [];
-
-    // BACKWARDS COMPATIBILITY: Migrate old single-email format to new senders array
-    if (senders.length === 0 && company.emailConfig?.sendgrid?.fromEmail) {
-      console.log(`Migrating old email format to new senders array for company ${companyId}`);
-
-      const oldEmail = company.emailConfig.sendgrid.fromEmail;
-      const oldName = company.emailConfig.sendgrid.fromName || "Support";
-      const oldDomain = oldEmail.split("@")[1];
-
-      // Create sender object from old format
-      const migratedSender = {
-        email: oldEmail,
-        name: oldName,
-        domain: oldDomain,
-        domainVerified: company.emailConfig.sendgrid.domainVerified || false,
-        domainId: company.emailConfig.sendgrid.domainId || null,
-        verifiedAt: company.emailConfig.verifiedAt || null,
-        isDefault: true
-      };
-
-      // Update database with migrated data
-      await Company.findByIdAndUpdate(companyId, {
-        $set: {
-          "emailConfig.sendgrid.senders": [migratedSender]
-        }
-      });
-
-      senders = [migratedSender];
-      console.log(`✓ Migrated ${oldEmail} to new senders array format`);
-    }
+    // Get senders array
+    const senders = company.emailConfig?.sendgrid?.senders || [];
 
     if (senders.length === 0) {
       return {
@@ -380,38 +318,8 @@ exports.getDnsRecords = async (companyId, specificDomain = null) => {
       throw new Error("Company not found");
     }
 
-    // Check for senders array (new multi-sender model)
-    let senders = company.emailConfig?.sendgrid?.senders || [];
-
-    // BACKWARDS COMPATIBILITY: Migrate old single-email format to new senders array
-    if (senders.length === 0 && company.emailConfig?.sendgrid?.fromEmail) {
-      console.log(`Migrating old email format to new senders array for company ${companyId}`);
-
-      const oldEmail = company.emailConfig.sendgrid.fromEmail;
-      const oldName = company.emailConfig.sendgrid.fromName || "Support";
-      const oldDomain = oldEmail.split("@")[1];
-
-      // Create sender object from old format
-      const migratedSender = {
-        email: oldEmail,
-        name: oldName,
-        domain: oldDomain,
-        domainVerified: company.emailConfig.sendgrid.domainVerified || false,
-        domainId: company.emailConfig.sendgrid.domainId || null,
-        verifiedAt: company.emailConfig.verifiedAt || null,
-        isDefault: true
-      };
-
-      // Update database with migrated data
-      await Company.findByIdAndUpdate(companyId, {
-        $set: {
-          "emailConfig.sendgrid.senders": [migratedSender]
-        }
-      });
-
-      senders = [migratedSender];
-      console.log(`✓ Migrated ${oldEmail} to new senders array format`);
-    }
+    // Get senders array
+    const senders = company.emailConfig?.sendgrid?.senders || [];
 
     if (senders.length === 0) {
       throw new Error("No email senders configured. Configure sender email first.");
@@ -546,38 +454,8 @@ exports.verifyDomainManually = async (companyId) => {
       throw new Error("Company not found");
     }
 
-    // Check for senders array (new multi-sender model)
-    let senders = company.emailConfig?.sendgrid?.senders || [];
-
-    // BACKWARDS COMPATIBILITY: Migrate old single-email format to new senders array
-    if (senders.length === 0 && company.emailConfig?.sendgrid?.fromEmail) {
-      console.log(`Migrating old email format to new senders array for company ${companyId}`);
-
-      const oldEmail = company.emailConfig.sendgrid.fromEmail;
-      const oldName = company.emailConfig.sendgrid.fromName || "Support";
-      const oldDomain = oldEmail.split("@")[1];
-
-      // Create sender object from old format
-      const migratedSender = {
-        email: oldEmail,
-        name: oldName,
-        domain: oldDomain,
-        domainVerified: company.emailConfig.sendgrid.domainVerified || false,
-        domainId: company.emailConfig.sendgrid.domainId || null,
-        verifiedAt: company.emailConfig.verifiedAt || null,
-        isDefault: true
-      };
-
-      // Update database with migrated data
-      await Company.findByIdAndUpdate(companyId, {
-        $set: {
-          "emailConfig.sendgrid.senders": [migratedSender]
-        }
-      });
-
-      senders = [migratedSender];
-      console.log(`✓ Migrated ${oldEmail} to new senders array format`);
-    }
+    // Get senders array
+    const senders = company.emailConfig?.sendgrid?.senders || [];
 
     if (senders.length === 0) {
       throw new Error("No email configured. Please configure email first.");
@@ -683,38 +561,8 @@ exports.testEmailConfiguration = async (companyId, testRecipient = null) => {
       throw new Error("Company not found");
     }
 
-    // Check for senders array (new multi-sender model)
-    let senders = company.emailConfig?.sendgrid?.senders || [];
-
-    // BACKWARDS COMPATIBILITY: Migrate old single-email format to new senders array
-    if (senders.length === 0 && company.emailConfig?.sendgrid?.fromEmail) {
-      console.log(`Migrating old email format to new senders array for company ${companyId}`);
-
-      const oldEmail = company.emailConfig.sendgrid.fromEmail;
-      const oldName = company.emailConfig.sendgrid.fromName || "Support";
-      const oldDomain = oldEmail.split("@")[1];
-
-      // Create sender object from old format
-      const migratedSender = {
-        email: oldEmail,
-        name: oldName,
-        domain: oldDomain,
-        domainVerified: company.emailConfig.sendgrid.domainVerified || false,
-        domainId: company.emailConfig.sendgrid.domainId || null,
-        verifiedAt: company.emailConfig.verifiedAt || null,
-        isDefault: true
-      };
-
-      // Update database with migrated data
-      await Company.findByIdAndUpdate(companyId, {
-        $set: {
-          "emailConfig.sendgrid.senders": [migratedSender]
-        }
-      });
-
-      senders = [migratedSender];
-      console.log(`✓ Migrated ${oldEmail} to new senders array format`);
-    }
+    // Get senders array
+    const senders = company.emailConfig?.sendgrid?.senders || [];
 
     if (senders.length === 0) {
       throw new Error("No email configured");
