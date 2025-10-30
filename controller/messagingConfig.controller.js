@@ -551,14 +551,24 @@ exports.getMessagingStatus = async (req, res, next) => {
       },
       email: {
         configured: company.emailConfig?.provider === "sendgrid",
-        verified: company.emailConfig?.sendgrid?.domainVerified || false,
+        senders: (company.emailConfig?.sendgrid?.senders || []).map((s) => ({
+          email: s.email,
+          name: s.name,
+          domain: s.domain,
+          verified: s.domainVerified || false,
+          isDefault: s.isDefault || false
+        })),
+        totalSenders: (company.emailConfig?.sendgrid?.senders || []).length,
+        verifiedSenders: (company.emailConfig?.sendgrid?.senders || []).filter(s => s.domainVerified).length,
+        allVerified: (company.emailConfig?.sendgrid?.senders || []).length > 0 &&
+                     (company.emailConfig?.sendgrid?.senders || []).every(s => s.domainVerified),
         verificationStatus: company.emailConfig?.verificationStatus || "none",
-        fromEmail: company.twilioConfig?.sendgrid?.fromEmail || null,
+        domains: [...new Set((company.emailConfig?.sendgrid?.senders || []).map(s => s.domain))]
       },
       overall: {
         hasAnyChannel:
           (company.twilioConfig?.active || false) ||
-          (company.emailConfig?.sendgrid?.domainVerified || false),
+          ((company.emailConfig?.sendgrid?.senders || []).some(s => s.domainVerified)),
       },
     };
 
