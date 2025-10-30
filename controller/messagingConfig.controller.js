@@ -450,6 +450,33 @@ exports.getEmailDnsRecords = async (req, res, next) => {
 };
 
 /**
+ * POST /api/messaging/email/verify-domain
+ * Manually verify domain authentication (for "Verify DNS" button)
+ */
+exports.verifyEmailDomain = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+
+    const result = await emailProvisioning.verifyDomainManually(companyId);
+
+    // Return appropriate status code based on verification result
+    const statusCode = result.verified ? 200 : 400;
+
+    return res.status(statusCode).json({
+      success: result.success,
+      data: result,
+      message: result.message,
+    });
+  } catch (error) {
+    console.error("Error in verifyEmailDomain:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
+/**
  * POST /api/messaging/email/test
  * Send test email
  */

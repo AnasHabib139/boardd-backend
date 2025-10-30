@@ -194,6 +194,19 @@ class MessagingConfigApi {
     );
 
     /**
+     * POST /api/messaging/email/verify-domain
+     * Manually verify domain authentication (for "Verify DNS" button)
+     * Checks if DNS records have been added and domain is authenticated
+     * Required: company admin
+     */
+    router.post(
+      "/email/verify-domain",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      requireCompanyAdmin,
+      controller.verifyEmailDomain
+    );
+
+    /**
      * POST /api/messaging/email/test
      * Send test email
      * Body: { to } (optional, defaults to fromEmail)
