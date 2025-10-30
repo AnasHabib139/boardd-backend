@@ -140,7 +140,9 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
             }
           },
           {
-            $replaceRoot: { newRoot: "$clientData" }
+            $project: {
+              personalDetails: { $ifNull: ["$clientData.personalDetails", []] }
+            }
           }
         ],
         as: "clientDetails"
