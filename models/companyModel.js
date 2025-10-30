@@ -106,7 +106,19 @@ const CompanySchema = new Schema(
         fromEmail: { type: String },
         fromName: { type: String },
         domainVerified: { type: Boolean, default: false },
-        replyTo: { type: String }
+        domainId: { type: String },
+        replyTo: { type: String },
+
+        // Multiple senders support
+        senders: [{
+          email: { type: String, required: true },
+          name: { type: String, required: true },
+          domain: { type: String, required: true },
+          domainVerified: { type: Boolean, default: false },
+          domainId: { type: String },
+          verifiedAt: { type: Date },
+          isDefault: { type: Boolean, default: false }
+        }]
       },
 
       // SMTP Config (Nodemailer)
@@ -125,7 +137,16 @@ const CompanySchema = new Schema(
         enabled: { type: Boolean, default: false },
         domain: { type: String }, // e.g., 'chat.company.com'
         parseWebhookUrl: { type: String }
-      }
+      },
+
+      // Email verification tracking
+      verificationStatus: {
+        type: String,
+        enum: ['none', 'pending', 'pending_domain_authentication', 'verified'],
+        default: 'none'
+      },
+      verifiedAt: { type: Date },
+      lastVerificationCheck: { type: Date }
     },
 
     isActive: { type: Boolean, default: true },
