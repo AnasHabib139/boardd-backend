@@ -426,19 +426,23 @@ exports.getEmailVerificationStatus = async (req, res, next) => {
 };
 
 /**
- * GET /api/messaging/email/dns-records
- * Get DNS records for inbound email
+ * GET /api/messaging/email/dns-records?domain=example.com
+ * Get DNS records for domain authentication
+ * Optional query param: domain - get DNS records for specific domain only
  */
 exports.getEmailDnsRecords = async (req, res, next) => {
   try {
     const { companyId } = req;
+    const { domain } = req.query;
 
-    const result = await emailProvisioning.getDnsRecords(companyId);
+    const result = await emailProvisioning.getDnsRecords(companyId, domain);
 
     return res.status(200).json({
       success: true,
       data: result,
-      message: "DNS records generated",
+      message: domain
+        ? `DNS records for ${domain}`
+        : "DNS records generated",
     });
   } catch (error) {
     console.error("Error in getEmailDnsRecords:", error);

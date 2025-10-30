@@ -198,76 +198,101 @@ exports.checkVerificationStatus = async (companyId) => {
       throw new Error("Company not found");
     }
 
-    if (!company.emailConfig?.sendgrid?.fromEmail) {
+    // Check for senders array (new multi-sender model)
+    const senders = company.emailConfig?.sendgrid?.senders || [];
+
+    if (senders.length === 0) {
       return {
         success: false,
-        error: "No email configured"
-      };
-    }
-
-    // If already verified in our DB, return that
-    if (company.emailConfig.sendgrid.domainVerified) {
-      return {
-        success: true,
-        verified: true,
-        verificationStatus: "verified",
-        verifiedAt: company.emailConfig.verifiedAt
+        verified: false,
+        error: "No email senders configured"
       };
     }
 
     const sgClient = getApiClient();
-    const fromEmail = company.emailConfig.sendgrid.fromEmail;
-    const domain = fromEmail.split("@")[1];
 
-    console.log(`Checking domain authentication status for ${domain}`);
+    // Get all unique domains from senders
+    const uniqueDomains = [...new Set(senders.map(s => s.email.split("@")[1]))];
+
+    console.log(`Checking domain authentication status for ${uniqueDomains.length} domain(s): ${uniqueDomains.join(", ")}`);
 
     try {
-      // Check domain authentication (not single sender verification)
+      // Get all authenticated domains from SendGrid
       const [response, body] = await sgClient.request({
         method: "GET",
         url: "/v3/whitelabel/domains"
       });
 
-      if (body && Array.isArray(body)) {
-        const authenticatedDomain = body.find(d =>
-          d.domain === domain && d.valid === true
-        );
-
-        const isVerified = !!authenticatedDomain;
-
-        // Update database if domain is authenticated
-        if (isVerified && !company.emailConfig.sendgrid.domainVerified) {
-          await Company.findByIdAndUpdate(companyId, {
-            $set: {
-              "emailConfig.sendgrid.domainVerified": true,
-              "emailConfig.sendgrid.domainId": authenticatedDomain.id,
-              "emailConfig.verificationStatus": "verified",
-              "emailConfig.verifiedAt": new Date()
-            }
-          });
-
-          console.log(`✓ Domain ${domain} authenticated for company ${companyId}`);
-        }
-
+      if (!body || !Array.isArray(body)) {
         return {
-          success: true,
-          verified: isVerified,
-          verificationStatus: isVerified ? "verified" : "pending_domain_authentication",
-          verifiedAt: isVerified ? (company.emailConfig.verifiedAt || new Date()) : null,
-          domain: domain,
-          domainAuthenticated: isVerified,
-          message: isVerified
-            ? "Domain authenticated - email is verified and ready to use"
-            : `Domain ${domain} is not authenticated. Please add DNS records to authenticate the domain.`
+          success: false,
+          verified: false,
+          verificationStatus: "pending_domain_authentication",
+          message: "Unable to check domain authentication status"
         };
       }
 
-      // If body is not an array or empty
+      const authenticatedDomains = body.filter(d => d.valid === true);
+
+      // Check each sender's domain
+      const sendersWithStatus = senders.map(sender => {
+        const domain = sender.email.split("@")[1];
+        const authenticatedDomain = authenticatedDomains.find(d => d.domain === domain);
+        const isVerified = !!authenticatedDomain;
+
+        return {
+          email: sender.email,
+          name: sender.name,
+          domain: domain,
+          verified: isVerified,
+          isDefault: sender.isDefault || false
+        };
+      });
+
+      // Update database for any newly verified senders
+      const updatedSenders = senders.map(sender => {
+        const domain = sender.email.split("@")[1];
+        const authenticatedDomain = authenticatedDomains.find(d => d.domain === domain);
+
+        if (authenticatedDomain && !sender.domainVerified) {
+          console.log(`✓ Domain ${domain} authenticated for sender ${sender.email}`);
+          return {
+            ...sender,
+            domainVerified: true,
+            domainId: authenticatedDomain.id,
+            verifiedAt: sender.verifiedAt || new Date()
+          };
+        }
+
+        return sender;
+      });
+
+      // Save updated senders to database
+      await Company.findByIdAndUpdate(companyId, {
+        $set: {
+          "emailConfig.sendgrid.senders": updatedSenders,
+          "emailConfig.verificationStatus": updatedSenders.every(s => s.domainVerified) ? "verified" : "pending_domain_authentication"
+        }
+      });
+
+      // Calculate overall status
+      const allVerified = sendersWithStatus.every(s => s.verified);
+      const verifiedCount = sendersWithStatus.filter(s => s.verified).length;
+
+      // Get primary domain (from first/default sender)
+      const primaryDomain = sendersWithStatus.find(s => s.isDefault)?.domain || sendersWithStatus[0].domain;
+
       return {
-        success: false,
-        verified: false,
-        verificationStatus: "pending_domain_authentication",
-        message: "Unable to check domain authentication status"
+        success: true,
+        verified: allVerified,
+        verificationStatus: allVerified ? "verified" : "pending_domain_authentication",
+        domain: primaryDomain,
+        domains: uniqueDomains,
+        domainAuthenticated: allVerified,
+        senders: sendersWithStatus,
+        message: allVerified
+          ? `Domain authenticated - ${verifiedCount} sender(s) ready to use`
+          : `${verifiedCount}/${sendersWithStatus.length} sender(s) verified. Some domains need DNS authentication.`
       };
     } catch (sgError) {
       console.error("Error checking SendGrid verification:", sgError);
@@ -286,103 +311,128 @@ exports.checkVerificationStatus = async (companyId) => {
  * @param {String} companyId - Company ID
  * @returns {Promise<Object>} { success, dnsRecords }
  */
-exports.getDnsRecords = async (companyId) => {
+exports.getDnsRecords = async (companyId, specificDomain = null) => {
   try {
     const company = await Company.findById(companyId);
     if (!company) {
       throw new Error("Company not found");
     }
 
-    if (!company.emailConfig?.sendgrid?.fromEmail) {
-      throw new Error("No email configured. Configure sender email first.");
+    // Check for senders array (new multi-sender model)
+    const senders = company.emailConfig?.sendgrid?.senders || [];
+
+    if (senders.length === 0) {
+      throw new Error("No email senders configured. Configure sender email first.");
     }
 
-    const fromEmail = company.emailConfig.sendgrid.fromEmail;
-    const domain = fromEmail.split("@")[1];
     const sgClient = getApiClient();
 
-    console.log(`Fetching domain authentication DNS records for domain: ${domain}`);
+    // Get all unique domains from senders
+    const uniqueDomains = [...new Set(senders.map(s => s.email.split("@")[1]))];
 
-    // Check if domain is already authenticated
+    // If specific domain requested, validate it exists in senders
+    let targetDomains = uniqueDomains;
+    if (specificDomain) {
+      if (!uniqueDomains.includes(specificDomain)) {
+        throw new Error(`Domain ${specificDomain} not found in configured senders. Available domains: ${uniqueDomains.join(", ")}`);
+      }
+      targetDomains = [specificDomain];
+      console.log(`Fetching DNS records for specific domain: ${specificDomain}`);
+    } else {
+      console.log(`Fetching DNS records for all domains: ${uniqueDomains.join(", ")}`);
+    }
+
+    // Get all authenticated domains from SendGrid
     const [listResponse, listBody] = await sgClient.request({
       method: "GET",
       url: "/v3/whitelabel/domains"
     });
 
-    let authenticatedDomain = null;
-    if (listBody && Array.isArray(listBody)) {
-      authenticatedDomain = listBody.find(d => d.domain === domain);
-    }
+    const allAuthenticatedDomains = (listBody && Array.isArray(listBody)) ? listBody : [];
 
-    if (authenticatedDomain) {
-      // Domain already exists - return its DNS records
-      console.log(`✓ Found existing domain authentication for ${domain} (ID: ${authenticatedDomain.id})`);
+    // Process each target domain
+    const domainResults = [];
 
-      // Get detailed DNS records for this domain
-      const [detailResponse, detailBody] = await sgClient.request({
-        method: "GET",
-        url: `/v3/whitelabel/domains/${authenticatedDomain.id}`
-      });
+    for (const domain of targetDomains) {
+      let authenticatedDomain = allAuthenticatedDomains.find(d => d.domain === domain);
 
-      const dnsRecords = detailBody.dns || {};
+      if (authenticatedDomain) {
+        // Domain already exists - get its DNS records
+        console.log(`✓ Found existing domain authentication for ${domain} (ID: ${authenticatedDomain.id})`);
 
-      return {
-        success: true,
-        domain,
-        authenticated: authenticatedDomain.valid === true,
-        dnsRecords: {
-          mail_cname: dnsRecords.mail_cname || {},
-          dkim1: dnsRecords.dkim1 || {},
-          dkim2: dnsRecords.dkim2 || {}
-        },
-        instructions: {
-          status: authenticatedDomain.valid ? "✓ Domain is authenticated" : "⚠️ Domain not yet authenticated",
-          next: authenticatedDomain.valid
-            ? "Domain is ready to use. You can send emails immediately."
-            : "Add the DNS records shown above to your domain's DNS settings, then wait 24-48 hours for verification.",
-          note: "DNS changes can take up to 48 hours to propagate"
+        const [detailResponse, detailBody] = await sgClient.request({
+          method: "GET",
+          url: `/v3/whitelabel/domains/${authenticatedDomain.id}`
+        });
+
+        const dnsRecords = detailBody.dns || {};
+
+        domainResults.push({
+          domain,
+          authenticated: authenticatedDomain.valid === true,
+          dnsRecords: {
+            mail_cname: dnsRecords.mail_cname || {},
+            dkim1: dnsRecords.dkim1 || {},
+            dkim2: dnsRecords.dkim2 || {}
+          },
+          instructions: authenticatedDomain.valid
+            ? "Domain is authenticated and ready to use."
+            : "Add the DNS records shown above to your domain's DNS settings, then wait 24-48 hours for verification."
+        });
+      } else {
+        // Domain not set up yet - create it
+        console.log(`Domain ${domain} not found in SendGrid. Creating domain authentication...`);
+
+        try {
+          const [createResponse, createBody] = await sgClient.request({
+            method: "POST",
+            url: "/v3/whitelabel/domains",
+            body: {
+              domain: domain,
+              subdomain: "em",
+              default: false
+            }
+          });
+
+          const dnsRecords = createBody.dns || {};
+
+          domainResults.push({
+            domain,
+            authenticated: false,
+            newlyCreated: true,
+            dnsRecords: {
+              mail_cname: dnsRecords.mail_cname || {},
+              dkim1: dnsRecords.dkim1 || {},
+              dkim2: dnsRecords.dkim2 || {}
+            },
+            instructions: "Domain authentication created. Add the CNAME records shown above to your DNS provider (Cloudflare, GoDaddy, etc.), then wait 24-48 hours for verification."
+          });
+        } catch (createError) {
+          console.error(`Error creating domain authentication for ${domain}:`, createError);
+          domainResults.push({
+            domain,
+            error: `Failed to create domain authentication: ${createError.message}`,
+            authenticated: false
+          });
         }
-      };
-    }
-
-    // Domain not set up yet - create it and return DNS records
-    console.log(`Domain ${domain} not found in SendGrid. Creating domain authentication...`);
-
-    try {
-      const [createResponse, createBody] = await sgClient.request({
-        method: "POST",
-        url: "/v3/whitelabel/domains",
-        body: {
-          domain: domain,
-          subdomain: "em", // SendGrid subdomain for sending (e.g., em.passau.com)
-          default: false
-        }
-      });
-
-      const dnsRecords = createBody.dns || {};
-
-      return {
-        success: true,
-        domain,
-        authenticated: false,
-        newlyCreated: true,
-        dnsRecords: {
-          mail_cname: dnsRecords.mail_cname || {},
-          dkim1: dnsRecords.dkim1 || {},
-          dkim2: dnsRecords.dkim2 || {}
-        },
-        instructions: {
-          status: "⚠️ Domain authentication created - DNS records must be added",
-          next: "Add the CNAME records shown above to your domain's DNS settings (e.g., in your domain registrar or DNS provider like Cloudflare). Once added, SendGrid will automatically verify within 24-48 hours.",
-          note: "DNS changes can take up to 48 hours to propagate"
-        }
-      };
-    } catch (createError) {
-      if (createError.response?.body?.errors) {
-        throw new Error(`Failed to create domain authentication: ${JSON.stringify(createError.response.body.errors)}`);
       }
-      throw createError;
     }
+
+    // Return single domain result if specific domain requested
+    if (specificDomain) {
+      return {
+        success: true,
+        ...domainResults[0]
+      };
+    }
+
+    // Return all domains
+    return {
+      success: true,
+      domains: domainResults,
+      totalDomains: domainResults.length,
+      message: `DNS records for ${domainResults.length} domain(s)`
+    };
   } catch (error) {
     console.error("Error generating DNS records:", error);
     throw new Error(`Failed to generate DNS records: ${error.message}`);
