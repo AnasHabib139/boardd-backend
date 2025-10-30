@@ -102,28 +102,25 @@ exports.configureSender = async (companyId, fromEmail, fromName) => {
         isDefault: existingSenders.length === 0 // First sender is default
       };
 
-      // Add or update sender in array
+      // Update senders array in memory
+      let updatedSenders;
       if (existingSender) {
-        // Update existing
-        await Company.updateOne(
-          { _id: companyId, "emailConfig.sendgrid.senders.email": fromEmail },
-          {
-            $set: {
-              "emailConfig.sendgrid.senders.$": newSender
-            }
-          }
+        // Replace existing sender
+        updatedSenders = existingSenders.map(s =>
+          s.email === fromEmail ? newSender : s
         );
       } else {
         // Add new sender
-        await Company.findByIdAndUpdate(companyId, {
-          $push: {
-            "emailConfig.sendgrid.senders": newSender
-          },
-          $set: {
-            "emailConfig.provider": "sendgrid"
-          }
-        });
+        updatedSenders = [...existingSenders, newSender];
       }
+
+      // Save to database
+      await Company.findByIdAndUpdate(companyId, {
+        $set: {
+          "emailConfig.provider": "sendgrid",
+          "emailConfig.sendgrid.senders": updatedSenders
+        }
+      });
 
       console.log(`✓ Email configured successfully for ${fromEmail} (domain authenticated)`);
 
@@ -147,26 +144,25 @@ exports.configureSender = async (companyId, fromEmail, fromName) => {
         isDefault: existingSenders.length === 0
       };
 
-      // Add or update sender in array
+      // Update senders array in memory
+      let updatedSenders;
       if (existingSender) {
-        await Company.updateOne(
-          { _id: companyId, "emailConfig.sendgrid.senders.email": fromEmail },
-          {
-            $set: {
-              "emailConfig.sendgrid.senders.$": pendingSender
-            }
-          }
+        // Replace existing sender
+        updatedSenders = existingSenders.map(s =>
+          s.email === fromEmail ? pendingSender : s
         );
       } else {
-        await Company.findByIdAndUpdate(companyId, {
-          $push: {
-            "emailConfig.sendgrid.senders": pendingSender
-          },
-          $set: {
-            "emailConfig.provider": "sendgrid"
-          }
-        });
+        // Add new sender
+        updatedSenders = [...existingSenders, pendingSender];
       }
+
+      // Save to database
+      await Company.findByIdAndUpdate(companyId, {
+        $set: {
+          "emailConfig.provider": "sendgrid",
+          "emailConfig.sendgrid.senders": updatedSenders
+        }
+      });
 
       return {
         success: false,
