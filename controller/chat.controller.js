@@ -57,8 +57,28 @@ exports.getConversationMessages = async (req, res, next) => {
       responseKey: "messages",
     });
 
+    // Extract messaging channels and client contact info from first message (if client conversation)
+    let responseData = { ...result };
+
+    if (result.messages && result.messages.length > 0) {
+      const firstMessage = result.messages[0];
+
+      // Add messaging channels and client contact info to response root (only if present)
+      if (firstMessage.conversationType === "client") {
+        responseData.conversationType = firstMessage.conversationType;
+        responseData.messagingChannels = firstMessage.messagingChannels;
+        responseData.clientContactInfo = firstMessage.clientContactInfo;
+
+        // Remove these fields from individual messages to reduce payload
+        responseData.messages = result.messages.map(msg => {
+          const { conversationType, messagingChannels, clientContactInfo, ...messageData } = msg;
+          return messageData;
+        });
+      }
+    }
+
     return generateResponse(
-      result,
+      responseData,
       "Messages fetched successfully",
       res,
       STATUS_CODES.SUCCESS

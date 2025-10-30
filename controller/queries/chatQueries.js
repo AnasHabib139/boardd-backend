@@ -25,9 +25,126 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
     matchStage.parentMessageId = null; // Only root messages
   }
 
+  const conversationObjectId = Types.ObjectId.isValid(conversationId)
+    ? new Types.ObjectId(conversationId)
+    : null;
+
   return [
     {
       $match: matchStage,
+    },
+
+    // Add conversation details as a field (needed for company and client lookups)
+    {
+      $lookup: {
+        from: "chatconversations",
+        let: { convId: conversationObjectId },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$_id", "$$convId"] }
+            }
+          },
+          {
+            $project: {
+              type: 1,
+              companyId: 1,
+              channelId: 1,
+              clientContact: 1,
+              externalContacts: 1
+            }
+          }
+        ],
+        as: "conversationDetails"
+      }
+    },
+
+    // Unwind conversation details
+    {
+      $unwind: {
+        path: "$conversationDetails",
+        preserveNullAndEmptyArrays: true
+      }
+    },
+
+    // Lookup company details (only if conversation type is "client")
+    {
+      $lookup: {
+        from: "companies",
+        let: {
+          companyId: "$conversationDetails.companyId",
+          isClientConvo: { $eq: ["$conversationDetails.type", "client"] }
+        },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$_id", "$$companyId"] },
+                  "$$isClientConvo"
+                ]
+              }
+            }
+          },
+          {
+            $project: {
+              "twilioConfig.fromNumbers": 1,
+              "twilioConfig.whatsappSenders": 1,
+              "emailConfig.sendgrid.senders": 1
+            }
+          }
+        ],
+        as: "companyDetails"
+      }
+    },
+
+    // Lookup client via channel tabs (only if conversation type is "client")
+    {
+      $lookup: {
+        from: "channeltabs",
+        let: {
+          channelId: "$conversationDetails.channelId",
+          isClientConvo: { $eq: ["$conversationDetails.type", "client"] }
+        },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$channelId", "$$channelId"] },
+                  "$$isClientConvo"
+                ]
+              }
+            }
+          },
+          { $limit: 1 },
+          {
+            $lookup: {
+              from: "clients",
+              localField: "_id",
+              foreignField: "tabId",
+              as: "clientData",
+              pipeline: [
+                {
+                  $project: {
+                    personalDetails: 1
+                  }
+                }
+              ]
+            }
+          },
+          {
+            $unwind: {
+              path: "$clientData",
+              preserveNullAndEmptyArrays: true
+            }
+          },
+          {
+            $replaceRoot: { newRoot: "$clientData" }
+          }
+        ],
+        as: "clientDetails"
+      }
     },
 
     // Lookup author details
@@ -107,6 +224,77 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
       },
     },
 
+    // Add computed fields for client conversations
+    {
+      $addFields: {
+        conversationType: "$conversationDetails.type",
+
+        // Company messaging channels (only for client conversations)
+        messagingChannels: {
+          $cond: {
+            if: { $eq: ["$conversationDetails.type", "client"] },
+            then: {
+              $let: {
+                vars: {
+                  company: { $arrayElemAt: ["$companyDetails", 0] }
+                },
+                in: {
+                  sms: { $ifNull: ["$$company.twilioConfig.fromNumbers", []] },
+                  whatsapp: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: { $ifNull: ["$$company.twilioConfig.whatsappSenders", []] },
+                          as: "sender",
+                          cond: { $eq: ["$$sender.status", "active"] }
+                        }
+                      },
+                      as: "sender",
+                      in: "$$sender.number"
+                    }
+                  },
+                  email: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: { $ifNull: ["$$company.emailConfig.sendgrid.senders", []] },
+                          as: "sender",
+                          cond: { $eq: ["$$sender.domainVerified", true] }
+                        }
+                      },
+                      as: "sender",
+                      in: "$$sender.email"
+                    }
+                  }
+                }
+              }
+            },
+            else: "$$REMOVE"
+          }
+        },
+
+        // Client contact information (only for client conversations)
+        clientContactInfo: {
+          $cond: {
+            if: { $eq: ["$conversationDetails.type", "client"] },
+            then: {
+              fromClientModel: {
+                $ifNull: [
+                  { $arrayElemAt: ["$clientDetails.personalDetails", 0] },
+                  []
+                ]
+              },
+              fromConversation: {
+                clientContact: { $ifNull: ["$conversationDetails.clientContact", null] },
+                externalContacts: { $ifNull: ["$conversationDetails.externalContacts", null] }
+              }
+            },
+            else: "$$REMOVE"
+          }
+        }
+      }
+    },
+
     // Project final fields
     {
       $project: {
@@ -130,6 +318,9 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
         reactions: 1,
         createdAt: 1,
         updatedAt: 1,
+        conversationType: 1,
+        messagingChannels: 1,
+        clientContactInfo: 1,
       },
     },
 
