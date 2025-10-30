@@ -316,12 +316,18 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
                       // Client model phones
                       {
                         $cond: {
-                          if: { $ne: ["$$clientModelData.phone.number", null] },
+                          if: {
+                            $and: [
+                              { $ne: ["$$clientModelData", null] },
+                              { $ne: ["$$clientModelData.phone", null] },
+                              { $ne: ["$$clientModelData.phone.number", null] }
+                            ]
+                          },
                           then: [{
                             number: {
                               $concat: [
-                                { $ifNull: ["$$clientModelData.phone.countryCode", ""] },
-                                { $ifNull: ["$$clientModelData.phone.number", ""] }
+                                { $toString: { $ifNull: ["$$clientModelData.phone.countryCode", ""] } },
+                                { $toString: { $ifNull: ["$$clientModelData.phone.number", ""] } }
                               ]
                             },
                             name: { $ifNull: ["$$clientModelData.name", null] },
