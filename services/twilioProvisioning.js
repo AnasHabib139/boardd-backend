@@ -234,8 +234,6 @@ exports.purchasePhoneNumber = async (companyId, phoneNumber, type = "sms") => {
       { accountSid: company.twilioConfig.subAccountSid }
     );
 
-    console.log(`Purchasing ${type} phone number ${phoneNumber} for company ${companyId}`);
-
     // Build webhook URLs
     const backendUrl = process.env.BACKEND_URL || "https://boardd.com";
     const smsStatusCallback = `${backendUrl}/api/webhooks/sms/twilio?companyId=${companyId}`;
@@ -243,36 +241,69 @@ exports.purchasePhoneNumber = async (companyId, phoneNumber, type = "sms") => {
     const whatsappStatusCallback = `${backendUrl}/api/webhooks/whatsapp/twilio?companyId=${companyId}`;
     const whatsappInboundUrl = `${backendUrl}/api/webhooks/whatsapp/twilio/inbound`;
 
-    // Purchase the number
-    const purchaseConfig = {
-      phoneNumber: phoneNumber
-    };
+    // Check if number already owned (for enabling WhatsApp on existing SMS number)
+    const existingNumbers = company.twilioConfig?.fromNumbers || [];
+    const numberAlreadyOwned = existingNumbers.includes(phoneNumber);
 
-    // Configure webhooks based on type
-    if (type === "sms") {
-      purchaseConfig.smsUrl = smsInboundUrl;
-      purchaseConfig.smsMethod = "POST";
-      purchaseConfig.statusCallback = smsStatusCallback;
-      purchaseConfig.statusCallbackMethod = "POST";
-    } else if (type === "whatsapp") {
-      // WhatsApp numbers need special configuration
-      purchaseConfig.smsUrl = whatsappInboundUrl;
-      purchaseConfig.smsMethod = "POST";
-      purchaseConfig.statusCallback = whatsappStatusCallback;
-      purchaseConfig.statusCallbackMethod = "POST";
+    let purchasedNumber;
+    let numberSid;
+
+    if (numberAlreadyOwned && type === "whatsapp") {
+      // Number already owned - just enable WhatsApp on it
+      console.log(`Phone number ${phoneNumber} already owned. Enabling WhatsApp...`);
+
+      // Find the number SID
+      const numbers = await subaccountClient.incomingPhoneNumbers.list();
+      const existingNumber = numbers.find(n => n.phoneNumber === phoneNumber);
+
+      if (!existingNumber) {
+        throw new Error(`Number ${phoneNumber} not found in Twilio account`);
+      }
+
+      // Update webhooks to support WhatsApp
+      await subaccountClient.incomingPhoneNumbers(existingNumber.sid).update({
+        smsUrl: whatsappInboundUrl,
+        smsMethod: "POST",
+        statusCallback: whatsappStatusCallback,
+        statusCallbackMethod: "POST"
+      });
+
+      numberSid = existingNumber.sid;
+      console.log(`✓ WhatsApp enabled on existing number: ${phoneNumber}`);
+    } else {
+      // Purchase new number
+      console.log(`Purchasing ${type} phone number ${phoneNumber} for company ${companyId}`);
+
+      const purchaseConfig = {
+        phoneNumber: phoneNumber
+      };
+
+      // Configure webhooks based on type
+      if (type === "sms") {
+        purchaseConfig.smsUrl = smsInboundUrl;
+        purchaseConfig.smsMethod = "POST";
+        purchaseConfig.statusCallback = smsStatusCallback;
+        purchaseConfig.statusCallbackMethod = "POST";
+      } else if (type === "whatsapp") {
+        purchaseConfig.smsUrl = whatsappInboundUrl;
+        purchaseConfig.smsMethod = "POST";
+        purchaseConfig.statusCallback = whatsappStatusCallback;
+        purchaseConfig.statusCallbackMethod = "POST";
+      }
+
+      purchasedNumber = await subaccountClient
+        .incomingPhoneNumbers
+        .create(purchaseConfig);
+
+      numberSid = purchasedNumber.sid;
+      console.log(`✓ Phone number purchased: ${phoneNumber}, SID: ${numberSid}`);
     }
-
-    const purchasedNumber = await subaccountClient
-      .incomingPhoneNumbers
-      .create(purchaseConfig);
-
-    console.log(`✓ Phone number purchased: ${purchasedNumber.phoneNumber}, SID: ${purchasedNumber.sid}`);
 
     // Update company in database
     const updateFields = {
       $addToSet: {
         "twilioConfig.fromNumbers": phoneNumber,
-        "twilioConfig.phoneNumberSids": purchasedNumber.sid
+        "twilioConfig.phoneNumberSids": numberSid
       },
       $set: {
         "twilioConfig.active": true, // Now active with phone number
@@ -296,13 +327,18 @@ exports.purchasePhoneNumber = async (companyId, phoneNumber, type = "sms") => {
 
     console.log(`✓ Company ${companyId} updated with phone number`);
 
+    const message = numberAlreadyOwned && type === "whatsapp"
+      ? `WhatsApp enabled on existing number ${phoneNumber}`
+      : `Phone number purchased and configured for ${type}`;
+
     return {
       success: true,
-      phoneNumber: purchasedNumber.phoneNumber,
-      sid: purchasedNumber.sid,
+      phoneNumber: phoneNumber,
+      sid: numberSid,
       type: type,
+      reusingExistingNumber: numberAlreadyOwned && type === "whatsapp",
       webhooksConfigured: true,
-      message: `Phone number purchased and configured for ${type}`
+      message: message
     };
   } catch (error) {
     console.error("Error purchasing phone number:", error);

@@ -29,7 +29,7 @@ const Company = mongooseModel("Company");
  * @param {String} replyTo - Optional reply-to address
  * @returns {Promise<Object>} { success, verificationPending }
  */
-exports.configureSender = async (companyId, fromEmail, fromName, replyTo = null) => {
+exports.configureSender = async (companyId, fromEmail, fromName) => {
   try {
     const company = await Company.findById(companyId);
     if (!company) {
@@ -38,13 +38,16 @@ exports.configureSender = async (companyId, fromEmail, fromName, replyTo = null)
 
     console.log(`Configuring email sender for company ${companyId}: ${fromEmail}`);
 
-    // Check if already configured
-    if (company.emailConfig?.sendgrid?.fromEmail === fromEmail &&
-        company.emailConfig?.sendgrid?.domainVerified) {
+    // Check if this email is already configured
+    const existingSenders = company.emailConfig?.sendgrid?.senders || [];
+    const existingSender = existingSenders.find(s => s.email === fromEmail);
+
+    if (existingSender && existingSender.domainVerified) {
       return {
         success: true,
         alreadyConfigured: true,
         verificationStatus: "verified",
+        sender: existingSender,
         message: "Email already configured and verified"
       };
     }
@@ -89,19 +92,38 @@ exports.configureSender = async (companyId, fromEmail, fromName, replyTo = null)
 
     if (domainAuthenticated) {
       // Domain is authenticated - can send immediately, no verification email needed!
-      await Company.findByIdAndUpdate(companyId, {
-        $set: {
-          "emailConfig.provider": "sendgrid",
-          "emailConfig.sendgrid.fromEmail": fromEmail,
-          "emailConfig.sendgrid.fromName": fromName,
-          "emailConfig.sendgrid.replyTo": replyTo || fromEmail,
-          "emailConfig.sendgrid.domain": domain,
-          "emailConfig.sendgrid.domainId": authenticatedDomainId,
-          "emailConfig.sendgrid.domainVerified": true,
-          "emailConfig.verificationStatus": "verified",
-          "emailConfig.verifiedAt": new Date()
-        }
-      });
+      const newSender = {
+        email: fromEmail,
+        name: fromName,
+        domain: domain,
+        domainId: authenticatedDomainId,
+        domainVerified: true,
+        verifiedAt: new Date(),
+        isDefault: existingSenders.length === 0 // First sender is default
+      };
+
+      // Add or update sender in array
+      if (existingSender) {
+        // Update existing
+        await Company.updateOne(
+          { _id: companyId, "emailConfig.sendgrid.senders.email": fromEmail },
+          {
+            $set: {
+              "emailConfig.sendgrid.senders.$": newSender
+            }
+          }
+        );
+      } else {
+        // Add new sender
+        await Company.findByIdAndUpdate(companyId, {
+          $push: {
+            "emailConfig.sendgrid.senders": newSender
+          },
+          $set: {
+            "emailConfig.provider": "sendgrid"
+          }
+        });
+      }
 
       console.log(`✓ Email configured successfully for ${fromEmail} (domain authenticated)`);
 
@@ -109,6 +131,7 @@ exports.configureSender = async (companyId, fromEmail, fromName, replyTo = null)
         success: true,
         verificationStatus: "verified",
         domainAuthenticated: true,
+        sender: newSender,
         message: `Email configured successfully! You can now send from ${fromEmail}`
       };
     } else {
@@ -116,23 +139,41 @@ exports.configureSender = async (companyId, fromEmail, fromName, replyTo = null)
       console.log(`⚠️ Domain ${domain} is not authenticated. Please authenticate the domain first.`);
 
       // Save partial configuration
-      await Company.findByIdAndUpdate(companyId, {
-        $set: {
-          "emailConfig.provider": "sendgrid",
-          "emailConfig.sendgrid.fromEmail": fromEmail,
-          "emailConfig.sendgrid.fromName": fromName,
-          "emailConfig.sendgrid.replyTo": replyTo || fromEmail,
-          "emailConfig.sendgrid.domain": domain,
-          "emailConfig.sendgrid.domainVerified": false,
-          "emailConfig.verificationStatus": "pending_domain_authentication"
-        }
-      });
+      const pendingSender = {
+        email: fromEmail,
+        name: fromName,
+        domain: domain,
+        domainVerified: false,
+        isDefault: existingSenders.length === 0
+      };
+
+      // Add or update sender in array
+      if (existingSender) {
+        await Company.updateOne(
+          { _id: companyId, "emailConfig.sendgrid.senders.email": fromEmail },
+          {
+            $set: {
+              "emailConfig.sendgrid.senders.$": pendingSender
+            }
+          }
+        );
+      } else {
+        await Company.findByIdAndUpdate(companyId, {
+          $push: {
+            "emailConfig.sendgrid.senders": pendingSender
+          },
+          $set: {
+            "emailConfig.provider": "sendgrid"
+          }
+        });
+      }
 
       return {
         success: false,
         verificationStatus: "pending_domain_authentication",
         domainAuthenticated: false,
         domain: domain,
+        sender: pendingSender,
         message: `Domain ${domain} is not authenticated in SendGrid. Please authenticate the domain first by adding DNS records. Use the /api/messaging/email/dns-records endpoint to get the required DNS records.`,
         nextStep: "Add DNS records to authenticate domain"
       };
@@ -396,25 +437,38 @@ exports.verifyDomainManually = async (companyId) => {
       const isVerified = authenticatedDomain.valid === true;
 
       if (isVerified) {
-        // Domain is now verified! Update database
+        // Domain is now verified! Update all senders with this domain
+        const senders = company.emailConfig?.sendgrid?.senders || [];
+        const updatedSenders = senders.map(sender => {
+          if (sender.domain === domain) {
+            return {
+              ...sender,
+              domainVerified: true,
+              domainId: authenticatedDomain.id,
+              verifiedAt: sender.verifiedAt || new Date()
+            };
+          }
+          return sender;
+        });
+
         await Company.findByIdAndUpdate(companyId, {
           $set: {
-            "emailConfig.sendgrid.domainVerified": true,
-            "emailConfig.sendgrid.domainId": authenticatedDomain.id,
-            "emailConfig.verificationStatus": "verified",
-            "emailConfig.verifiedAt": new Date(),
+            "emailConfig.sendgrid.senders": updatedSenders,
             "emailConfig.lastVerificationCheck": new Date()
           }
         });
 
         console.log(`✓ Domain ${domain} is now verified for company ${companyId}`);
 
+        const verifiedSenders = updatedSenders.filter(s => s.domain === domain);
+
         return {
           success: true,
           verified: true,
           status: "verified",
           domain: domain,
-          message: `Success! Domain ${domain} is authenticated. You can now send emails from ${fromEmail}.`
+          verifiedSenders: verifiedSenders,
+          message: `Success! Domain ${domain} is authenticated. ${verifiedSenders.length} sender(s) are now ready to use.`
         };
       } else {
         // Domain exists but not yet verified (DNS not propagated or incorrect)
