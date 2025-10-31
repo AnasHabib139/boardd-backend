@@ -177,6 +177,43 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
       },
     },
 
+    // Format author name for inbound messages to show contact info + channel
+    {
+      $addFields: {
+        author: {
+          $cond: {
+            if: {
+              $and: [
+                { $eq: ["$direction", "inbound"] },
+                { $ne: ["$senderContactInfo", null] },
+                { $ne: ["$senderChannel", null] }
+              ]
+            },
+            then: {
+              _id: null,
+              name: {
+                $concat: [
+                  "$senderContactInfo",
+                  " (",
+                  { $toUpper: "$senderChannel" },
+                  ")"
+                ]
+              },
+              email: {
+                $cond: {
+                  if: { $eq: ["$senderChannel", "email"] },
+                  then: "$senderContactInfo",
+                  else: null
+                }
+              },
+              image: null
+            },
+            else: "$author"
+          }
+        }
+      }
+    },
+
     // Lookup reactions for each message
     {
       $lookup: {

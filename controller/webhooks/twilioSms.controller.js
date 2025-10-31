@@ -234,6 +234,8 @@ exports.handleInboundSms = async (req, res, next) => {
       links: [],
       direction: "inbound",
       senderRole: "client",
+      senderContactInfo: From, // Phone number for display (e.g., "+491709055176")
+      senderChannel: "sms", // Channel type for display label
       deliveries: [
         {
           channel: "sms",

@@ -144,6 +144,8 @@ exports.handleInboundEmail = async (req, res, next) => {
       links: [],
       direction: "inbound",
       senderRole: "client",
+      senderContactInfo: fromEmail, // Email address for display (e.g., "client@example.com")
+      senderChannel: "email", // Channel type for display label
       emailSubject: subject || "(No Subject)",
       deliveries: [
         {

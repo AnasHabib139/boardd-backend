@@ -178,6 +178,15 @@ const chatMessageSchema = new Schema(
       enum: ["team", "client"],
       default: "team",
     },
+    // Inbound message sender contact info (phone/email for display)
+    senderContactInfo: {
+      type: String,
+    },
+    // Inbound message channel (for displaying author with channel label)
+    senderChannel: {
+      type: String,
+      enum: ["sms", "email", "whatsapp"],
+    },
     // Email subject (required when email in deliveries)
     emailSubject: {
       type: String,

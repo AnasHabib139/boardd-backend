@@ -218,6 +218,8 @@ exports.handleInboundWhatsapp = async (req, res, next) => {
       links: [],
       direction: "inbound",
       senderRole: "client",
+      senderContactInfo: whatsappNumber, // WhatsApp number for display (e.g., "+491709055176")
+      senderChannel: "whatsapp", // Channel type for display label
       deliveries: [
         {
           channel: "whatsapp",
