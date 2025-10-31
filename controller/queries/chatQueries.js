@@ -284,7 +284,19 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
                 vars: {
                   clientContact: "$conversationDetails.clientContact",
                   externalContacts: "$conversationDetails.externalContacts",
-                  clientModelData: { $arrayElemAt: ["$clientDetails.personalDetails", 0] }
+                  clientModelData: {
+                    $let: {
+                      vars: {
+                        firstClient: { $arrayElemAt: ["$clientDetails", 0] }
+                      },
+                      in: {
+                        $arrayElemAt: [
+                          { $ifNull: ["$$firstClient.personalDetails", []] },
+                          0
+                        ]
+                      }
+                    }
+                  }
                 },
                 in: {
                   // SMS numbers from all sources
