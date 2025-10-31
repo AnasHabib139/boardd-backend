@@ -33,6 +33,7 @@ if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
  * @param {Object} params - WhatsApp parameters
  * @param {String} params.companyId - Company ID (for multi-tenant routing)
  * @param {String} params.to - Recipient WhatsApp number (E.164 format)
+ * @param {String} params.from - Sender WhatsApp number (optional - uses default if not provided)
  * @param {String} params.textContent - Message text (for free-form)
  * @param {Object} params.template - Template object (for outside 24h window)
  * @param {String} params.template.name - Template name
@@ -43,7 +44,7 @@ if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
  * @returns {Promise<Object>} { success, providerMessageId, status, error, from }
  */
 exports.sendWhatsapp = async (params) => {
-  const { companyId, to, textContent, template, messageId, lastClientInboundAt } = params;
+  const { companyId, to, from, textContent, template, messageId, lastClientInboundAt } = params;
 
   try {
     // Validate required params
@@ -72,25 +73,45 @@ exports.sendWhatsapp = async (params) => {
         throw new Error(`Company ${companyId} Twilio config not found`);
       }
 
-      // Find active WhatsApp sender
-      const activeSender = company.twilioConfig.whatsappSenders?.find(
-        (s) => s.status === "active"
-      );
+      // If custom sender is specified, use it (already validated in router)
+      if (from) {
+        // Find the sender in company config to get twilioNumber format
+        const customSender = company.twilioConfig.whatsappSenders?.find(
+          (s) => s.number === from && s.status === "active"
+        );
+        if (customSender) {
+          fromWhatsappNumber = customSender.twilioNumber || `whatsapp:${from}`;
+          console.log(
+            `Using custom WhatsApp sender ${fromWhatsappNumber} for company ${companyId}`
+          );
+        } else {
+          // Fallback if not found (shouldn't happen due to validation)
+          fromWhatsappNumber = `whatsapp:${from}`;
+          console.log(
+            `Using custom WhatsApp sender ${fromWhatsappNumber} (fallback) for company ${companyId}`
+          );
+        }
+      } else {
+        // Find active WhatsApp sender (default)
+        const activeSender = company.twilioConfig.whatsappSenders?.find(
+          (s) => s.status === "active"
+        );
 
-      if (!activeSender) {
-        throw new Error(
-          `Company ${companyId} has no active WhatsApp sender configured`
+        if (!activeSender) {
+          throw new Error(
+            `Company ${companyId} has no active WhatsApp sender configured`
+          );
+        }
+
+        fromWhatsappNumber = activeSender.twilioNumber || activeSender.number;
+        console.log(
+          `Using WhatsApp sender ${fromWhatsappNumber} for company ${companyId}`
         );
       }
-
-      fromWhatsappNumber = activeSender.twilioNumber || activeSender.number;
-      console.log(
-        `Using WhatsApp sender ${fromWhatsappNumber} for company ${companyId}`
-      );
     } else {
       // Legacy mode: Use global Twilio client
       client = twilioClient || getLegacyTwilioClient();
-      fromWhatsappNumber = process.env.TWILIO_WHATSAPP_NUMBER;
+      fromWhatsappNumber = from ? `whatsapp:${from}` : process.env.TWILIO_WHATSAPP_NUMBER;
 
       if (!fromWhatsappNumber) {
         throw new Error("TWILIO_WHATSAPP_NUMBER not configured");

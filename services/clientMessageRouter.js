@@ -30,6 +30,10 @@ const whatsappProvider = require("../providers/whatsapp.twilio");
  * @param {String} params.recipient.email - Recipient email (for email delivery)
  * @param {String} params.recipient.phoneE164 - Recipient phone E.164 format (for SMS)
  * @param {String} params.recipient.whatsappE164 - Recipient WhatsApp E.164 format (for WhatsApp)
+ * @param {Object} params.sender - Sender contact information (optional - uses company defaults if not provided)
+ * @param {String} params.sender.email - Sender email (must be verified for company)
+ * @param {String} params.sender.smsNumber - Sender SMS number (must be configured for company)
+ * @param {String} params.sender.whatsappNumber - Sender WhatsApp number (must be active for company)
  * @param {String} params.emailSubject - Email subject (required for email delivery)
  * @param {Object} params.whatsappTemplate - WhatsApp template config (for outside 24h window)
  * @param {Object} params.content - TipTap JSON content
@@ -44,6 +48,7 @@ exports.routeMessage = async (params) => {
     conversationId,
     deliveryModes = [],
     recipient = {},
+    sender = {},
     emailSubject,
     whatsappTemplate,
     content,
@@ -59,9 +64,15 @@ exports.routeMessage = async (params) => {
     }
 
     // Validate recipient info for each delivery mode
-    const validationErrors = validateRecipient(deliveryModes, recipient, emailSubject);
-    if (validationErrors.length > 0) {
-      throw new Error(`Recipient validation failed: ${validationErrors.join(", ")}`);
+    const recipientErrors = validateRecipient(deliveryModes, recipient, emailSubject);
+    if (recipientErrors.length > 0) {
+      throw new Error(`Recipient validation failed: ${recipientErrors.join(", ")}`);
+    }
+
+    // Validate sender info against company configuration
+    const senderErrors = await validateSender(deliveryModes, sender, companyId);
+    if (senderErrors.length > 0) {
+      throw new Error(`Sender validation failed: ${senderErrors.join(", ")}`);
     }
 
     // Initialize deliveries array for database
@@ -83,6 +94,7 @@ exports.routeMessage = async (params) => {
               messageId,
               conversationId,
               recipient,
+              sender,
               emailSubject,
               content,
             });
@@ -93,6 +105,7 @@ exports.routeMessage = async (params) => {
               companyId,
               messageId,
               recipient,
+              sender,
               content,
             });
             break;
@@ -102,6 +115,7 @@ exports.routeMessage = async (params) => {
               companyId,
               messageId,
               recipient,
+              sender,
               content,
               lastClientInboundAt,
               whatsappTemplate,
@@ -235,6 +249,81 @@ function validateRecipient(deliveryModes, recipient, emailSubject) {
 }
 
 /**
+ * Validate sender info against company configuration
+ * @param {Array<String>} deliveryModes - Channels to validate
+ * @param {Object} sender - Sender info
+ * @param {String} companyId - Company ID
+ * @returns {Promise<Array<String>>} Array of validation error messages (empty if valid)
+ */
+async function validateSender(deliveryModes, sender = {}, companyId) {
+  const errors = [];
+
+  // Only validate if sender info is provided
+  if (!sender || Object.keys(sender).length === 0) {
+    return errors; // No sender specified = use defaults (backward compatible)
+  }
+
+  // Fetch company configuration
+  const Company = mongooseModel("Company");
+  const company = await Company.findById(companyId).select("twilioConfig emailConfig");
+
+  if (!company) {
+    errors.push("Company not found");
+    return errors;
+  }
+
+  deliveryModes.forEach((channel) => {
+    switch (channel) {
+      case "board":
+        // Board delivery requires no sender validation
+        break;
+
+      case "email":
+        if (sender.email) {
+          // Verify sender email is in company's verified senders
+          const senders = company.emailConfig?.sendgrid?.senders || [];
+          const verifiedSender = senders.find(
+            s => s.email === sender.email && s.domainVerified === true
+          );
+          if (!verifiedSender) {
+            errors.push(`Email sender ${sender.email} is not verified for this company`);
+          }
+        }
+        break;
+
+      case "sms":
+        if (sender.smsNumber) {
+          // Verify sender SMS number is in company's configured numbers
+          const smsNumbers = company.twilioConfig?.fromNumbers || [];
+          if (!smsNumbers.includes(sender.smsNumber)) {
+            errors.push(`SMS number ${sender.smsNumber} is not configured for this company`);
+          }
+        }
+        break;
+
+      case "whatsapp":
+        if (sender.whatsappNumber) {
+          // Verify sender WhatsApp number is active for company
+          const whatsappSenders = company.twilioConfig?.whatsappSenders || [];
+          const activeSender = whatsappSenders.find(
+            s => s.number === sender.whatsappNumber && s.status === "active"
+          );
+          if (!activeSender) {
+            errors.push(`WhatsApp number ${sender.whatsappNumber} is not active for this company`);
+          }
+        }
+        break;
+
+      default:
+        // Unknown channel already validated in validateRecipient
+        break;
+    }
+  });
+
+  return errors;
+}
+
+/**
  * Deliver message to Board (internal chat)
  * @param {Object} params
  * @returns {Promise<Object>} Delivery result
@@ -248,7 +337,7 @@ async function deliverToBoard({ messageId }) {
  * @param {Object} params
  * @returns {Promise<Object>} Delivery result
  */
-async function deliverToEmail({ companyId, messageId, conversationId, recipient, emailSubject, content }) {
+async function deliverToEmail({ companyId, messageId, conversationId, recipient, sender, emailSubject, content }) {
   // Convert TipTap JSON to email HTML
   const htmlContent = tiptapRenderer.toEmailHtml(content);
   const textContent = tiptapRenderer.toPlainText(content);
@@ -256,6 +345,7 @@ async function deliverToEmail({ companyId, messageId, conversationId, recipient,
   return emailProvider.sendEmail({
     companyId,
     to: recipient.email,
+    from: sender.email, // Pass selected sender email (or undefined to use default)
     subject: emailSubject,
     htmlContent,
     textContent,
@@ -269,13 +359,14 @@ async function deliverToEmail({ companyId, messageId, conversationId, recipient,
  * @param {Object} params
  * @returns {Promise<Object>} Delivery result
  */
-async function deliverToSms({ companyId, messageId, recipient, content }) {
+async function deliverToSms({ companyId, messageId, recipient, sender, content }) {
   // Convert TipTap JSON to SMS text
   const textContent = tiptapRenderer.toSmsText(content);
 
   return smsProvider.sendSms({
     companyId,
     to: recipient.phoneE164,
+    from: sender.smsNumber, // Pass selected SMS number (or undefined to use default)
     textContent,
     messageId,
   });
@@ -290,6 +381,7 @@ async function deliverToWhatsapp({
   companyId,
   messageId,
   recipient,
+  sender,
   content,
   lastClientInboundAt,
   whatsappTemplate,
@@ -300,6 +392,7 @@ async function deliverToWhatsapp({
   return whatsappProvider.sendWhatsapp({
     companyId,
     to: recipient.whatsappE164,
+    from: sender.whatsappNumber, // Pass selected WhatsApp number (or undefined to use default)
     textContent: whatsappTemplate ? null : textContent, // Only send text if not using template
     template: whatsappTemplate || null,
     messageId,

@@ -30,12 +30,13 @@ if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
  * @param {Object} params - SMS parameters
  * @param {String} params.companyId - Company ID (for multi-tenant routing)
  * @param {String} params.to - Recipient phone number (E.164 format)
+ * @param {String} params.from - Sender phone number (optional - uses default if not provided)
  * @param {String} params.textContent - SMS message body
  * @param {String} params.messageId - Internal message ID for status callback tracking
  * @returns {Promise<Object>} { success, providerMessageId, status, error, from }
  */
 exports.sendSms = async (params) => {
-  const { companyId, to, textContent, messageId } = params;
+  const { companyId, to, from, textContent, messageId } = params;
 
   try {
     // Validate required params
@@ -61,8 +62,15 @@ exports.sendSms = async (params) => {
       company = await Company.findById(companyId);
 
       if (company && company.twilioConfig) {
+        // If custom sender is specified, use it (already validated in router)
+        if (from) {
+          sendingConfig.from = from;
+          console.log(
+            `Using custom SMS sender ${from} for company ${companyId}`
+          );
+        }
         // Prefer Messaging Service (load balancing, sticky sender)
-        if (company.twilioConfig.messagingServiceSid) {
+        else if (company.twilioConfig.messagingServiceSid) {
           sendingConfig.messagingServiceSid =
             company.twilioConfig.messagingServiceSid;
           console.log(
