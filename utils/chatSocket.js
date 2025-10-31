@@ -788,15 +788,45 @@ const notifyDMParticipants = async (
 exports.initChatSocket = (io) => {
   io.on("connection", (socket) => {
     // Join conversation room
-    socket.on("chat:join", (data) => {
-      const { conversationId } = data;
-      if (!conversationId) {
-        socket.emit("chat:error", { error: "conversationId is required" });
-        return;
+    socket.on("chat:join", async (data) => {
+      try {
+        const { conversationId, userId } = data;
+
+        if (!conversationId) {
+          console.error(`chat:join failed - missing conversationId from socket ${socket.id}`);
+          socket.emit("chat:error", { error: "conversationId is required" });
+          return;
+        }
+
+        // Validate conversationId format
+        if (!Types.ObjectId.isValid(conversationId)) {
+          console.error(`chat:join failed - invalid conversationId format: ${conversationId} from socket ${socket.id}`);
+          socket.emit("chat:error", { error: "Invalid conversationId format" });
+          return;
+        }
+
+        // Log detailed info
+        console.log(`[chat:join] Socket ${socket.id} joining conversation: ${conversationId}${userId ? ` (user: ${userId})` : ''}`);
+
+        // Check if conversation exists and get type for logging
+        const conversation = await findChatConversation({ _id: conversationId });
+        if (conversation) {
+          console.log(`[chat:join] Conversation type: ${conversation.type}, channel: ${conversation.channelId || 'N/A'}`);
+        } else {
+          console.warn(`[chat:join] Conversation ${conversationId} not found in database, but allowing room join`);
+        }
+
+        // Join the room
+        socket.join(`conversation:${conversationId}`);
+        console.log(`[chat:join] ✓ Socket ${socket.id} successfully joined room: conversation:${conversationId}`);
+
+        // Emit success response
+        socket.emit("chat:joined", { conversationId, success: true });
+        console.log(`[chat:join] ✓ Emitted chat:joined to socket ${socket.id}`);
+      } catch (error) {
+        console.error(`[chat:join] Error for socket ${socket.id}:`, error);
+        socket.emit("chat:error", { error: `Failed to join conversation: ${error.message}` });
       }
-      console.log(`Socket ${socket.id} joining conversation: ${conversationId}`);
-      socket.join(`conversation:${conversationId}`);
-      socket.emit("chat:joined", { conversationId, success: true });
     });
 
     // Leave conversation room

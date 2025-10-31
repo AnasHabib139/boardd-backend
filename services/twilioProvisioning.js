@@ -540,7 +540,18 @@ exports.sendTestSms = async (companyId, to, message = "This is a test SMS from y
     });
 
     if (result.success) {
-      console.log(`✓ Test SMS sent successfully: ${result.providerMessageId}`);
+      console.log(`✓ Test SMS sent successfully: ${result.providerMessageId}, from: ${result.from}`);
+
+      // Update health status to healthy on successful send
+      await Company.findByIdAndUpdate(companyId, {
+        $set: {
+          "twilioConfig.healthCheckStatus": "healthy",
+          "twilioConfig.lastHealthCheck": new Date()
+        }
+      });
+
+      console.log(`✓ Updated health status to 'healthy' for company ${companyId}`);
+
       return {
         success: true,
         messageSid: result.providerMessageId,
@@ -551,7 +562,21 @@ exports.sendTestSms = async (companyId, to, message = "This is a test SMS from y
       throw new Error(result.error || "SMS send failed");
     }
   } catch (error) {
-    console.error("Error sending test SMS:", error);
+    console.error(`Error sending test SMS for company ${companyId}:`, error);
+    console.error(`Error details: ${JSON.stringify(error, null, 2)}`);
+
+    // Update health status to failed on error
+    try {
+      await Company.findByIdAndUpdate(companyId, {
+        $set: {
+          "twilioConfig.healthCheckStatus": "failed",
+          "twilioConfig.lastHealthCheck": new Date()
+        }
+      });
+    } catch (updateError) {
+      console.error("Failed to update health status:", updateError);
+    }
+
     throw new Error(`Failed to send test SMS: ${error.message}`);
   }
 };

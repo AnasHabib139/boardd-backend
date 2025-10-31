@@ -54,17 +54,45 @@ async function getEmailClientForCompany(companyId) {
         `Created SendGrid email client for company ${companyIdStr}`
       );
 
+      // Get default sender from authenticated senders array
+      let defaultSender = null;
+      const senders = company.emailConfig.sendgrid.senders || [];
+
+      // Priority 1: Find default sender that's verified
+      defaultSender = senders.find(s => s.isDefault === true && s.domainVerified === true);
+
+      // Priority 2: Find first verified sender
+      if (!defaultSender) {
+        defaultSender = senders.find(s => s.domainVerified === true);
+      }
+
+      // Priority 3: Use legacy fromEmail if configured
+      if (!defaultSender && company.emailConfig.sendgrid.fromEmail) {
+        defaultSender = {
+          email: company.emailConfig.sendgrid.fromEmail,
+          name: company.emailConfig.sendgrid.fromName || company.name
+        };
+      }
+
+      // Priority 4: Fall back to env var (last resort for backward compatibility)
+      if (!defaultSender && process.env.SENDGRID_FROM_EMAIL) {
+        defaultSender = {
+          email: process.env.SENDGRID_FROM_EMAIL,
+          name: process.env.SENDGRID_FROM_NAME || company.name
+        };
+        console.warn(`Company ${companyIdStr} using env var email fallback - no verified senders configured`);
+      }
+
+      if (!defaultSender) {
+        throw new Error(`Company ${companyIdStr} has no verified email senders configured`);
+      }
+
       return {
         type: "sendgrid",
         client: sg,
         from: {
-          email:
-            company.emailConfig.sendgrid.fromEmail ||
-            process.env.SENDGRID_FROM_EMAIL,
-          name:
-            company.emailConfig.sendgrid.fromName ||
-            process.env.SENDGRID_FROM_NAME ||
-            company.name,
+          email: defaultSender.email,
+          name: defaultSender.name || company.name,
         },
         replyTo: company.emailConfig.sendgrid.replyTo || null,
         companyId: company._id,

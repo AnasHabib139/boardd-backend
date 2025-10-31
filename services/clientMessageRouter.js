@@ -453,6 +453,14 @@ function emitDeliveryStatus(io, companyId, data) {
   try {
     const { messageId, conversationId, delivery } = data;
 
+    console.log(`[chat:message:delivery] Emitting delivery status to company-${companyId}:`, {
+      messageId,
+      conversationId,
+      channel: delivery.channel,
+      status: delivery.status,
+      error: delivery.error || null
+    });
+
     // Emit to company room so all participants see delivery status
     io.to(`company-${companyId}`).emit("chat:message:delivery", {
       messageId,
@@ -464,8 +472,15 @@ function emitDeliveryStatus(io, companyId, data) {
       sentAt: delivery.sentAt,
       deliveredAt: delivery.deliveredAt,
     });
+
+    console.log(`[chat:message:delivery] ✓ Event emitted successfully for ${delivery.channel}`);
   } catch (error) {
-    console.error("Error emitting delivery status:", error);
+    console.error("[chat:message:delivery] Error emitting delivery status:", error);
+    console.error("[chat:message:delivery] Error details:", {
+      messageId: data.messageId,
+      conversationId: data.conversationId,
+      channel: data.delivery?.channel
+    });
     // Don't throw - socket emission is best-effort
   }
 }
