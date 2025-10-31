@@ -396,14 +396,21 @@ exports.createMessagingService = async (companyId) => {
 
     console.log(`Creating Messaging Service for company ${companyId}`);
 
+    // Build inbound webhook URL
+    const backendUrl = process.env.BACKEND_URL || "https://boardd.com";
+    const inboundWebhookUrl = `${backendUrl}/api/webhooks/sms/twilio/inbound`;
+
     // Create messaging service
     const service = await subaccountClient.messaging.v1.services.create({
       friendlyName: `${company.name} Messaging Service`,
       stickySender: true, // Use same sender number for same recipient
-      usecase: "marketing" // or "notifications", "authentication"
+      usecase: "marketing", // or "notifications", "authentication"
+      inboundRequestUrl: inboundWebhookUrl,
+      inboundMethod: "POST"
     });
 
     console.log(`✓ Messaging Service created: ${service.sid}`);
+    console.log(`✓ Inbound webhook configured: ${inboundWebhookUrl}`);
 
     // Add all phone numbers to the service
     for (const phoneNumberSid of company.twilioConfig.phoneNumberSids) {
@@ -433,6 +440,65 @@ exports.createMessagingService = async (companyId) => {
   } catch (error) {
     console.error("Error creating Messaging Service:", error);
     throw new Error(`Failed to create Messaging Service: ${error.message}`);
+  }
+};
+
+/**
+ * Update Messaging Service with inbound webhook URL
+ * Fixes existing messaging services that don't have webhook configured
+ *
+ * @param {String} companyId - Company ID
+ * @returns {Promise<Object>} { success, messagingServiceSid, webhookUrl }
+ */
+exports.updateMessagingServiceWebhook = async (companyId) => {
+  try {
+    const company = await Company.findById(companyId)
+      .select("+twilioConfig.apiKeySecret");
+
+    if (!company) {
+      throw new Error("Company not found");
+    }
+
+    if (!company.twilioConfig?.subAccountSid) {
+      throw new Error("Company does not have a Twilio subaccount");
+    }
+
+    if (!company.twilioConfig.messagingServiceSid) {
+      throw new Error("Company does not have a Messaging Service");
+    }
+
+    // Create client for this subaccount
+    const subaccountClient = twilio(
+      company.twilioConfig.apiKeySid,
+      company.twilioConfig.apiKeySecret,
+      { accountSid: company.twilioConfig.subAccountSid }
+    );
+
+    const messagingServiceSid = company.twilioConfig.messagingServiceSid;
+    const backendUrl = process.env.BACKEND_URL || "https://boardd.com";
+    const inboundWebhookUrl = `${backendUrl}/api/webhooks/sms/twilio/inbound`;
+
+    console.log(`Updating Messaging Service ${messagingServiceSid} with webhook URL`);
+
+    // Update messaging service
+    await subaccountClient.messaging.v1
+      .services(messagingServiceSid)
+      .update({
+        inboundRequestUrl: inboundWebhookUrl,
+        inboundMethod: "POST"
+      });
+
+    console.log(`✓ Messaging Service ${messagingServiceSid} updated with webhook: ${inboundWebhookUrl}`);
+
+    return {
+      success: true,
+      messagingServiceSid,
+      webhookUrl: inboundWebhookUrl,
+      message: "Messaging Service webhook configured successfully"
+    };
+  } catch (error) {
+    console.error("Error updating Messaging Service webhook:", error);
+    throw new Error(`Failed to update webhook: ${error.message}`);
   }
 };
 

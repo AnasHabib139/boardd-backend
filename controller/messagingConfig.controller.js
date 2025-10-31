@@ -232,6 +232,30 @@ exports.getWebhookConfig = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/messaging/sms/fix-webhook
+ * Update existing Messaging Service with inbound webhook URL
+ */
+exports.updateMessagingServiceWebhook = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+
+    const result = await twilioProvisioning.updateMessagingServiceWebhook(companyId);
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+      message: result.message,
+    });
+  } catch (error) {
+    console.error("Error in updateMessagingServiceWebhook:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
 // ==================== WHATSAPP ENDPOINTS ====================
 
 /**

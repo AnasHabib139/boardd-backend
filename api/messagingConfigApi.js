@@ -102,6 +102,18 @@ class MessagingConfigApi {
       controller.getWebhookConfig
     );
 
+    /**
+     * POST /api/messaging/sms/fix-webhook
+     * Update existing Messaging Service with inbound webhook URL
+     * Required: company admin
+     */
+    router.post(
+      "/sms/fix-webhook",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      requireCompanyAdmin,
+      controller.updateMessagingServiceWebhook
+    );
+
     // ==================== WHATSAPP CONFIGURATION ====================
 
     /**
