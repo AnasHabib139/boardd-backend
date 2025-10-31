@@ -195,6 +195,43 @@ exports.sendTestSms = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/messaging/sms/webhook-config?phoneNumber=<phoneNumber>
+ * Check webhook configuration for a phone number
+ */
+exports.getWebhookConfig = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+    const { phoneNumber } = req.query;
+
+    if (!phoneNumber) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "phoneNumber query parameter is required",
+      });
+    }
+
+    const result = await twilioProvisioning.getPhoneNumberWebhookConfig(
+      companyId,
+      phoneNumber
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+      message: result.webhookConfigured
+        ? "Webhook configured correctly"
+        : "Webhook NOT configured correctly",
+    });
+  } catch (error) {
+    console.error("Error in getWebhookConfig:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
 // ==================== WHATSAPP ENDPOINTS ====================
 
 /**

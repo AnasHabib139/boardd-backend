@@ -580,3 +580,74 @@ exports.sendTestSms = async (companyId, to, message = "This is a test SMS from y
     throw new Error(`Failed to send test SMS: ${error.message}`);
   }
 };
+
+/**
+ * Get webhook configuration for a phone number
+ * Useful for debugging inbound SMS/WhatsApp issues
+ *
+ * @param {String} companyId - Company ID
+ * @param {String} phoneNumber - Phone number to check (E.164 format)
+ * @returns {Promise<Object>} { phoneNumber, smsUrl, smsMethod, statusCallback, webhookConfigured }
+ */
+exports.getPhoneNumberWebhookConfig = async (companyId, phoneNumber) => {
+  try {
+    const company = await Company.findById(companyId)
+      .select("+twilioConfig.apiKeySecret");
+
+    if (!company) {
+      throw new Error("Company not found");
+    }
+
+    if (!company.twilioConfig?.subAccountSid) {
+      throw new Error("Company does not have a Twilio subaccount");
+    }
+
+    // Create client for this subaccount
+    const subaccountClient = twilio(
+      company.twilioConfig.apiKeySid,
+      company.twilioConfig.apiKeySecret,
+      { accountSid: company.twilioConfig.subAccountSid }
+    );
+
+    console.log(`Fetching webhook config for phone number ${phoneNumber}`);
+
+    // List all incoming phone numbers
+    const numbers = await subaccountClient.incomingPhoneNumbers.list();
+    const number = numbers.find(n => n.phoneNumber === phoneNumber);
+
+    if (!number) {
+      throw new Error(`Phone number ${phoneNumber} not found in Twilio account`);
+    }
+
+    const backendUrl = process.env.BACKEND_URL || "https://boardd.com";
+    const expectedSmsUrl = `${backendUrl}/api/webhooks/sms/twilio/inbound`;
+    const expectedStatusCallback = `${backendUrl}/api/webhooks/sms/twilio?companyId=${companyId}`;
+
+    const webhookConfigured = number.smsUrl === expectedSmsUrl;
+    const statusCallbackConfigured = number.statusCallback && number.statusCallback.includes('/api/webhooks/sms/twilio');
+
+    console.log(`Phone number ${phoneNumber} webhook config:`, {
+      smsUrl: number.smsUrl,
+      expected: expectedSmsUrl,
+      configured: webhookConfigured
+    });
+
+    return {
+      success: true,
+      phoneNumber: number.phoneNumber,
+      friendlyName: number.friendlyName,
+      smsUrl: number.smsUrl,
+      smsMethod: number.smsMethod,
+      statusCallback: number.statusCallback,
+      statusCallbackMethod: number.statusCallbackMethod,
+      expectedSmsUrl,
+      expectedStatusCallback,
+      webhookConfigured,
+      statusCallbackConfigured,
+      capabilities: number.capabilities
+    };
+  } catch (error) {
+    console.error("Error getting phone number webhook config:", error);
+    throw new Error(`Failed to get webhook config: ${error.message}`);
+  }
+};

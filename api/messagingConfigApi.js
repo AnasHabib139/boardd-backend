@@ -89,6 +89,19 @@ class MessagingConfigApi {
       controller.sendTestSms
     );
 
+    /**
+     * GET /api/messaging/sms/webhook-config
+     * Check webhook configuration for a phone number
+     * Query params: phoneNumber (required, E.164 format)
+     * Required: company admin
+     */
+    router.get(
+      "/sms/webhook-config",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      requireCompanyAdmin,
+      controller.getWebhookConfig
+    );
+
     // ==================== WHATSAPP CONFIGURATION ====================
 
     /**

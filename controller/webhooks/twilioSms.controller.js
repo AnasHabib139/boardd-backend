@@ -129,6 +129,8 @@ exports.handleSmsStatusCallback = async (req, res, next) => {
  */
 exports.handleInboundSms = async (req, res, next) => {
   try {
+    console.log("[Inbound SMS] ====== NEW INBOUND SMS WEBHOOK ======");
+
     const {
       From, // Client's phone number (E.164)
       To, // Our Twilio number
@@ -141,18 +143,20 @@ exports.handleInboundSms = async (req, res, next) => {
     const company = req.twilioCompany;
     const companyId = company?._id || null;
 
-    console.log("Inbound SMS received:", {
+    console.log("[Inbound SMS] Webhook data:", {
       From,
       To,
       Body: Body?.substring(0, 100),
       MessageSid,
       NumMedia,
       companyId: companyId?.toString() || "legacy",
+      hasCompany: !!company,
+      fullBody: req.body
     });
 
     // Validate required params
     if (!From || !Body) {
-      console.warn("Invalid inbound SMS: missing From or Body");
+      console.error("[Inbound SMS] ❌ Invalid webhook: missing From or Body");
       return res.status(200).send("OK");
     }
 
@@ -167,14 +171,31 @@ exports.handleInboundSms = async (req, res, next) => {
       conversationQuery.companyId = companyId;
     }
 
+    console.log("[Inbound SMS] Looking up conversation with query:", conversationQuery);
+
     // Find conversation by matching external phone number
     const conversation = await ChatConversation.findOne(conversationQuery);
 
     if (!conversation) {
-      console.warn(`No client conversation found for SMS from ${From}`);
-      // TODO: Option to create new conversation or send auto-reply
+      console.error(`[Inbound SMS] ❌ No client conversation found for SMS from ${From}`);
+      console.error(`[Inbound SMS] Query used:`, conversationQuery);
+
+      // Debug: Check if any conversations exist with this phone in other fields
+      const anyConversation = await ChatConversation.findOne({ type: "client" }).select("externalContacts clientContact");
+      if (anyConversation) {
+        console.log("[Inbound SMS] Sample conversation externalContacts:", anyConversation.externalContacts);
+        console.log("[Inbound SMS] Sample conversation clientContact:", anyConversation.clientContact);
+      }
+
       return res.status(200).send("OK");
     }
+
+    console.log("[Inbound SMS] ✓ Conversation found:", {
+      conversationId: conversation._id,
+      companyId: conversation.companyId,
+      participantCount: conversation.participantIds?.length,
+      externalContacts: conversation.externalContacts
+    });
 
     // Create TipTap JSON content from plain text
     const contentDoc = {
@@ -238,9 +259,17 @@ exports.handleInboundSms = async (req, res, next) => {
 
     // Emit socket event to notify team members
     const io = req.app.get("io");
+    console.log("[Inbound SMS] Socket.io available:", !!io);
+
     if (io) {
       const { findUser } = require("../../models/userModel");
       const author = await findUser({ _id: clientUserId });
+
+      console.log("[Inbound SMS] Author user found:", {
+        authorId: clientUserId,
+        hasAuthor: !!author,
+        authorName: author?.name
+      });
 
       const populatedMessage = {
         ...message.toObject(),
@@ -255,12 +284,20 @@ exports.handleInboundSms = async (req, res, next) => {
       };
 
       // Broadcast to conversation room
-      io.to(`conversation:${conversation._id}`).emit("chat:message:new", {
+      const conversationRoom = `conversation:${conversation._id}`;
+      console.log(`[Inbound SMS] Emitting chat:message:new to room: ${conversationRoom}`);
+
+      io.to(conversationRoom).emit("chat:message:new", {
         message: populatedMessage,
       });
 
+      console.log("[Inbound SMS] ✓ chat:message:new emitted");
+
       // Emit notification to company room (for unread badges, etc.)
-      io.to(`company-${conversation.companyId}`).emit("chat:notification", {
+      const companyRoom = `company-${conversation.companyId}`;
+      console.log(`[Inbound SMS] Emitting chat:notification to room: ${companyRoom}`);
+
+      io.to(companyRoom).emit("chat:notification", {
         type: "CHAT_MESSAGE",
         conversationId: conversation._id,
         messageId: message._id,
@@ -274,10 +311,14 @@ exports.handleInboundSms = async (req, res, next) => {
         channel: "sms",
         timestamp: new Date(),
       });
+
+      console.log("[Inbound SMS] ✓ chat:notification emitted");
+    } else {
+      console.error("[Inbound SMS] ❌ Socket.io not available - events not emitted!");
     }
 
     console.log(
-      `Inbound SMS processed: message ${message._id} in conversation ${conversation._id}`
+      `[Inbound SMS] ✓✓✓ Inbound SMS processed successfully: message ${message._id} in conversation ${conversation._id}, lastClientInboundAt updated`
     );
 
     // Return TwiML response (empty response = no auto-reply)
