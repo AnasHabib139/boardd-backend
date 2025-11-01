@@ -38,35 +38,34 @@ async function getEmailClientForCompany(companyId) {
       );
     }
 
-    // SendGrid configuration
+    // SendGrid configuration (using master account with domain authentication)
     if (company.emailConfig.provider === "sendgrid") {
-      if (!company.emailConfig.sendgrid?.apiKey) {
-        throw new Error(
-          `Company ${companyIdStr} SendGrid API key not configured`
-        );
+      // Use master SendGrid API key (all companies share the same account)
+      const masterApiKey = process.env.SENDGRID_API_KEY;
+      if (!masterApiKey) {
+        throw new Error("Master SendGrid API key not configured in environment variables");
       }
 
-      // Create SendGrid client instance
+      // Create SendGrid client instance with master API key
       const sg = require("@sendgrid/mail");
-      sg.setApiKey(company.emailConfig.sendgrid.apiKey);
+      sg.setApiKey(masterApiKey);
 
       console.log(
-        `Created SendGrid email client for company ${companyIdStr}`
+        `Created SendGrid email client for company ${companyIdStr} (using master account)`
       );
 
       // Get default sender from authenticated senders array
-      let defaultSender = null;
       const senders = company.emailConfig.sendgrid.senders || [];
 
       // Priority 1: Find default sender that's verified
-      defaultSender = senders.find(s => s.isDefault === true && s.domainVerified === true);
+      let defaultSender = senders.find(s => s.isDefault === true && s.domainVerified === true);
 
       // Priority 2: Find first verified sender
       if (!defaultSender) {
         defaultSender = senders.find(s => s.domainVerified === true);
       }
 
-      // Priority 3: Use legacy fromEmail if configured
+      // Priority 3: Use legacy fromEmail if configured (for backward compatibility)
       if (!defaultSender && company.emailConfig.sendgrid.fromEmail) {
         defaultSender = {
           email: company.emailConfig.sendgrid.fromEmail,
@@ -74,17 +73,12 @@ async function getEmailClientForCompany(companyId) {
         };
       }
 
-      // Priority 4: Fall back to env var (last resort for backward compatibility)
-      if (!defaultSender && process.env.SENDGRID_FROM_EMAIL) {
-        defaultSender = {
-          email: process.env.SENDGRID_FROM_EMAIL,
-          name: process.env.SENDGRID_FROM_NAME || company.name
-        };
-        console.warn(`Company ${companyIdStr} using env var email fallback - no verified senders configured`);
-      }
-
+      // No verified sender found - cannot send email
       if (!defaultSender) {
-        throw new Error(`Company ${companyIdStr} has no verified email senders configured`);
+        throw new Error(
+          `Company ${companyIdStr} has no verified email senders. ` +
+          `Please add DNS records and verify domain authentication.`
+        );
       }
 
       return {

@@ -59,37 +59,28 @@ exports.sendEmail = async (params) => {
     let fromName;
 
     if (companyId) {
-      // Multi-tenant mode: Use company-specific email client
-      try {
-        emailClient = await getEmailClientForCompany(companyId);
+      // Get company email client (uses master SendGrid account with domain authentication)
+      emailClient = await getEmailClientForCompany(companyId);
 
-        // If custom sender is specified, use it (already validated in router)
-        if (from) {
-          fromEmail = from;
-          // Look up sender name from company's senders array
-          const Company = require("mongoose").model("Company");
-          const company = await Company.findById(companyId).select("emailConfig");
-          const sender = company.emailConfig?.sendgrid?.senders?.find(s => s.email === from);
-          fromName = sender?.name || fromEmail.split("@")[0]; // Fallback to email username
-          console.log(`Using custom sender ${fromEmail} (${fromName}) for company ${companyId}`);
-        } else {
-          // Use default sender from email client
-          fromEmail = emailClient.from.email;
-          fromName = emailClient.from.name;
-          console.log(
-            `Using ${emailClient.type} email client for company ${companyId}`
-          );
-        }
-      } catch (error) {
-        console.warn(
-          `Failed to get company email client for ${companyId}: ${error.message}. Falling back to legacy.`
+      // If custom sender is specified, use it (already validated in router)
+      if (from) {
+        fromEmail = from;
+        // Look up sender name from company's senders array
+        const Company = require("mongoose").model("Company");
+        const company = await Company.findById(companyId).select("emailConfig");
+        const sender = company.emailConfig?.sendgrid?.senders?.find(s => s.email === from);
+        fromName = sender?.name || fromEmail.split("@")[0]; // Fallback to email username
+        console.log(`Using custom sender ${fromEmail} (${fromName}) for company ${companyId}`);
+      } else {
+        // Use default sender from email client
+        fromEmail = emailClient.from.email;
+        fromName = emailClient.from.name;
+        console.log(
+          `Using ${emailClient.type} email client for company ${companyId}`
         );
-        emailClient = getLegacySendGridClient();
-        fromEmail = from || emailClient.from.email;
-        fromName = fromEmail.split("@")[0]; // Simple fallback
       }
     } else {
-      // Legacy mode: Use global SendGrid client
+      // Legacy mode: Use global SendGrid client (for backward compatibility)
       emailClient = getLegacySendGridClient();
       fromEmail = from || emailClient.from.email;
       fromName = emailClient.from.name;
