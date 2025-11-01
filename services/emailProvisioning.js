@@ -27,9 +27,10 @@ const Company = mongooseModel("Company");
  * @param {String} fromEmail - Sender email address (e.g., support@company.com)
  * @param {String} fromName - Sender name (e.g., "Company Support")
  * @param {String} replyTo - Optional reply-to address
+ * @param {String} inboundSubdomain - Optional inbound subdomain for receiving emails (e.g., "inbound.company.com")
  * @returns {Promise<Object>} { success, verificationPending }
  */
-exports.configureSender = async (companyId, fromEmail, fromName) => {
+exports.configureSender = async (companyId, fromEmail, fromName, replyTo, inboundSubdomain) => {
   try {
     const company = await Company.findById(companyId);
     if (!company) {
@@ -115,11 +116,23 @@ exports.configureSender = async (companyId, fromEmail, fromName) => {
       }
 
       // Save to database
+      const updateFields = {
+        "emailConfig.provider": "sendgrid",
+        "emailConfig.sendgrid.senders": updatedSenders
+      };
+
+      // Save replyTo if provided
+      if (replyTo) {
+        updateFields["emailConfig.sendgrid.replyTo"] = replyTo;
+      }
+
+      // Save inboundSubdomain if provided
+      if (inboundSubdomain) {
+        updateFields["emailConfig.sendgrid.inboundSubdomain"] = inboundSubdomain;
+      }
+
       await Company.findByIdAndUpdate(companyId, {
-        $set: {
-          "emailConfig.provider": "sendgrid",
-          "emailConfig.sendgrid.senders": updatedSenders
-        }
+        $set: updateFields
       });
 
       console.log(`✓ Email configured successfully for ${fromEmail} (domain authenticated)`);
@@ -157,11 +170,23 @@ exports.configureSender = async (companyId, fromEmail, fromName) => {
       }
 
       // Save to database
+      const updateFields = {
+        "emailConfig.provider": "sendgrid",
+        "emailConfig.sendgrid.senders": updatedSenders
+      };
+
+      // Save replyTo if provided
+      if (replyTo) {
+        updateFields["emailConfig.sendgrid.replyTo"] = replyTo;
+      }
+
+      // Save inboundSubdomain if provided
+      if (inboundSubdomain) {
+        updateFields["emailConfig.sendgrid.inboundSubdomain"] = inboundSubdomain;
+      }
+
       await Company.findByIdAndUpdate(companyId, {
-        $set: {
-          "emailConfig.provider": "sendgrid",
-          "emailConfig.sendgrid.senders": updatedSenders
-        }
+        $set: updateFields
       });
 
       return {
@@ -362,18 +387,62 @@ exports.getDnsRecords = async (companyId, specificDomain = null) => {
         });
 
         const dnsRecords = detailBody.dns || {};
+        const inboundSubdomain = company.emailConfig?.sendgrid?.inboundSubdomain;
 
         domainResults.push({
           domain,
           authenticated: authenticatedDomain.valid === true,
+          inboundSubdomain: inboundSubdomain || `inbound.${domain}`,
           dnsRecords: {
-            mail_cname: dnsRecords.mail_cname || {},
-            dkim1: dnsRecords.dkim1 || {},
-            dkim2: dnsRecords.dkim2 || {}
+            sending: {
+              description: "CNAME records for SENDING emails (domain authentication)",
+              records: [
+                {
+                  type: "CNAME",
+                  host: dnsRecords.mail_cname?.host || "",
+                  value: dnsRecords.mail_cname?.data || "",
+                  purpose: "Mail server pointer",
+                  status: dnsRecords.mail_cname?.valid ? "verified" : "pending"
+                },
+                {
+                  type: "CNAME",
+                  host: dnsRecords.dkim1?.host || "",
+                  value: dnsRecords.dkim1?.data || "",
+                  purpose: "DKIM authentication key 1",
+                  status: dnsRecords.dkim1?.valid ? "verified" : "pending"
+                },
+                {
+                  type: "CNAME",
+                  host: dnsRecords.dkim2?.host || "",
+                  value: dnsRecords.dkim2?.data || "",
+                  purpose: "DKIM authentication key 2",
+                  status: dnsRecords.dkim2?.valid ? "verified" : "pending"
+                }
+              ]
+            },
+            receiving: {
+              description: "MX record for RECEIVING email replies via webhook",
+              records: [
+                {
+                  type: "MX",
+                  host: inboundSubdomain || `inbound.${domain}`,
+                  value: "mx.sendgrid.net",
+                  priority: 10,
+                  purpose: "Route inbound emails to SendGrid for parsing",
+                  status: company.emailConfig?.sendgrid?.inboundParseId ? "configured" : "pending"
+                }
+              ],
+              note: "MX record enables clients to reply to emails and have responses routed to your webhook"
+            }
           },
           instructions: authenticatedDomain.valid
-            ? "Domain is authenticated and ready to use."
-            : "Add the DNS records shown above to your domain's DNS settings, then wait 24-48 hours for verification."
+            ? ["Domain is authenticated and ready to use."]
+            : [
+                "1. Add all 3 CNAME records for sending emails",
+                "2. Add the MX record for receiving email replies",
+                "3. Wait 24-48 hours for DNS propagation",
+                "4. Call /api/messaging/email/verify-domain to verify"
+              ]
         });
       } else {
         // Domain not set up yet - create it
@@ -391,17 +460,61 @@ exports.getDnsRecords = async (companyId, specificDomain = null) => {
           });
 
           const dnsRecords = createBody.dns || {};
+          const inboundSubdomain = company.emailConfig?.sendgrid?.inboundSubdomain;
 
           domainResults.push({
             domain,
             authenticated: false,
             newlyCreated: true,
+            inboundSubdomain: inboundSubdomain || `inbound.${domain}`,
             dnsRecords: {
-              mail_cname: dnsRecords.mail_cname || {},
-              dkim1: dnsRecords.dkim1 || {},
-              dkim2: dnsRecords.dkim2 || {}
+              sending: {
+                description: "CNAME records for SENDING emails (domain authentication)",
+                records: [
+                  {
+                    type: "CNAME",
+                    host: dnsRecords.mail_cname?.host || "",
+                    value: dnsRecords.mail_cname?.data || "",
+                    purpose: "Mail server pointer",
+                    status: "pending"
+                  },
+                  {
+                    type: "CNAME",
+                    host: dnsRecords.dkim1?.host || "",
+                    value: dnsRecords.dkim1?.data || "",
+                    purpose: "DKIM authentication key 1",
+                    status: "pending"
+                  },
+                  {
+                    type: "CNAME",
+                    host: dnsRecords.dkim2?.host || "",
+                    value: dnsRecords.dkim2?.data || "",
+                    purpose: "DKIM authentication key 2",
+                    status: "pending"
+                  }
+                ]
+              },
+              receiving: {
+                description: "MX record for RECEIVING email replies via webhook",
+                records: [
+                  {
+                    type: "MX",
+                    host: inboundSubdomain || `inbound.${domain}`,
+                    value: "mx.sendgrid.net",
+                    priority: 10,
+                    purpose: "Route inbound emails to SendGrid for parsing",
+                    status: company.emailConfig?.sendgrid?.inboundParseId ? "configured" : "pending"
+                  }
+                ],
+                note: "MX record enables clients to reply to emails and have responses routed to your webhook"
+              }
             },
-            instructions: "Domain authentication created. Add the CNAME records shown above to your DNS provider (Cloudflare, GoDaddy, etc.), then wait 24-48 hours for verification."
+            instructions: [
+              "1. Add all 3 CNAME records for sending emails",
+              "2. Add the MX record for receiving email replies",
+              "3. Wait 24-48 hours for DNS propagation",
+              "4. Call /api/messaging/email/verify-domain to verify"
+            ]
           });
         } catch (createError) {
           console.error(`Error creating domain authentication for ${domain}:`, createError);
