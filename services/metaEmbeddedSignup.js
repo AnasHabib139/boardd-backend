@@ -136,21 +136,38 @@ exports.getWABADetails = async (accessToken) => {
     // Get WABA details
     const wabaResponse = await axios.get(`${META_GRAPH_API_BASE}/${wabaId}`, {
       params: {
-        fields: "id,name,account_review_status,business_verification_status,timezone_id",
+        fields: "id,name,account_review_status,business_verification_status,timezone_id,owner_business_info",
         access_token: accessToken,
       },
     });
 
     const wabaData = wabaResponse.data;
 
-    // Get Business Manager ID
-    const businessResponse = await axios.get(`${META_GRAPH_API_BASE}/${wabaId}/assigned_users`, {
-      params: {
-        access_token: accessToken,
-      },
-    });
+    // Get Business Manager ID (optional - not critical for functionality)
+    let businessId = null;
+    try {
+      // Try to get business ID from WABA's owned_by field (more reliable)
+      if (wabaData.owner_business_info?.id) {
+        businessId = wabaData.owner_business_info.id;
+      } else {
+        // Alternative: try getting from client_whatsapp_business_accounts
+        const businessResponse = await axios.get(`${META_GRAPH_API_BASE}/${wabaId}`, {
+          params: {
+            fields: "owner_business_info",
+            access_token: accessToken,
+          },
+        });
+        businessId = businessResponse.data.owner_business_info?.id || null;
+      }
 
-    const businessId = businessResponse.data.data?.[0]?.business?.id || null;
+      if (businessId) {
+        console.log(`✓ Retrieved business ID: ${businessId}`);
+      }
+    } catch (businessError) {
+      // Business ID is optional - don't fail if we can't get it
+      console.log(`⚠ Could not retrieve business ID (optional): ${businessError.message}`);
+      businessId = null;
+    }
 
     console.log(`✓ Retrieved WABA details: ${wabaId}`);
 
