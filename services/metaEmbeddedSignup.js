@@ -206,12 +206,51 @@ exports.linkPhoneNumber = async (companyId, phoneNumber) => {
     const wabaId = company.whatsappEmbeddedSignup.wabaId;
     const accessToken = company.whatsappEmbeddedSignup.accessToken;
 
+    // Parse country code from E.164 format (+14155551234)
+    // Remove the leading '+'
+    const numberWithoutPlus = phoneNumber.replace(/^\+/, '');
+
+    // Extract country code and phone number
+    // Common country codes: 1 (US/Canada), 44 (UK), 91 (India), etc.
+    let countryCode;
+    let localNumber;
+
+    if (numberWithoutPlus.startsWith('1') && numberWithoutPlus.length === 11) {
+      // North America (US, Canada) - country code is '1', followed by 10 digits
+      countryCode = '1';
+      localNumber = numberWithoutPlus.substring(1);
+    } else if (numberWithoutPlus.startsWith('44') && numberWithoutPlus.length >= 11) {
+      // UK - country code is '44'
+      countryCode = '44';
+      localNumber = numberWithoutPlus.substring(2);
+    } else if (numberWithoutPlus.startsWith('91') && numberWithoutPlus.length === 12) {
+      // India - country code is '91', followed by 10 digits
+      countryCode = '91';
+      localNumber = numberWithoutPlus.substring(2);
+    } else if (numberWithoutPlus.startsWith('1') && numberWithoutPlus.length > 11) {
+      // Fallback for other 1+ country codes
+      countryCode = '1';
+      localNumber = numberWithoutPlus.substring(1);
+    } else {
+      // Generic fallback: assume first 1-3 digits are country code
+      // Try 3 digits first, then 2, then 1
+      if (numberWithoutPlus.length > 10) {
+        countryCode = numberWithoutPlus.substring(0, 2);
+        localNumber = numberWithoutPlus.substring(2);
+      } else {
+        countryCode = numberWithoutPlus.substring(0, 1);
+        localNumber = numberWithoutPlus.substring(1);
+      }
+    }
+
+    console.log(`Parsed phone: cc=${countryCode}, number=${localNumber}`);
+
     // Register phone number with Meta WABA
     const response = await axios.post(
       `${META_GRAPH_API_BASE}/${wabaId}/phone_numbers`,
       {
-        cc: phoneNumber.substring(1, phoneNumber.indexOf("5")), // Country code
-        phone_number: phoneNumber.substring(phoneNumber.indexOf("5")), // Phone without country code
+        cc: countryCode,
+        phone_number: localNumber,
         migrate_phone_number: false,
       },
       {
