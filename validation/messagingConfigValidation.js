@@ -133,6 +133,18 @@ const testMessageSchema = Joi.object({
   message: Joi.string().max(500).default("This is a test message from your Boardd messaging configuration."),
 });
 
+/**
+ * Validate WhatsApp sender registration request
+ */
+const whatsappSenderRegistrationSchema = Joi.object({
+  phoneNumber: Joi.string()
+    .pattern(/^\+[1-9]\d{6,14}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "Phone number must be in E.164 format (e.g., +15551234567)",
+    }),
+});
+
 module.exports = {
   smsProvisionSchema,
   phoneNumberSearchSchema,
@@ -141,4 +153,5 @@ module.exports = {
   whatsappTemplateSchema,
   emailConfigSchema,
   testMessageSchema,
+  whatsappSenderRegistrationSchema,
 };

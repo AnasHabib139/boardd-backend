@@ -154,6 +154,31 @@ class MessagingConfigApi {
       controller.deleteWhatsappTemplate
     );
 
+    /**
+     * POST /api/messaging/whatsapp/register-sender
+     * Manually register WhatsApp sender with Twilio
+     * Body: { phoneNumber }
+     * Required: company admin
+     */
+    router.post(
+      "/whatsapp/register-sender",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      requireCompanyAdmin,
+      controller.registerWhatsappSenderManual
+    );
+
+    /**
+     * GET /api/messaging/whatsapp/sender-status
+     * Get WhatsApp sender registration status
+     * Required: company access
+     */
+    router.get(
+      "/whatsapp/sender-status",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      requireCompanyAccess,
+      controller.getWhatsappSenderStatus
+    );
+
     // ==================== EMAIL CONFIGURATION ====================
 
     /**

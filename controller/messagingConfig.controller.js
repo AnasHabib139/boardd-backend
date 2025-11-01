@@ -20,6 +20,7 @@ const {
   whatsappTemplateSchema,
   emailConfigSchema,
   testMessageSchema,
+  whatsappSenderRegistrationSchema,
 } = require("../validation/messagingConfigValidation");
 
 // ==================== SMS ENDPOINTS ====================
@@ -423,6 +424,101 @@ exports.deleteWhatsappTemplate = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/messaging/whatsapp/register-sender
+ * Manually register WhatsApp sender with Twilio
+ * Required before templates can be submitted to Meta
+ */
+exports.registerWhatsappSenderManual = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+    const { error, value } = whatsappSenderRegistrationSchema.validate(req.body || {});
+
+    if (error) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: error.details[0].message,
+      });
+    }
+
+    const result = await twilioProvisioning.registerWhatsappSender(
+      companyId,
+      value.phoneNumber
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+      message: result.message || "WhatsApp sender registered successfully",
+    });
+  } catch (error) {
+    console.error("Error in registerWhatsappSenderManual:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/messaging/whatsapp/sender-status
+ * Get WhatsApp sender registration status for all senders
+ */
+exports.getWhatsappSenderStatus = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+    const { model: mongooseModel } = require("mongoose");
+    const Company = mongooseModel("Company");
+
+    const company = await Company.findById(companyId).select("twilioConfig");
+
+    if (!company) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Company not found",
+      });
+    }
+
+    const senders = company.twilioConfig?.whatsappSenders || [];
+
+    if (senders.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          senders: [],
+          message: "No WhatsApp senders configured. Please provision a WhatsApp number first.",
+        },
+      });
+    }
+
+    // Format sender status
+    const formattedSenders = senders.map(sender => ({
+      phoneNumber: sender.number,
+      status: sender.status,
+      senderSid: sender.senderSid || null,
+      registeredAt: sender.registeredAt || null,
+      lastError: sender.lastError || null,
+      canCreateTemplates: sender.status === "active",
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        senders: formattedSenders,
+        totalSenders: senders.length,
+        activeSenders: senders.filter(s => s.status === "active").length,
+      },
+      message: "Sender status retrieved successfully",
+    });
+  } catch (error) {
+    console.error("Error in getWhatsappSenderStatus:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
 // ==================== EMAIL ENDPOINTS ====================
 
 /**
@@ -684,7 +780,15 @@ exports.getMessagingStatus = async (req, res, next) => {
         senders: (company.twilioConfig?.whatsappSenders || []).map((s) => ({
           number: s.number,
           status: s.status,
+          senderSid: s.senderSid || null,
+          registered: s.status === "active",
+          registeredAt: s.registeredAt || null,
+          canCreateTemplates: s.status === "active",
+          lastError: s.lastError || null,
         })),
+        totalSenders: (company.twilioConfig?.whatsappSenders || []).length,
+        registeredSenders: (company.twilioConfig?.whatsappSenders || []).filter(s => s.status === "active").length,
+        needsRegistration: (company.twilioConfig?.whatsappSenders || []).some(s => s.status === "pending" || s.status === "registration_failed"),
       },
       email: {
         configured: company.emailConfig?.provider === "sendgrid",

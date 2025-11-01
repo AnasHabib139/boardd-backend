@@ -327,11 +327,37 @@ exports.purchasePhoneNumber = async (companyId, phoneNumber, type = "sms") => {
 
     console.log(`✓ Company ${companyId} updated with phone number`);
 
+    // Auto-register WhatsApp sender if type is whatsapp
+    let senderRegistrationResult = null;
+    if (type === "whatsapp") {
+      try {
+        console.log(`Auto-registering WhatsApp sender ${phoneNumber}...`);
+
+        // Ensure messaging service exists before registration
+        if (!company.twilioConfig?.messagingServiceSid) {
+          console.log("No messaging service found, creating one first...");
+          await exports.createMessagingService(companyId);
+        }
+
+        // Register the sender
+        senderRegistrationResult = await exports.registerWhatsappSender(companyId, phoneNumber);
+        console.log(`✓ WhatsApp sender auto-registered: ${senderRegistrationResult.senderSid}`);
+      } catch (regError) {
+        console.error(`⚠️ Failed to auto-register WhatsApp sender: ${regError.message}`);
+        // Don't fail the entire operation - registration can be done manually later
+        senderRegistrationResult = {
+          success: false,
+          error: regError.message,
+          message: "Number configured but sender registration failed. Please use POST /whatsapp/register-sender to complete setup."
+        };
+      }
+    }
+
     const message = numberAlreadyOwned && type === "whatsapp"
       ? `WhatsApp enabled on existing number ${phoneNumber}`
       : `Phone number purchased and configured for ${type}`;
 
-    return {
+    const response = {
       success: true,
       phoneNumber: phoneNumber,
       sid: numberSid,
@@ -340,6 +366,18 @@ exports.purchasePhoneNumber = async (companyId, phoneNumber, type = "sms") => {
       webhooksConfigured: true,
       message: message
     };
+
+    // Add sender registration info if WhatsApp
+    if (type === "whatsapp" && senderRegistrationResult) {
+      response.senderRegistration = senderRegistrationResult;
+      if (senderRegistrationResult.success) {
+        response.message += ". Sender registered successfully - you can now create templates.";
+      } else {
+        response.message += ". Note: Sender registration failed - please register manually to create templates.";
+      }
+    }
+
+    return response;
   } catch (error) {
     console.error("Error purchasing phone number:", error);
 
@@ -644,6 +682,109 @@ exports.sendTestSms = async (companyId, to, message = "This is a test SMS from y
     }
 
     throw new Error(`Failed to send test SMS: ${error.message}`);
+  }
+};
+
+/**
+ * Register WhatsApp sender with Twilio Senders API
+ * Required before templates can be submitted to Meta for approval
+ *
+ * @param {String} companyId - Company ID
+ * @param {String} phoneNumber - WhatsApp phone number in E.164 format (e.g., "+15551234567")
+ * @returns {Promise<Object>} { success, senderSid, wabaId, status, message }
+ */
+exports.registerWhatsappSender = async (companyId, phoneNumber) => {
+  try {
+    const company = await Company.findById(companyId)
+      .select("+twilioConfig.apiKeySecret");
+
+    if (!company) {
+      throw new Error("Company not found");
+    }
+
+    if (!company.twilioConfig?.subAccountSid) {
+      throw new Error("Company does not have a Twilio subaccount");
+    }
+
+    if (!company.twilioConfig?.messagingServiceSid) {
+      throw new Error("Company does not have a Messaging Service. Please create one first.");
+    }
+
+    // Create client for this subaccount
+    const subaccountClient = twilio(
+      company.twilioConfig.apiKeySid,
+      company.twilioConfig.apiKeySecret,
+      { accountSid: company.twilioConfig.subAccountSid }
+    );
+
+    console.log(`Registering WhatsApp sender ${phoneNumber} for company ${companyId}`);
+
+    // Find the phone number SID
+    const numbers = await subaccountClient.incomingPhoneNumbers.list();
+    const number = numbers.find(n => n.phoneNumber === phoneNumber);
+
+    if (!number) {
+      throw new Error(`Phone number ${phoneNumber} not found in Twilio account`);
+    }
+
+    // Register sender via Twilio Messaging Services API
+    // https://www.twilio.com/docs/messaging/api/sender-resource
+    const sender = await subaccountClient.messaging.v1
+      .services(company.twilioConfig.messagingServiceSid)
+      .senders
+      .create({
+        phoneNumber: phoneNumber,
+        messagingServiceSid: company.twilioConfig.messagingServiceSid
+      });
+
+    console.log(`✓ WhatsApp sender registered: ${sender.sid}`);
+
+    // Update company database with sender registration
+    await Company.findOneAndUpdate(
+      {
+        _id: companyId,
+        "twilioConfig.whatsappSenders.number": phoneNumber
+      },
+      {
+        $set: {
+          "twilioConfig.whatsappSenders.$.senderSid": sender.sid,
+          "twilioConfig.whatsappSenders.$.status": "active",
+          "twilioConfig.whatsappSenders.$.registeredAt": new Date()
+        }
+      }
+    );
+
+    console.log(`✓ Company ${companyId} updated with sender registration`);
+
+    return {
+      success: true,
+      senderSid: sender.sid,
+      phoneNumber: sender.phoneNumber,
+      status: "active",
+      message: "WhatsApp sender registered successfully. You can now create templates."
+    };
+  } catch (error) {
+    console.error("Error registering WhatsApp sender:", error);
+
+    // Update status to failed
+    try {
+      await Company.findOneAndUpdate(
+        {
+          _id: companyId,
+          "twilioConfig.whatsappSenders.number": phoneNumber
+        },
+        {
+          $set: {
+            "twilioConfig.whatsappSenders.$.status": "registration_failed",
+            "twilioConfig.whatsappSenders.$.lastError": error.message
+          }
+        }
+      );
+    } catch (updateError) {
+      console.error("Failed to update sender status:", updateError);
+    }
+
+    throw new Error(`Failed to register WhatsApp sender: ${error.message}`);
   }
 };
 
