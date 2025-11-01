@@ -118,7 +118,11 @@ const CompanySchema = new Schema(
           domainId: { type: String },
           verifiedAt: { type: Date },
           isDefault: { type: Boolean, default: false }
-        }]
+        }],
+
+        // Inbound subdomain for receiving emails (requires MX records)
+        inboundSubdomain: { type: String }, // e.g., "inbound.arcpeak.io"
+        inboundParseId: { type: String } // SendGrid inbound parse webhook ID
       },
 
       // SMTP Config (Nodemailer)

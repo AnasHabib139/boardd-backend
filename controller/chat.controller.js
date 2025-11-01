@@ -219,6 +219,56 @@ exports.resolveConversation = async (req, res, next) => {
         }
       }
 
+      // Validate phone numbers and emails for uniqueness in channel (if provided)
+      if (clientContact) {
+        const { isPhoneNumberAvailable, isEmailAvailable } = require("../models/chatConversationModel");
+
+        // Check phone number
+        if (clientContact.phoneE164) {
+          const { available, existingConversation } = await isPhoneNumberAvailable(
+            clientContact.phoneE164,
+            channelId,
+            user.companyId
+          );
+          if (!available) {
+            return next({
+              statusCode: STATUS_CODES.BAD_REQUEST,
+              message: `Phone number ${clientContact.phoneE164} is already connected to another client conversation in this channel`,
+            });
+          }
+        }
+
+        // Check WhatsApp number
+        if (clientContact.whatsappE164) {
+          const { available, existingConversation } = await isPhoneNumberAvailable(
+            clientContact.whatsappE164,
+            channelId,
+            user.companyId
+          );
+          if (!available) {
+            return next({
+              statusCode: STATUS_CODES.BAD_REQUEST,
+              message: `WhatsApp number ${clientContact.whatsappE164} is already connected to another client conversation in this channel`,
+            });
+          }
+        }
+
+        // Check email
+        if (clientContact.email) {
+          const { available, existingConversation } = await isEmailAvailable(
+            clientContact.email,
+            channelId,
+            user.companyId
+          );
+          if (!available) {
+            return next({
+              statusCode: STATUS_CODES.BAD_REQUEST,
+              message: `Email ${clientContact.email} is already connected to another client conversation in this channel`,
+            });
+          }
+        }
+      }
+
       // Resolve client conversation
       const { resolveConversation } = require("../models/chatConversationModel");
       const result = await resolveConversation(

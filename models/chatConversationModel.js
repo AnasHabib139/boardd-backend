@@ -489,3 +489,152 @@ exports.removeChannelParticipant = async (channelId, userId) => {
     { new: true }
   );
 };
+
+// ==================== Validation Helper Functions ====================
+
+/**
+ * Check if a phone number is already used in another client conversation in the same channel
+ * @param {String} phoneNumber - Phone number in E.164 format (e.g., +1234567890)
+ * @param {String} channelId - Channel ID
+ * @param {String} companyId - Company ID
+ * @param {String} excludeConversationId - Optional conversation ID to exclude (for updates)
+ * @returns {Promise<Object>} { available: Boolean, existingConversation: Object|null }
+ */
+exports.isPhoneNumberAvailable = async (
+  phoneNumber,
+  channelId,
+  companyId,
+  excludeConversationId = null
+) => {
+  const query = {
+    companyId,
+    channelId,
+    type: "client",
+    $or: [
+      { "externalContacts.whatsappE164s": phoneNumber },
+      { "externalContacts.phoneE164s": phoneNumber },
+    ],
+  };
+
+  // Exclude current conversation if updating
+  if (excludeConversationId) {
+    query._id = { $ne: excludeConversationId };
+  }
+
+  const existingConversation = await ChatConversation.findOne(query);
+
+  return {
+    available: !existingConversation,
+    existingConversation: existingConversation || null,
+  };
+};
+
+/**
+ * Check if an email is already used in another client conversation in the same channel
+ * @param {String} email - Email address
+ * @param {String} channelId - Channel ID
+ * @param {String} companyId - Company ID
+ * @param {String} excludeConversationId - Optional conversation ID to exclude (for updates)
+ * @returns {Promise<Object>} { available: Boolean, existingConversation: Object|null }
+ */
+exports.isEmailAvailable = async (
+  email,
+  channelId,
+  companyId,
+  excludeConversationId = null
+) => {
+  const query = {
+    companyId,
+    channelId,
+    type: "client",
+    "externalContacts.emails": email.toLowerCase(),
+  };
+
+  // Exclude current conversation if updating
+  if (excludeConversationId) {
+    query._id = { $ne: excludeConversationId };
+  }
+
+  const existingConversation = await ChatConversation.findOne(query);
+
+  return {
+    available: !existingConversation,
+    existingConversation: existingConversation || null,
+  };
+};
+
+/**
+ * Validate multiple phone numbers for uniqueness in channel
+ * @param {Array<String>} phoneNumbers - Array of phone numbers
+ * @param {String} channelId - Channel ID
+ * @param {String} companyId - Company ID
+ * @param {String} excludeConversationId - Optional conversation ID to exclude
+ * @returns {Promise<Object>} { valid: Boolean, duplicates: Array<{number, conversationId}> }
+ */
+exports.validatePhoneNumbers = async (
+  phoneNumbers,
+  channelId,
+  companyId,
+  excludeConversationId = null
+) => {
+  const duplicates = [];
+
+  for (const phoneNumber of phoneNumbers) {
+    const { available, existingConversation } = await exports.isPhoneNumberAvailable(
+      phoneNumber,
+      channelId,
+      companyId,
+      excludeConversationId
+    );
+
+    if (!available) {
+      duplicates.push({
+        number: phoneNumber,
+        conversationId: existingConversation._id,
+      });
+    }
+  }
+
+  return {
+    valid: duplicates.length === 0,
+    duplicates,
+  };
+};
+
+/**
+ * Validate multiple emails for uniqueness in channel
+ * @param {Array<String>} emails - Array of email addresses
+ * @param {String} channelId - Channel ID
+ * @param {String} companyId - Company ID
+ * @param {String} excludeConversationId - Optional conversation ID to exclude
+ * @returns {Promise<Object>} { valid: Boolean, duplicates: Array<{email, conversationId}> }
+ */
+exports.validateEmails = async (
+  emails,
+  channelId,
+  companyId,
+  excludeConversationId = null
+) => {
+  const duplicates = [];
+
+  for (const email of emails) {
+    const { available, existingConversation } = await exports.isEmailAvailable(
+      email,
+      channelId,
+      companyId,
+      excludeConversationId
+    );
+
+    if (!available) {
+      duplicates.push({
+        email,
+        conversationId: existingConversation._id,
+      });
+    }
+  }
+
+  return {
+    valid: duplicates.length === 0,
+    duplicates,
+  };
+};

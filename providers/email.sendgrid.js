@@ -58,16 +58,19 @@ exports.sendEmail = async (params) => {
     let fromEmail;
     let fromName;
 
+    let company = null;
     if (companyId) {
       // Get company email client (uses master SendGrid account with domain authentication)
       emailClient = await getEmailClientForCompany(companyId);
+
+      // Fetch company for sender and inbound subdomain info
+      const Company = require("mongoose").model("Company");
+      company = await Company.findById(companyId).select("emailConfig");
 
       // If custom sender is specified, use it (already validated in router)
       if (from) {
         fromEmail = from;
         // Look up sender name from company's senders array
-        const Company = require("mongoose").model("Company");
-        const company = await Company.findById(companyId).select("emailConfig");
         const sender = company.emailConfig?.sendgrid?.senders?.find(s => s.email === from);
         fromName = sender?.name || fromEmail.split("@")[0]; // Fallback to email username
         console.log(`Using custom sender ${fromEmail} (${fromName}) for company ${companyId}`);
@@ -87,8 +90,18 @@ exports.sendEmail = async (params) => {
       console.log("Using legacy SendGrid client for email");
     }
 
-    // Use sender email as reply-to for direct conversation threading
-    const replyToEmail = fromEmail;
+    // Build reply-to address with conversationId for accurate inbound routing
+    // Format: chat+{conversationId}@{company's inbound subdomain}
+    let replyToEmail = null;
+    if (conversationId) {
+      // Use company's configured inbound subdomain if available, otherwise fall back to env var
+      const replyToDomain =
+        company?.emailConfig?.sendgrid?.inboundSubdomain ||
+        process.env.REPLY_TO_DOMAIN ||
+        "anas.boarddd.net";
+      replyToEmail = `chat+${conversationId}@${replyToDomain}`;
+      console.log(`Using reply-to domain: ${replyToDomain}`);
+    }
 
     // Build email options for the abstraction layer
     const mailOptions = {

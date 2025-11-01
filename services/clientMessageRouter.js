@@ -412,19 +412,78 @@ async function updateExternalContacts(conversationId, recipient, deliveryModes) 
   try {
     const updates = {};
 
+    // Get conversation to validate against same channel
+    const conversation = await ChatConversation.findById(conversationId);
+    if (!conversation) {
+      console.warn(`Conversation ${conversationId} not found for external contacts update`);
+      return;
+    }
+
+    // Skip validation for non-client conversations
+    if (conversation.type !== "client") {
+      return;
+    }
+
+    const { isPhoneNumberAvailable, isEmailAvailable } = require("../models/chatConversationModel");
+
     // Add email to externalContacts.emails if delivered via email
     if (deliveryModes.includes("email") && recipient.email) {
-      updates["externalContacts.emails"] = recipient.email;
+      // Check if email is unique in this channel
+      const { available, existingConversation } = await isEmailAvailable(
+        recipient.email,
+        conversation.channelId,
+        conversation.companyId,
+        conversationId // Exclude current conversation
+      );
+
+      if (!available) {
+        console.warn(
+          `Email ${recipient.email} already exists in conversation ${existingConversation._id} for channel ${conversation.channelId}`
+        );
+        // Skip adding this email - it's already used in another conversation
+      } else {
+        updates["externalContacts.emails"] = recipient.email;
+      }
     }
 
     // Add phone to externalContacts.phoneE164s if delivered via SMS
     if (deliveryModes.includes("sms") && recipient.phoneE164) {
-      updates["externalContacts.phoneE164s"] = recipient.phoneE164;
+      // Check if phone number is unique in this channel
+      const { available, existingConversation } = await isPhoneNumberAvailable(
+        recipient.phoneE164,
+        conversation.channelId,
+        conversation.companyId,
+        conversationId // Exclude current conversation
+      );
+
+      if (!available) {
+        console.warn(
+          `Phone number ${recipient.phoneE164} already exists in conversation ${existingConversation._id} for channel ${conversation.channelId}`
+        );
+        // Skip adding this phone - it's already used in another conversation
+      } else {
+        updates["externalContacts.phoneE164s"] = recipient.phoneE164;
+      }
     }
 
     // Add WhatsApp to externalContacts.whatsappE164s if delivered via WhatsApp
     if (deliveryModes.includes("whatsapp") && recipient.whatsappE164) {
-      updates["externalContacts.whatsappE164s"] = recipient.whatsappE164;
+      // Check if WhatsApp number is unique in this channel
+      const { available, existingConversation } = await isPhoneNumberAvailable(
+        recipient.whatsappE164,
+        conversation.channelId,
+        conversation.companyId,
+        conversationId // Exclude current conversation
+      );
+
+      if (!available) {
+        console.warn(
+          `WhatsApp number ${recipient.whatsappE164} already exists in conversation ${existingConversation._id} for channel ${conversation.channelId}`
+        );
+        // Skip adding this WhatsApp number - it's already used in another conversation
+      } else {
+        updates["externalContacts.whatsappE164s"] = recipient.whatsappE164;
+      }
     }
 
     // Update conversation if there are any new contacts to add
@@ -432,10 +491,11 @@ async function updateExternalContacts(conversationId, recipient, deliveryModes) 
       await ChatConversation.findByIdAndUpdate(
         conversationId,
         {
-          $addToSet: updates, // Use $addToSet to avoid duplicates
+          $addToSet: updates, // Use $addToSet to avoid duplicates within same conversation
         },
         { new: true }
       );
+      console.log(`Updated external contacts for conversation ${conversationId}:`, Object.keys(updates));
     }
   } catch (error) {
     console.error("Error updating external contacts:", error);
