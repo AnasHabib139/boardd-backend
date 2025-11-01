@@ -601,14 +601,16 @@ exports.whatsappEmbeddedSignupCallback = async (req, res, next) => {
     // Handle OAuth errors
     if (oauthError) {
       console.error("OAuth error:", oauthError, error_description);
+      const frontendUrl = process.env.FRONTEND_URL || "https://boarddd-frontend-murex.vercel.app";
       return res.redirect(
-        `/whatsapp-oauth-callback.html?success=false&error=${encodeURIComponent(error_description || oauthError)}`
+        `${frontendUrl}/settings/configuration-contact?whatsapp_setup=error&error=${encodeURIComponent(error_description || oauthError)}`
       );
     }
 
     if (!code || !state) {
+      const frontendUrl = process.env.FRONTEND_URL || "https://boarddd-frontend-murex.vercel.app";
       return res.redirect(
-        `/whatsapp-oauth-callback.html?success=false&error=${encodeURIComponent("Missing code or state parameter")}`
+        `${frontendUrl}/settings/configuration-contact?whatsapp_setup=error&error=${encodeURIComponent("Missing code or state parameter")}`
       );
     }
 
@@ -645,14 +647,16 @@ exports.whatsappEmbeddedSignupCallback = async (req, res, next) => {
 
     console.log(`✓ WhatsApp Embedded Signup completed for company ${companyId}, WABA: ${wabaDetails.wabaId}`);
 
-    // Redirect to success page
+    // Redirect to frontend success page
+    const frontendUrl = process.env.FRONTEND_URL || "https://boarddd-frontend-murex.vercel.app";
     return res.redirect(
-      `/whatsapp-oauth-callback.html?success=true&wabaId=${wabaDetails.wabaId}&businessName=${encodeURIComponent(wabaDetails.wabaName)}`
+      `${frontendUrl}/settings/configuration-contact?whatsapp_setup=success&wabaId=${wabaDetails.wabaId}&businessName=${encodeURIComponent(wabaDetails.wabaName)}`
     );
   } catch (error) {
     console.error("Error in whatsappEmbeddedSignupCallback:", error);
+    const frontendUrl = process.env.FRONTEND_URL || "https://boarddd-frontend-murex.vercel.app";
     return res.redirect(
-      `/whatsapp-oauth-callback.html?success=false&error=${encodeURIComponent(error.message)}`
+      `${frontendUrl}/settings/configuration-contact?whatsapp_setup=error&error=${encodeURIComponent(error.message)}`
     );
   }
 };
