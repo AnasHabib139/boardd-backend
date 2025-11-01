@@ -87,11 +87,8 @@ exports.sendEmail = async (params) => {
       console.log("Using legacy SendGrid client for email");
     }
 
-    // Build reply-to address for conversation threading
-    let replyToEmail = null;
-    if (conversationId) {
-      replyToEmail = `chat+${conversationId}@${extractDomain(fromEmail)}`;
-    }
+    // Use sender email as reply-to for direct conversation threading
+    const replyToEmail = fromEmail;
 
     // Build email options for the abstraction layer
     const mailOptions = {
