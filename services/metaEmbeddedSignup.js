@@ -245,12 +245,16 @@ exports.linkPhoneNumber = async (companyId, phoneNumber) => {
 
     console.log(`Parsed phone: cc=${countryCode}, number=${localNumber}`);
 
+    // Get business name for verified_name (required by Meta)
+    const verifiedName = company.whatsappEmbeddedSignup.businessName || company.name || "Business";
+
     // Register phone number with Meta WABA
     const response = await axios.post(
       `${META_GRAPH_API_BASE}/${wabaId}/phone_numbers`,
       {
         cc: countryCode,
         phone_number: localNumber,
+        verified_name: verifiedName,
         migrate_phone_number: false,
       },
       {
