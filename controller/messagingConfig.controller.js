@@ -12,6 +12,7 @@ const { STATUS_CODES } = require("../utils/constants");
 const twilioProvisioning = require("../services/twilioProvisioning");
 const whatsappTemplateService = require("../services/whatsappTemplateService");
 const emailProvisioning = require("../services/emailProvisioning");
+const metaEmbeddedSignup = require("../services/metaEmbeddedSignup");
 const {
   smsProvisionSchema,
   phoneNumberSearchSchema,
@@ -21,6 +22,9 @@ const {
   emailConfigSchema,
   testMessageSchema,
   whatsappSenderRegistrationSchema,
+  whatsappEmbeddedSignupInitSchema,
+  whatsappPhoneLinkSchema,
+  whatsappPhoneStatusSchema,
 } = require("../validation/messagingConfigValidation");
 
 // ==================== SMS ENDPOINTS ====================
@@ -512,6 +516,206 @@ exports.getWhatsappSenderStatus = async (req, res, next) => {
     });
   } catch (error) {
     console.error("Error in getWhatsappSenderStatus:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
+// ==================== WHATSAPP EMBEDDED SIGNUP ENDPOINTS ====================
+
+/**
+ * POST /api/messaging/whatsapp/init-embedded-signup
+ * Initialize WhatsApp Embedded Signup OAuth flow
+ * Generates Meta OAuth URL for company to authorize WABA creation
+ */
+exports.initWhatsappEmbeddedSignup = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+    const { error, value } = whatsappEmbeddedSignupInitSchema.validate(req.body || {});
+
+    if (error) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: error.details[0].message,
+      });
+    }
+
+    const { authUrl, state } = await metaEmbeddedSignup.generateOAuthUrl(
+      companyId,
+      value.businessName,
+      value.phoneNumber
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        authUrl,
+        state,
+        instructions: "Redirect user to authUrl to complete WhatsApp Business Account setup",
+      },
+      message: "WhatsApp Embedded Signup initialized successfully",
+    });
+  } catch (error) {
+    console.error("Error in initWhatsappEmbeddedSignup:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/messaging/whatsapp/embedded-signup/callback
+ * Handle OAuth callback from Meta after user authorizes
+ * Exchanges authorization code for access token and stores WABA details
+ */
+exports.whatsappEmbeddedSignupCallback = async (req, res, next) => {
+  try {
+    const { code, state, error: oauthError, error_description } = req.query;
+
+    // Handle OAuth errors
+    if (oauthError) {
+      console.error("OAuth error:", oauthError, error_description);
+      return res.redirect(
+        `/whatsapp-oauth-callback.html?success=false&error=${encodeURIComponent(error_description || oauthError)}`
+      );
+    }
+
+    if (!code || !state) {
+      return res.redirect(
+        `/whatsapp-oauth-callback.html?success=false&error=${encodeURIComponent("Missing code or state parameter")}`
+      );
+    }
+
+    // Decode state to get companyId
+    const stateData = JSON.parse(Buffer.from(state, "base64").toString("utf-8"));
+    const { companyId } = stateData;
+
+    // Verify state token
+    await metaEmbeddedSignup.verifyStateToken(state, companyId);
+
+    // Exchange code for access token
+    const { accessToken, expiresIn } = await metaEmbeddedSignup.exchangeCodeForToken(code);
+
+    // Get WABA details
+    const wabaDetails = await metaEmbeddedSignup.getWABADetails(accessToken);
+
+    // Store in database
+    const { model: mongooseModel } = require("mongoose");
+    const Company = mongooseModel("Company");
+
+    await Company.findByIdAndUpdate(companyId, {
+      $set: {
+        "whatsappEmbeddedSignup.wabaId": wabaDetails.wabaId,
+        "whatsappEmbeddedSignup.accessToken": accessToken,
+        "whatsappEmbeddedSignup.tokenExpiresAt": new Date(Date.now() + expiresIn * 1000),
+        "whatsappEmbeddedSignup.businessId": wabaDetails.businessId,
+        "whatsappEmbeddedSignup.businessName": wabaDetails.wabaName,
+        "whatsappEmbeddedSignup.verificationStatus":
+          wabaDetails.accountReviewStatus === "APPROVED" ? "verified" : "pending",
+        "whatsappEmbeddedSignup.registeredAt": new Date(),
+        "whatsappEmbeddedSignup.lastSyncedAt": new Date(),
+      },
+    });
+
+    console.log(`✓ WhatsApp Embedded Signup completed for company ${companyId}, WABA: ${wabaDetails.wabaId}`);
+
+    // Redirect to success page
+    return res.redirect(
+      `/whatsapp-oauth-callback.html?success=true&wabaId=${wabaDetails.wabaId}&businessName=${encodeURIComponent(wabaDetails.wabaName)}`
+    );
+  } catch (error) {
+    console.error("Error in whatsappEmbeddedSignupCallback:", error);
+    return res.redirect(
+      `/whatsapp-oauth-callback.html?success=false&error=${encodeURIComponent(error.message)}`
+    );
+  }
+};
+
+/**
+ * POST /api/messaging/whatsapp/link-phone-number
+ * Link a Twilio phone number to Meta WABA
+ * Required after Embedded Signup to enable WhatsApp messaging on a specific number
+ */
+exports.linkWhatsappPhoneNumber = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+    const { error, value } = whatsappPhoneLinkSchema.validate(req.body || {});
+
+    if (error) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: error.details[0].message,
+      });
+    }
+
+    const result = await metaEmbeddedSignup.linkPhoneNumber(
+      companyId,
+      value.phoneNumber
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+      message: "Phone number linked to WhatsApp Business Account successfully",
+    });
+  } catch (error) {
+    console.error("Error in linkWhatsappPhoneNumber:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/messaging/whatsapp/waba-status
+ * Get WhatsApp Business Account status and phone numbers
+ * Shows verification status, linked phone numbers, and account health
+ */
+exports.getWhatsappWABAStatus = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+
+    const status = await metaEmbeddedSignup.getWABAStatus(companyId);
+
+    return res.status(200).json({
+      success: true,
+      data: status,
+      message: "WABA status retrieved successfully",
+    });
+  } catch (error) {
+    console.error("Error in getWhatsappWABAStatus:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * POST /api/messaging/whatsapp/refresh-waba-token
+ * Refresh expired Meta access token
+ * Meta tokens expire after 60 days, this exchanges for a new long-lived token
+ */
+exports.refreshWhatsappWABAToken = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+
+    const result = await metaEmbeddedSignup.refreshAccessToken(companyId);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        expiresAt: result.expiresAt,
+        expiresIn: result.expiresIn,
+      },
+      message: "Access token refreshed successfully",
+    });
+  } catch (error) {
+    console.error("Error in refreshWhatsappWABAToken:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error.message,

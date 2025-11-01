@@ -145,6 +145,51 @@ const whatsappSenderRegistrationSchema = Joi.object({
     }),
 });
 
+/**
+ * Validate WhatsApp Embedded Signup initialization request
+ */
+const whatsappEmbeddedSignupInitSchema = Joi.object({
+  businessName: Joi.string()
+    .min(2)
+    .max(100)
+    .required()
+    .messages({
+      "string.min": "Business name must be at least 2 characters",
+      "string.max": "Business name must not exceed 100 characters",
+      "any.required": "Business name is required",
+    }),
+  phoneNumber: Joi.string()
+    .pattern(/^\+[1-9]\d{6,14}$/)
+    .optional()
+    .messages({
+      "string.pattern.base": "Phone number must be in E.164 format (e.g., +15551234567)",
+    }),
+});
+
+/**
+ * Validate WhatsApp phone number linking request
+ */
+const whatsappPhoneLinkSchema = Joi.object({
+  phoneNumber: Joi.string()
+    .pattern(/^\+[1-9]\d{6,14}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "Phone number must be in E.164 format (e.g., +15551234567)",
+      "any.required": "Phone number is required",
+    }),
+});
+
+/**
+ * Validate WhatsApp phone number status request
+ */
+const whatsappPhoneStatusSchema = Joi.object({
+  phoneNumberId: Joi.string()
+    .required()
+    .messages({
+      "any.required": "Meta phone number ID is required",
+    }),
+});
+
 module.exports = {
   smsProvisionSchema,
   phoneNumberSearchSchema,
@@ -154,4 +199,7 @@ module.exports = {
   emailConfigSchema,
   testMessageSchema,
   whatsappSenderRegistrationSchema,
+  whatsappEmbeddedSignupInitSchema,
+  whatsappPhoneLinkSchema,
+  whatsappPhoneStatusSchema,
 };

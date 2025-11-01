@@ -153,6 +153,72 @@ const CompanySchema = new Schema(
       lastVerificationCheck: { type: Date }
     },
 
+    // WhatsApp Embedded Signup Configuration (Meta OAuth)
+    whatsappEmbeddedSignup: {
+      // WABA (WhatsApp Business Account) details
+      wabaId: {
+        type: String,
+        default: null,
+        index: true
+      },
+
+      // Meta OAuth tokens (ENCRYPTED)
+      accessToken: {
+        type: String,
+        default: null,
+        select: false  // Don't return by default
+      },
+      tokenExpiresAt: {
+        type: Date,
+        default: null
+      },
+
+      // Business details from Meta
+      businessId: {
+        type: String,
+        default: null
+      },
+      businessName: {
+        type: String,
+        default: null
+      },
+
+      // Phone numbers linked to WABA
+      phoneNumbers: [{
+        phoneNumber: { type: String },              // E.164: '+15551234567'
+        phoneNumberId: { type: String },            // Meta's phone number ID
+        displayName: { type: String },              // Formatted display name
+        verifiedName: { type: String },             // Business verified name
+        nameStatus: {                               // Name verification status
+          type: String,
+          enum: ['NONE', 'PENDING', 'APPROVED', 'REJECTED', 'EXPIRED'],
+          default: 'NONE'
+        },
+        codeVerificationStatus: {                   // OTP verification status
+          type: String,
+          enum: ['NOT_VERIFIED', 'VERIFIED'],
+          default: 'NOT_VERIFIED'
+        },
+        qualityRating: {                            // WhatsApp quality rating
+          type: String,
+          enum: ['GREEN', 'YELLOW', 'RED', 'UNKNOWN'],
+          default: 'UNKNOWN'
+        },
+        registeredAt: { type: Date }
+      }],
+
+      // Verification status
+      verificationStatus: {
+        type: String,
+        enum: ['pending', 'verified', 'rejected'],
+        default: 'pending'
+      },
+
+      // Timestamps
+      registeredAt: { type: Date },
+      lastSyncedAt: { type: Date }
+    },
+
     isActive: { type: Boolean, default: true },
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },

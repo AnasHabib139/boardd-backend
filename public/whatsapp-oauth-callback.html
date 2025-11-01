@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Setup - Boardd</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            padding: 60px 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 550px;
+            width: 100%;
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 30px;
+            background: #25D366;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: scaleIn 0.5s ease-out 0.2s both;
+        }
+
+        .error-icon {
+            background: #ef4444;
+        }
+
+        @keyframes scaleIn {
+            from {
+                transform: scale(0);
+            }
+            to {
+                transform: scale(1);
+            }
+        }
+
+        .success-icon svg {
+            width: 40px;
+            height: 40px;
+            stroke: white;
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+        }
+
+        h1 {
+            font-size: 28px;
+            color: #1f2937;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+
+        .whatsapp-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #166534;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .error-badge {
+            background: #fef2f2;
+            border-color: #fecaca;
+            color: #991b1b;
+        }
+
+        p {
+            color: #6b7280;
+            line-height: 1.6;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .info-box {
+            background: #f0fdf4;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            border-left: 4px solid #25D366;
+        }
+
+        .error-box {
+            background: #fef2f2;
+            border-left-color: #ef4444;
+        }
+
+        .info-box p {
+            margin: 0;
+            font-size: 14px;
+            color: #374151;
+            text-align: left;
+        }
+
+        .info-box strong {
+            color: #166534;
+        }
+
+        .error-box strong {
+            color: #991b1b;
+        }
+
+        .button {
+            display: inline-block;
+            padding: 14px 32px;
+            background: #25D366;
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+        }
+
+        .button:hover {
+            background: #1fb855;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(37, 211, 102, 0.3);
+        }
+
+        .button-secondary {
+            background: #6b7280;
+            margin-left: 10px;
+        }
+
+        .button-secondary:hover {
+            background: #4b5563;
+            box-shadow: 0 10px 20px rgba(107, 114, 128, 0.3);
+        }
+
+        .details {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            font-size: 14px;
+        }
+
+        .detail-label {
+            color: #9ca3af;
+            font-weight: 500;
+        }
+
+        .detail-value {
+            color: #374151;
+            font-weight: 600;
+            word-break: break-all;
+            text-align: right;
+            max-width: 60%;
+        }
+
+        .spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #25D366;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            color: #6b7280;
+            font-size: 16px;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 40px 30px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .success-icon {
+                width: 70px;
+                height: 70px;
+            }
+
+            .success-icon svg {
+                width: 35px;
+                height: 35px;
+            }
+
+            .button {
+                display: block;
+                width: 100%;
+                margin-bottom: 10px;
+            }
+
+            .button-secondary {
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="content">
+        <!-- Content will be dynamically inserted based on success/error -->
+    </div>
+
+    <script>
+        // Get URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const success = urlParams.get('success') === 'true';
+        const error = urlParams.get('error');
+        const wabaId = urlParams.get('wabaId');
+        const businessName = urlParams.get('businessName');
+
+        const content = document.getElementById('content');
+
+        if (success) {
+            // Success state
+            content.innerHTML = `
+                <div class="success-icon">
+                    <svg viewBox="0 0 24 24">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                </div>
+
+                <h1>WhatsApp Connected!</h1>
+
+                <div class="whatsapp-badge">
+                    WhatsApp Business Account Registered
+                </div>
+
+                <p>
+                    Your WhatsApp Business Account has been successfully connected to Boardd.
+                    You can now link phone numbers and create message templates.
+                </p>
+
+                <div class="info-box">
+                    <p>
+                        <strong>Next Steps:</strong><br>
+                        • Link your phone number to start messaging<br>
+                        • Create WhatsApp message templates<br>
+                        • Configure inbound message handling<br>
+                        • Test your WhatsApp integration
+                    </p>
+                </div>
+
+                <a href="javascript:window.close();" class="button">Close & Continue</a>
+
+                <div class="details">
+                    <div class="detail-item">
+                        <span class="detail-label">Status</span>
+                        <span class="detail-value" style="color: #25D366;">✓ Connected</span>
+                    </div>
+                    ${businessName ? `
+                    <div class="detail-item">
+                        <span class="detail-label">Business Name</span>
+                        <span class="detail-value">${decodeURIComponent(businessName)}</span>
+                    </div>
+                    ` : ''}
+                    ${wabaId ? `
+                    <div class="detail-item">
+                        <span class="detail-label">WABA ID</span>
+                        <span class="detail-value" style="font-family: monospace; font-size: 12px;">${wabaId}</span>
+                    </div>
+                    ` : ''}
+                    <div class="detail-item">
+                        <span class="detail-label">Connected At</span>
+                        <span class="detail-value" id="timestamp">Just now</span>
+                    </div>
+                </div>
+            `;
+
+            // Set timestamp
+            const now = new Date();
+            document.getElementById('timestamp').textContent = now.toLocaleString();
+
+            // Auto-close after 8 seconds (optional)
+            setTimeout(() => {
+                window.close();
+            }, 8000);
+
+        } else if (error) {
+            // Error state
+            content.innerHTML = `
+                <div class="success-icon error-icon">
+                    <svg viewBox="0 0 24 24">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </div>
+
+                <h1>Connection Failed</h1>
+
+                <div class="whatsapp-badge error-badge">
+                    WhatsApp Setup Error
+                </div>
+
+                <p>
+                    We couldn't complete the WhatsApp Business Account setup.
+                    Please try again or contact support if the issue persists.
+                </p>
+
+                <div class="info-box error-box">
+                    <p>
+                        <strong>Error Details:</strong><br>
+                        ${decodeURIComponent(error)}
+                    </p>
+                </div>
+
+                <a href="javascript:location.reload();" class="button">Try Again</a>
+                <a href="javascript:window.close();" class="button button-secondary">Close Window</a>
+
+                <div class="details">
+                    <div class="detail-item">
+                        <span class="detail-label">Status</span>
+                        <span class="detail-value" style="color: #ef4444;">✗ Failed</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Time</span>
+                        <span class="detail-value" id="errorTime">Just now</span>
+                    </div>
+                </div>
+            `;
+
+            // Set error timestamp
+            const now = new Date();
+            document.getElementById('errorTime').textContent = now.toLocaleString();
+
+        } else {
+            // Loading state (no params yet)
+            content.innerHTML = `
+                <div class="spinner"></div>
+                <h1>Processing...</h1>
+                <p class="loading-text">Please wait while we complete your WhatsApp Business Account setup.</p>
+            `;
+        }
+    </script>
+</body>
+</html>
