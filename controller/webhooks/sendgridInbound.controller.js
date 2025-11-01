@@ -32,11 +32,6 @@ const ChatConversation = mongooseModel("ChatConversation");
  */
 exports.handleInboundEmail = async (req, res, next) => {
   try {
-    console.log("[Inbound Email] ====== NEW INBOUND EMAIL WEBHOOK ======");
-    console.log("[Inbound Email] Request headers:", req.headers);
-    console.log("[Inbound Email] Request body keys:", Object.keys(req.body));
-    console.log("[Inbound Email] Full body:", req.body);
-
     const {
       from, // Sender email (Name <email@example.com>)
       to, // Recipient (chat+<conversationId>@domain.com)
@@ -46,17 +41,9 @@ exports.handleInboundEmail = async (req, res, next) => {
       envelope, // JSON envelope data
     } = req.body;
 
-    console.log("[Inbound Email] Parsed fields:", {
-      from: from?.substring(0, 100),
-      to: to?.substring(0, 100),
-      subject: subject?.substring(0, 100),
-      hasText: !!text,
-      hasHtml: !!html,
-    });
-
     // Validate required params
     if (!from || !to) {
-      console.warn("[Inbound Email] ❌ Invalid: missing from or to");
+      console.warn("[Inbound Email] Missing from or to");
       return res.status(200).send("OK");
     }
 
@@ -64,51 +51,34 @@ exports.handleInboundEmail = async (req, res, next) => {
     const fromEmail = extractEmailAddress(from);
 
     if (!fromEmail) {
-      console.warn("[Inbound Email] ❌ Could not extract email address from:", from);
+      console.warn("[Inbound Email] Could not extract email address");
       return res.status(200).send("OK");
     }
-
-    console.log("[Inbound Email] Extracted sender email:", fromEmail);
 
     // Try to find conversation by conversationId in reply-to address
     // Format: chat+<conversationId>@domain.com
     let conversation = null;
 
-    console.log("[Inbound Email] Looking for conversationId in 'to' field:", to);
     const conversationIdMatch = to.match(/chat\+([a-f0-9]{24})@/i);
     if (conversationIdMatch) {
       const conversationId = conversationIdMatch[1];
-      console.log("[Inbound Email] Found conversationId pattern:", conversationId);
       conversation = await ChatConversation.findById(conversationId);
 
-      if (conversation && conversation.type === "client") {
-        console.log(`[Inbound Email] ✓ Found conversation via reply-to: ${conversationId}`);
-      } else {
-        console.log(`[Inbound Email] ❌ Conversation ${conversationId} not found or not client type`);
+      if (conversation && conversation.type !== "client") {
         conversation = null;
       }
-    } else {
-      console.log("[Inbound Email] No conversationId pattern found in 'to' field");
     }
 
     // Fallback: Try to find by matching sender email in externalContacts
-    // Note: Email webhooks don't have Twilio signature verification,
-    // so we rely on reply-to or externalContacts matching
     if (!conversation) {
-      console.log("[Inbound Email] Trying to find conversation via externalContacts.emails:", fromEmail);
       conversation = await ChatConversation.findOne({
         type: "client",
         "externalContacts.emails": fromEmail,
       });
-
-      if (conversation) {
-        console.log(`[Inbound Email] ✓ Found conversation via externalContacts: ${conversation._id}`);
-      }
     }
 
     if (!conversation) {
-      console.warn(`[Inbound Email] ❌ No client conversation found for email from ${fromEmail}`);
-      // TODO: Option to create new conversation or send bounce reply
+      console.warn(`[Inbound Email] No conversation found for ${fromEmail}`);
       return res.status(200).send("OK");
     }
 
@@ -116,13 +86,12 @@ exports.handleInboundEmail = async (req, res, next) => {
     const bodyText = text || stripHtmlSimple(html) || "";
 
     if (!bodyText.trim()) {
-      console.warn("[Inbound Email] ❌ Empty email body, skipping");
+      console.warn("[Inbound Email] Empty email body");
       return res.status(200).send("OK");
     }
 
     // Clean email body (remove quoted replies, signatures, etc.)
     const cleanedBody = cleanEmailBody(bodyText);
-    console.log("[Inbound Email] Cleaned body preview:", cleanedBody.substring(0, 100));
 
     // Create TipTap JSON content from plain text
     const contentDoc = {
@@ -144,11 +113,9 @@ exports.handleInboundEmail = async (req, res, next) => {
     const clientUserId = conversation.participantIds?.[0];
 
     if (!clientUserId) {
-      console.warn(`[Inbound Email] ❌ No participants found in conversation ${conversation._id}`);
+      console.warn(`[Inbound Email] No participants in conversation ${conversation._id}`);
       return res.status(200).send("OK");
     }
-
-    console.log("[Inbound Email] Creating message with clientUserId:", clientUserId);
 
     // Create inbound message
     const messageData = {
@@ -178,14 +145,10 @@ exports.handleInboundEmail = async (req, res, next) => {
     const { createChatMessage } = require("../../models/chatMessageModel");
     const message = await createChatMessage(messageData);
 
-    console.log(`[Inbound Email] ✓ Message created: ${message._id}`);
-
     // Update conversation last message
     const { updateLastMessage } = require("../../models/chatConversationModel");
     const preview = subject ? `${subject}: ${cleanedBody}` : cleanedBody;
     await updateLastMessage(conversation._id, preview, new Date());
-
-    console.log(`[Inbound Email] ✓ Updated conversation last message`);
 
     // Update lastClientInboundAt for WhatsApp 24h window tracking
     // (email replies reset the window for all channels)
@@ -204,8 +167,6 @@ exports.handleInboundEmail = async (req, res, next) => {
     // Emit socket event to notify team members
     const io = req.app.get("io");
     if (io) {
-      console.log(`[Inbound Email] Emitting socket events to company-${conversation.companyId}`);
-
       // For inbound messages, format author to show contact info + channel
       // This matches the API query logic in chatQueries.js
       const populatedMessage = {
@@ -222,7 +183,6 @@ exports.handleInboundEmail = async (req, res, next) => {
       io.to(`conversation:${conversation._id}`).emit("chat:message:new", {
         message: populatedMessage,
       });
-      console.log(`[Inbound Email] ✓ Emitted chat:message:new to conversation:${conversation._id}`);
 
       // Emit notification to company room
       io.to(`company-${conversation.companyId}`).emit("chat:notification", {
@@ -239,14 +199,7 @@ exports.handleInboundEmail = async (req, res, next) => {
         channel: "email",
         timestamp: new Date(),
       });
-      console.log(`[Inbound Email] ✓ Emitted chat:notification to company-${conversation.companyId}`);
-    } else {
-      console.warn(`[Inbound Email] ⚠️  Socket.io instance not available`);
     }
-
-    console.log(
-      `[Inbound Email] ✓✓✓ SUCCESS: message ${message._id} in conversation ${conversation._id}`
-    );
 
     // Return 200 to SendGrid
     return res.status(200).send("OK");

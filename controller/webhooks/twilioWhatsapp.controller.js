@@ -143,19 +143,9 @@ exports.handleInboundWhatsapp = async (req, res, next) => {
     const company = req.twilioCompany;
     const companyId = company?._id || null;
 
-    console.log("Inbound WhatsApp received:", {
-      From,
-      To,
-      Body: Body?.substring(0, 100),
-      MessageSid,
-      NumMedia,
-      ProfileName,
-      companyId: companyId?.toString() || "legacy",
-    });
-
     // Validate required params
     if (!From || !Body) {
-      console.warn("Invalid inbound WhatsApp: missing From or Body");
+      console.warn("[Inbound WhatsApp] Missing From or Body");
       return res.status(200).send("OK");
     }
 
@@ -177,8 +167,7 @@ exports.handleInboundWhatsapp = async (req, res, next) => {
     const conversation = await ChatConversation.findOne(conversationQuery);
 
     if (!conversation) {
-      console.warn(`No client conversation found for WhatsApp from ${whatsappNumber}`);
-      // TODO: Option to create new conversation or send auto-reply
+      console.warn(`[Inbound WhatsApp] No conversation found for ${whatsappNumber}`);
       return res.status(200).send("OK");
     }
 

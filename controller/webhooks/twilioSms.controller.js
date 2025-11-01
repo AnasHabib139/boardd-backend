@@ -129,8 +129,6 @@ exports.handleSmsStatusCallback = async (req, res, next) => {
  */
 exports.handleInboundSms = async (req, res, next) => {
   try {
-    console.log("[Inbound SMS] ====== NEW INBOUND SMS WEBHOOK ======");
-
     const {
       From, // Client's phone number (E.164)
       To, // Our Twilio number
@@ -143,20 +141,9 @@ exports.handleInboundSms = async (req, res, next) => {
     const company = req.twilioCompany;
     const companyId = company?._id || null;
 
-    console.log("[Inbound SMS] Webhook data:", {
-      From,
-      To,
-      Body: Body?.substring(0, 100),
-      MessageSid,
-      NumMedia,
-      companyId: companyId?.toString() || "legacy",
-      hasCompany: !!company,
-      fullBody: req.body
-    });
-
     // Validate required params
     if (!From || !Body) {
-      console.error("[Inbound SMS] ❌ Invalid webhook: missing From or Body");
+      console.error("[Inbound SMS] Missing From or Body");
       return res.status(200).send("OK");
     }
 
@@ -171,31 +158,13 @@ exports.handleInboundSms = async (req, res, next) => {
       conversationQuery.companyId = companyId;
     }
 
-    console.log("[Inbound SMS] Looking up conversation with query:", conversationQuery);
-
     // Find conversation by matching external phone number
     const conversation = await ChatConversation.findOne(conversationQuery);
 
     if (!conversation) {
-      console.error(`[Inbound SMS] ❌ No client conversation found for SMS from ${From}`);
-      console.error(`[Inbound SMS] Query used:`, conversationQuery);
-
-      // Debug: Check if any conversations exist with this phone in other fields
-      const anyConversation = await ChatConversation.findOne({ type: "client" }).select("externalContacts clientContact");
-      if (anyConversation) {
-        console.log("[Inbound SMS] Sample conversation externalContacts:", anyConversation.externalContacts);
-        console.log("[Inbound SMS] Sample conversation clientContact:", anyConversation.clientContact);
-      }
-
+      console.warn(`[Inbound SMS] No conversation found for ${From}`);
       return res.status(200).send("OK");
     }
-
-    console.log("[Inbound SMS] ✓ Conversation found:", {
-      conversationId: conversation._id,
-      companyId: conversation.companyId,
-      participantCount: conversation.participantIds?.length,
-      externalContacts: conversation.externalContacts
-    });
 
     // Create TipTap JSON content from plain text
     const contentDoc = {
@@ -261,8 +230,6 @@ exports.handleInboundSms = async (req, res, next) => {
 
     // Emit socket event to notify team members
     const io = req.app.get("io");
-    console.log("[Inbound SMS] Socket.io available:", !!io);
-
     if (io) {
       // For inbound messages, format author to show contact info + channel
       // This matches the API query logic in chatQueries.js
@@ -277,20 +244,12 @@ exports.handleInboundSms = async (req, res, next) => {
       };
 
       // Broadcast to conversation room
-      const conversationRoom = `conversation:${conversation._id}`;
-      console.log(`[Inbound SMS] Emitting chat:message:new to room: ${conversationRoom}`);
-
-      io.to(conversationRoom).emit("chat:message:new", {
+      io.to(`conversation:${conversation._id}`).emit("chat:message:new", {
         message: populatedMessage,
       });
 
-      console.log("[Inbound SMS] ✓ chat:message:new emitted");
-
-      // Emit notification to company room (for unread badges, etc.)
-      const companyRoom = `company-${conversation.companyId}`;
-      console.log(`[Inbound SMS] Emitting chat:notification to room: ${companyRoom}`);
-
-      io.to(companyRoom).emit("chat:notification", {
+      // Emit notification to company room
+      io.to(`company-${conversation.companyId}`).emit("chat:notification", {
         type: "CHAT_MESSAGE",
         conversationId: conversation._id,
         messageId: message._id,
@@ -304,15 +263,7 @@ exports.handleInboundSms = async (req, res, next) => {
         channel: "sms",
         timestamp: new Date(),
       });
-
-      console.log("[Inbound SMS] ✓ chat:notification emitted");
-    } else {
-      console.error("[Inbound SMS] ❌ Socket.io not available - events not emitted!");
     }
-
-    console.log(
-      `[Inbound SMS] ✓✓✓ Inbound SMS processed successfully: message ${message._id} in conversation ${conversation._id}, lastClientInboundAt updated`
-    );
 
     // Return TwiML response (empty response = no auto-reply)
     return res.status(200).type("text/xml").send("<Response></Response>");
