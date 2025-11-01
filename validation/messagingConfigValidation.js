@@ -117,6 +117,12 @@ const emailConfigSchema = Joi.object({
     }),
   fromName: Joi.string().min(1).max(100).required(),
   replyTo: Joi.string().email().optional(),
+  inboundSubdomain: Joi.string()
+    .pattern(/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i)
+    .optional()
+    .messages({
+      "string.pattern.base": "Inbound subdomain must be a valid domain (e.g., inbound.company.com)",
+    }),
 });
 
 /**

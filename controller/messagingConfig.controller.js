@@ -445,7 +445,8 @@ exports.configureEmail = async (req, res, next) => {
       companyId,
       value?.fromEmail,
       value?.fromName,
-      value?.replyTo
+      value?.replyTo,
+      value?.inboundSubdomain
     );
 
     return res.status(200).json({
