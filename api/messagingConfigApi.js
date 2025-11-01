@@ -244,6 +244,47 @@ class MessagingConfigApi {
       controller.sendTestEmail
     );
 
+    // ==================== INBOUND EMAIL CONFIGURATION ====================
+
+    /**
+     * POST /api/messaging/email/register-inbound
+     * Register inbound parse webhook with SendGrid
+     * Enables receiving email replies via company's custom subdomain
+     * Required: company admin
+     */
+    router.post(
+      "/email/register-inbound",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      requireCompanyAdmin,
+      controller.registerInboundParse
+    );
+
+    /**
+     * GET /api/messaging/email/verify-inbound-mx
+     * Verify MX record for inbound subdomain
+     * Checks DNS to ensure MX record is properly configured
+     * Required: company access
+     */
+    router.get(
+      "/email/verify-inbound-mx",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      requireCompanyAccess,
+      controller.verifyInboundMxRecord
+    );
+
+    /**
+     * GET /api/messaging/email/inbound-status
+     * Get inbound email configuration status
+     * Returns registration status and MX record verification
+     * Required: company access
+     */
+    router.get(
+      "/email/inbound-status",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      requireCompanyAccess,
+      controller.getInboundStatus
+    );
+
     // ==================== OVERALL STATUS ====================
 
     /**

@@ -206,6 +206,287 @@ exports.configureSender = async (companyId, fromEmail, fromName, replyTo, inboun
 };
 
 /**
+ * Register inbound parse webhook with SendGrid
+ * This tells SendGrid to forward emails from inboundSubdomain to our webhook
+ *
+ * Step-by-step:
+ * 1. Company adds MX record: inbound.company.com → mx.sendgrid.net (Priority 10)
+ * 2. Company calls this API to register the subdomain with SendGrid
+ * 3. SendGrid forwards all emails to our webhook URL
+ *
+ * @param {String} companyId - Company ID
+ * @returns {Promise<Object>} { success, parseId, status, warning }
+ */
+exports.registerInboundParse = async (companyId) => {
+  try {
+    const company = await Company.findById(companyId);
+    if (!company) {
+      throw new Error("Company not found");
+    }
+
+    const inboundSubdomain = company.emailConfig?.sendgrid?.inboundSubdomain;
+
+    if (!inboundSubdomain) {
+      throw new Error("No inbound subdomain configured. Please configure email first.");
+    }
+
+    // Check if already registered
+    if (company.emailConfig?.sendgrid?.inboundParseId) {
+      console.log(`Inbound parse already registered for ${inboundSubdomain}`);
+      return {
+        success: true,
+        alreadyRegistered: true,
+        parseId: company.emailConfig.sendgrid.inboundParseId,
+        inboundSubdomain,
+        message: "Inbound email is already configured"
+      };
+    }
+
+    const sgClient = getApiClient();
+
+    // Webhook URL where SendGrid will POST inbound emails
+    const webhookUrl = process.env.BACKEND_URL
+      ? `${process.env.BACKEND_URL}/api/webhooks/email/sendgrid`
+      : "https://boarddd.ddns.net/api/webhooks/email/sendgrid";
+
+    console.log(`Registering inbound parse: ${inboundSubdomain} → ${webhookUrl}`);
+
+    // Register inbound parse with SendGrid
+    const [response, body] = await sgClient.request({
+      method: "POST",
+      url: "/v3/user/webhooks/parse/settings",
+      body: {
+        hostname: inboundSubdomain,
+        url: webhookUrl,
+        spam_check: true,
+        send_raw: false
+      }
+    });
+
+    console.log(`✓ Inbound parse registered successfully:`, body);
+
+    // Save inboundParseId to company
+    await Company.findByIdAndUpdate(companyId, {
+      $set: {
+        "emailConfig.sendgrid.inboundParseId": body.id || "configured"
+      }
+    });
+
+    // Verify MX record (optional - doesn't block registration)
+    const mxWarning = await checkMxRecord(inboundSubdomain);
+
+    return {
+      success: true,
+      parseId: body.id || "configured",
+      inboundSubdomain,
+      webhookUrl,
+      message: "Inbound email configured successfully! Clients can now reply to emails.",
+      mxRecordStatus: mxWarning ? "not_verified" : "verified",
+      warning: mxWarning
+    };
+  } catch (error) {
+    console.error("Error registering inbound parse:", error);
+
+    // SendGrid returns 400 if subdomain already registered (by another company or duplicate)
+    if (error.response?.statusCode === 400) {
+      const errorBody = error.response?.body;
+
+      // Check if it's a duplicate registration error
+      if (errorBody?.errors?.[0]?.message?.includes("already exists")) {
+        throw new Error(
+          `The subdomain "${error.response.body.errors[0].field}" is already registered in SendGrid. ` +
+          `Please use a different inbound subdomain or contact support if you believe this is an error.`
+        );
+      }
+    }
+
+    throw new Error(`Failed to register inbound email: ${error.message}`);
+  }
+};
+
+/**
+ * Check MX record for inbound subdomain using DNS lookup
+ * Returns warning message if MX record not found or incorrect
+ *
+ * @param {String} hostname - Inbound subdomain (e.g., "inbound.company.com")
+ * @returns {Promise<String|null>} Warning message or null if OK
+ */
+async function checkMxRecord(hostname) {
+  try {
+    const dns = require("dns").promises;
+
+    const mxRecords = await dns.resolveMx(hostname);
+
+    if (!mxRecords || mxRecords.length === 0) {
+      return `⚠️ MX record not found for ${hostname}. Add MX record: ${hostname} → mx.sendgrid.net (Priority 10)`;
+    }
+
+    // Check if mx.sendgrid.net is in the MX records
+    const hasSendGridMx = mxRecords.some(record =>
+      record.exchange.toLowerCase().includes("sendgrid")
+    );
+
+    if (!hasSendGridMx) {
+      return `⚠️ MX record found but doesn't point to SendGrid. Please add: ${hostname} → mx.sendgrid.net (Priority 10)`;
+    }
+
+    console.log(`✓ MX record verified for ${hostname}:`, mxRecords);
+    return null; // All good
+  } catch (error) {
+    console.warn(`Could not verify MX record for ${hostname}:`, error.message);
+    return `⚠️ Could not verify MX record. Please ensure you added: ${hostname} → mx.sendgrid.net (Priority 10)`;
+  }
+}
+
+/**
+ * Verify inbound MX record via DNS lookup
+ * Checks if MX record is properly configured
+ *
+ * @param {String} companyId - Company ID
+ * @returns {Promise<Object>} { success, verified, mxRecords }
+ */
+exports.verifyInboundMxRecord = async (companyId) => {
+  try {
+    const company = await Company.findById(companyId);
+    if (!company) {
+      throw new Error("Company not found");
+    }
+
+    const inboundSubdomain = company.emailConfig?.sendgrid?.inboundSubdomain;
+
+    if (!inboundSubdomain) {
+      throw new Error("No inbound subdomain configured");
+    }
+
+    const dns = require("dns").promises;
+
+    try {
+      const mxRecords = await dns.resolveMx(inboundSubdomain);
+
+      // Check if mx.sendgrid.net is in the records
+      const hasSendGridMx = mxRecords.some(record =>
+        record.exchange.toLowerCase().includes("sendgrid")
+      );
+
+      return {
+        success: true,
+        verified: hasSendGridMx,
+        inboundSubdomain,
+        mxRecords: mxRecords.map(r => ({
+          exchange: r.exchange,
+          priority: r.priority
+        })),
+        message: hasSendGridMx
+          ? "MX record verified! Inbound email is ready."
+          : "MX record found but doesn't point to SendGrid. Please update it.",
+        expectedRecord: {
+          type: "MX",
+          host: inboundSubdomain,
+          value: "mx.sendgrid.net",
+          priority: 10
+        }
+      };
+    } catch (dnsError) {
+      return {
+        success: true,
+        verified: false,
+        inboundSubdomain,
+        mxRecords: [],
+        message: "MX record not found. Please add it to your DNS settings.",
+        error: dnsError.code,
+        expectedRecord: {
+          type: "MX",
+          host: inboundSubdomain,
+          value: "mx.sendgrid.net",
+          priority: 10
+        }
+      };
+    }
+  } catch (error) {
+    console.error("Error verifying MX record:", error);
+    throw new Error(`Failed to verify MX record: ${error.message}`);
+  }
+};
+
+/**
+ * Get inbound email configuration status
+ *
+ * @param {String} companyId - Company ID
+ * @returns {Promise<Object>} { success, configured, status, details }
+ */
+exports.getInboundStatus = async (companyId) => {
+  try {
+    const company = await Company.findById(companyId);
+    if (!company) {
+      throw new Error("Company not found");
+    }
+
+    const inboundSubdomain = company.emailConfig?.sendgrid?.inboundSubdomain;
+    const inboundParseId = company.emailConfig?.sendgrid?.inboundParseId;
+
+    if (!inboundSubdomain) {
+      return {
+        success: true,
+        configured: false,
+        status: "not_configured",
+        message: "Inbound email not configured. Please configure email first.",
+        nextStep: "Add inboundSubdomain when calling POST /api/messaging/email/configure"
+      };
+    }
+
+    if (!inboundParseId) {
+      // Subdomain configured but not registered with SendGrid
+      return {
+        success: true,
+        configured: false,
+        status: "pending_registration",
+        inboundSubdomain,
+        message: "Inbound subdomain configured but not registered with SendGrid",
+        nextStep: "Call POST /api/messaging/email/register-inbound to activate"
+      };
+    }
+
+    // Check MX record
+    const dns = require("dns").promises;
+    let mxVerified = false;
+    let mxRecords = [];
+
+    try {
+      const records = await dns.resolveMx(inboundSubdomain);
+      mxRecords = records.map(r => ({ exchange: r.exchange, priority: r.priority }));
+      mxVerified = records.some(r => r.exchange.toLowerCase().includes("sendgrid"));
+    } catch (err) {
+      console.log(`MX record not found for ${inboundSubdomain}`);
+    }
+
+    return {
+      success: true,
+      configured: true,
+      status: mxVerified ? "active" : "pending_mx_record",
+      inboundSubdomain,
+      parseId: inboundParseId,
+      webhookUrl: process.env.BACKEND_URL
+        ? `${process.env.BACKEND_URL}/api/webhooks/email/sendgrid`
+        : "https://boarddd.ddns.net/api/webhooks/email/sendgrid",
+      mxRecordVerified: mxVerified,
+      mxRecords,
+      message: mxVerified
+        ? "Inbound email is fully configured and ready!"
+        : "Inbound registered but MX record not detected. Add MX record to complete setup.",
+      expectedMxRecord: {
+        type: "MX",
+        host: inboundSubdomain,
+        value: "mx.sendgrid.net",
+        priority: 10
+      }
+    };
+  } catch (error) {
+    console.error("Error getting inbound status:", error);
+    throw new Error(`Failed to get inbound status: ${error.message}`);
+  }
+};
+
+/**
  * Check email verification status
  * Polls SendGrid to see if verification link was clicked
  *

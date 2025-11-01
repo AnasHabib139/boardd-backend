@@ -570,6 +570,81 @@ exports.sendTestEmail = async (req, res, next) => {
   }
 };
 
+// ==================== INBOUND EMAIL ENDPOINTS ====================
+
+/**
+ * POST /api/messaging/email/register-inbound
+ * Register inbound parse webhook with SendGrid
+ * Allows company to receive email replies via their custom subdomain
+ */
+exports.registerInboundParse = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+
+    const result = await emailProvisioning.registerInboundParse(companyId);
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+      message: result.message || "Inbound email configured successfully",
+    });
+  } catch (error) {
+    console.error("Error in registerInboundParse:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/messaging/email/verify-inbound-mx
+ * Verify MX record for inbound subdomain
+ */
+exports.verifyInboundMxRecord = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+
+    const result = await emailProvisioning.verifyInboundMxRecord(companyId);
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+      message: result.message || "MX record verification completed",
+    });
+  } catch (error) {
+    console.error("Error in verifyInboundMxRecord:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/messaging/email/inbound-status
+ * Get inbound email configuration status
+ */
+exports.getInboundStatus = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+
+    const result = await emailProvisioning.getInboundStatus(companyId);
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+      message: result.message || "Inbound status retrieved successfully",
+    });
+  } catch (error) {
+    console.error("Error in getInboundStatus:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
 // ==================== STATUS ENDPOINTS ====================
 
 /**
