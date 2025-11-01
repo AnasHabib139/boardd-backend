@@ -727,17 +727,27 @@ exports.registerWhatsappSender = async (companyId, phoneNumber) => {
       throw new Error(`Phone number ${phoneNumber} not found in Twilio account`);
     }
 
-    // Register sender via Twilio Messaging Services API
-    // https://www.twilio.com/docs/messaging/api/sender-resource
-    const sender = await subaccountClient.messaging.v1
+    // Check if number is already added to messaging service
+    const servicePhoneNumbers = await subaccountClient.messaging.v1
       .services(company.twilioConfig.messagingServiceSid)
-      .senders
-      .create({
-        phoneNumber: phoneNumber,
-        messagingServiceSid: company.twilioConfig.messagingServiceSid
-      });
+      .phoneNumbers
+      .list();
 
-    console.log(`✓ WhatsApp sender registered: ${sender.sid}`);
+    const alreadyAdded = servicePhoneNumbers.find(spn => spn.phoneNumber === phoneNumber);
+
+    let phoneNumberSid = number.sid;
+
+    if (!alreadyAdded) {
+      // Add phone number to messaging service (this is the "sender registration")
+      const addedNumber = await subaccountClient.messaging.v1
+        .services(company.twilioConfig.messagingServiceSid)
+        .phoneNumbers
+        .create({ phoneNumberSid: phoneNumberSid });
+
+      console.log(`✓ WhatsApp sender registered (added to messaging service): ${addedNumber.sid}`);
+    } else {
+      console.log(`✓ WhatsApp sender already registered in messaging service`);
+    }
 
     // Update company database with sender registration
     await Company.findOneAndUpdate(
@@ -747,7 +757,7 @@ exports.registerWhatsappSender = async (companyId, phoneNumber) => {
       },
       {
         $set: {
-          "twilioConfig.whatsappSenders.$.senderSid": sender.sid,
+          "twilioConfig.whatsappSenders.$.senderSid": phoneNumberSid,
           "twilioConfig.whatsappSenders.$.status": "active",
           "twilioConfig.whatsappSenders.$.registeredAt": new Date()
         }
@@ -758,8 +768,8 @@ exports.registerWhatsappSender = async (companyId, phoneNumber) => {
 
     return {
       success: true,
-      senderSid: sender.sid,
-      phoneNumber: sender.phoneNumber,
+      senderSid: phoneNumberSid,
+      phoneNumber: phoneNumber,
       status: "active",
       message: "WhatsApp sender registered successfully. You can now create templates."
     };
