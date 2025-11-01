@@ -569,10 +569,33 @@ exports.initWhatsappEmbeddedSignup = async (req, res, next) => {
 /**
  * GET /api/messaging/whatsapp/embedded-signup/callback
  * Handle OAuth callback from Meta after user authorizes
+ * ALSO handles Meta webhook verification when adding callback URL in dashboard
  * Exchanges authorization code for access token and stores WABA details
  */
 exports.whatsappEmbeddedSignupCallback = async (req, res, next) => {
   try {
+    // ==================== WEBHOOK VERIFICATION ====================
+    // Meta sends a GET request with hub.* parameters to verify the webhook URL
+    // This happens when you add the callback URL in Meta App Dashboard
+    const { "hub.mode": hubMode, "hub.verify_token": hubVerifyToken, "hub.challenge": hubChallenge } = req.query;
+
+    if (hubMode && hubVerifyToken) {
+      // This is a webhook verification request from Meta
+      const WEBHOOK_VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN || "boardd_webhook_verify_token_2024";
+
+      if (hubMode === "subscribe" && hubVerifyToken === WEBHOOK_VERIFY_TOKEN) {
+        // Verification successful - return the challenge
+        console.log("✓ Meta webhook verified successfully");
+        return res.status(200).send(hubChallenge);
+      } else {
+        // Verification failed
+        console.error("✗ Webhook verification failed. Invalid verify token or mode.");
+        return res.status(403).send("Forbidden");
+      }
+    }
+
+    // ==================== OAUTH CALLBACK ====================
+    // If not webhook verification, proceed with OAuth callback logic
     const { code, state, error: oauthError, error_description } = req.query;
 
     // Handle OAuth errors
