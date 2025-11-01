@@ -206,19 +206,16 @@ exports.handleInboundEmail = async (req, res, next) => {
     if (io) {
       console.log(`[Inbound Email] Emitting socket events to company-${conversation.companyId}`);
 
-      const { findUser } = require("../../models/userModel");
-      const author = await findUser({ _id: clientUserId });
-
+      // For inbound messages, format author to show contact info + channel
+      // This matches the API query logic in chatQueries.js
       const populatedMessage = {
         ...message.toObject(),
-        author: author
-          ? {
-              _id: author._id,
-              name: author.name,
-              email: author.email,
-              image: author.image,
-            }
-          : null,
+        author: {
+          _id: null,
+          name: `${message.senderContactInfo} (${message.senderChannel.toUpperCase()})`,
+          email: message.senderChannel === "email" ? message.senderContactInfo : null,
+          image: null
+        }
       };
 
       // Broadcast to conversation room
@@ -233,9 +230,9 @@ exports.handleInboundEmail = async (req, res, next) => {
         conversationId: conversation._id,
         messageId: message._id,
         fromUser: {
-          _id: author?._id,
-          name: conversation.clientContact?.name || extractNameFromEmail(from) || "Client",
-          image: author?.image || null,
+          _id: null,
+          name: conversation.clientContact?.name || extractNameFromEmail(from) || `${fromEmail} (EMAIL)`,
+          image: null,
         },
         messagePreview: cleanedBody.substring(0, 100),
         conversationType: "client",

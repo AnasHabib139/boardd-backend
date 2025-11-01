@@ -264,25 +264,16 @@ exports.handleInboundSms = async (req, res, next) => {
     console.log("[Inbound SMS] Socket.io available:", !!io);
 
     if (io) {
-      const { findUser } = require("../../models/userModel");
-      const author = await findUser({ _id: clientUserId });
-
-      console.log("[Inbound SMS] Author user found:", {
-        authorId: clientUserId,
-        hasAuthor: !!author,
-        authorName: author?.name
-      });
-
+      // For inbound messages, format author to show contact info + channel
+      // This matches the API query logic in chatQueries.js
       const populatedMessage = {
         ...message.toObject(),
-        author: author
-          ? {
-              _id: author._id,
-              name: author.name,
-              email: author.email,
-              image: author.image,
-            }
-          : null,
+        author: {
+          _id: null,
+          name: `${message.senderContactInfo} (${message.senderChannel.toUpperCase()})`,
+          email: message.senderChannel === "email" ? message.senderContactInfo : null,
+          image: null
+        }
       };
 
       // Broadcast to conversation room
@@ -304,9 +295,9 @@ exports.handleInboundSms = async (req, res, next) => {
         conversationId: conversation._id,
         messageId: message._id,
         fromUser: {
-          _id: author?._id,
-          name: conversation.clientContact?.name || "Client",
-          image: author?.image || null,
+          _id: null,
+          name: conversation.clientContact?.name || `${From} (SMS)`,
+          image: null,
         },
         messagePreview: Body.substring(0, 100),
         conversationType: "client",
