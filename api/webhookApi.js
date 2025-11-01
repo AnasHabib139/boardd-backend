@@ -7,6 +7,10 @@
  */
 
 const { Router } = require("express");
+const multer = require("multer");
+
+// Configure multer for parsing multipart/form-data (SendGrid sends this format)
+const upload = multer();
 
 // Import Twilio webhook authentication middleware
 const {
@@ -74,11 +78,35 @@ class WebhookApi {
     // ==================== SENDGRID EMAIL WEBHOOKS ====================
 
     /**
+     * GET /api/webhooks/email/sendgrid
+     * Test endpoint to verify webhook route is accessible
+     */
+    router.get("/email/sendgrid", (req, res) => {
+      res.json({
+        message: "SendGrid inbound email webhook endpoint is working",
+        method: "Use POST to send inbound emails",
+        configured: true,
+      });
+    });
+
+    /**
      * POST /api/webhooks/email/sendgrid
      * SendGrid inbound email parse webhook (client email replies)
      * Configure in SendGrid: Settings > Inbound Parse
+     *
+     * SendGrid sends data as multipart/form-data, so we use multer to parse it
      */
-    router.post("/email/sendgrid", handleInboundEmail);
+    router.post(
+      "/email/sendgrid",
+      (req, res, next) => {
+        console.log("[WEBHOOK] ===== SendGrid webhook received! =====");
+        console.log("[WEBHOOK] Content-Type:", req.headers["content-type"]);
+        console.log("[WEBHOOK] User-Agent:", req.headers["user-agent"]);
+        next();
+      },
+      upload.none(), // Parse multipart/form-data (no file uploads, only text fields)
+      handleInboundEmail
+    );
 
     /**
      * POST /api/webhooks/email/sendgrid/events
