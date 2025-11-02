@@ -55,7 +55,7 @@ exports.generateEmbeddedSignupUrl = async (companyId, businessName, phoneNumber 
     setTimeout(() => stateTokenStore.delete(stateToken), 30 * 60 * 1000);
 
     // Build Meta Embedded Signup URL
-    const callbackUrl = `${APP_BASE_URL}/api/messaging/whatsapp/tech-provider/callback`;
+    const callbackUrl = `${APP_BASE_URL}/api/messaging/whatsapp/embedded-signup/callback`;
 
     const params = new URLSearchParams({
       client_id: META_APP_ID,

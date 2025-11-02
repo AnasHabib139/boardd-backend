@@ -196,14 +196,15 @@ class MessagingConfigApi {
     );
 
     /**
-     * GET /api/messaging/whatsapp/tech-provider/callback
+     * GET /api/messaging/whatsapp/embedded-signup/callback
      * OAuth callback endpoint for Meta Embedded Signup (Tech Provider Program)
      * Query params: code, state, waba_id, business_id (provided by Meta)
      * This is called by Meta after OAuth authorization
      * No auth required - OAuth state validation used instead
+     * NOTE: Uses existing verified callback URL from previous Meta setup
      */
     router.get(
-      "/whatsapp/tech-provider/callback",
+      "/whatsapp/embedded-signup/callback",
       controller.whatsappTechProviderCallback
     );
 
