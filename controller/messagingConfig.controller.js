@@ -568,13 +568,24 @@ exports.initWhatsappEmbeddedSignup = async (req, res, next) => {
         }
 
         // Find Twilio phone number SID
-        const twilioPhones = company.twilioConfig?.phoneNumbers || [];
-        const twilioPhone = twilioPhones.find(p => p.phoneNumber === value.phoneNumber);
+        const fromNumbers = company.twilioConfig?.fromNumbers || [];
+        const phoneNumberSids = company.twilioConfig?.phoneNumberSids || [];
 
-        if (!twilioPhone) {
+        const phoneIndex = fromNumbers.indexOf(value.phoneNumber);
+
+        if (phoneIndex === -1) {
           return next({
             statusCode: STATUS_CODES.BAD_REQUEST,
             message: `Phone number ${value.phoneNumber} not found in your Twilio account. Please purchase it first via SMS setup.`,
+          });
+        }
+
+        const twilioSid = phoneNumberSids[phoneIndex];
+
+        if (!twilioSid) {
+          return next({
+            statusCode: STATUS_CODES.BAD_REQUEST,
+            message: `Phone number SID not found for ${value.phoneNumber}. Database may be corrupted.`,
           });
         }
 
@@ -583,7 +594,7 @@ exports.initWhatsappEmbeddedSignup = async (req, res, next) => {
           const preVerifyResult = await metaEmbeddedSignup.preVerifyPhoneNumber(
             companyId,
             value.phoneNumber,
-            twilioPhone.sid
+            twilioSid
           );
 
           preVerifiedPhoneId = preVerifyResult.preVerifiedPhoneId;
@@ -594,11 +605,10 @@ exports.initWhatsappEmbeddedSignup = async (req, res, next) => {
           console.log(`✓ Verification code requested - will be auto-verified via Twilio webhook`);
 
         } catch (preVerifyError) {
-          console.error("Error during pre-verification:", preVerifyError);
-          return next({
-            statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
-            message: `Failed to pre-verify phone number: ${preVerifyError.message}`,
-          });
+          console.error("⚠ Error during pre-verification (continuing without it):", preVerifyError.message);
+          // Don't fail the entire flow - user can still complete OAuth without pre-verification
+          // They'll just get a test WABA and need to delete the test number manually
+          preVerifiedPhoneId = null;
         }
       }
     }
