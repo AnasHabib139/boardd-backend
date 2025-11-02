@@ -145,6 +145,49 @@ const whatsappSenderRegistrationSchema = Joi.object({
     }),
 });
 
+/**
+ * Validate WhatsApp Tech Provider Embedded Signup initialization
+ */
+const whatsappTechProviderInitSchema = Joi.object({
+  businessName: Joi.string()
+    .min(2)
+    .max(100)
+    .required()
+    .messages({
+      "string.min": "Business name must be at least 2 characters",
+      "string.max": "Business name must not exceed 100 characters",
+      "any.required": "Business name is required for Embedded Signup",
+    }),
+  phoneNumber: Joi.string()
+    .pattern(/^\+[1-9]\d{6,14}$/)
+    .optional()
+    .messages({
+      "string.pattern.base": "Phone number must be in E.164 format (e.g., +15551234567)",
+    }),
+});
+
+/**
+ * Validate WhatsApp Tech Provider sender registration
+ */
+const whatsappTechProviderRegisterSchema = Joi.object({
+  phoneNumber: Joi.string()
+    .pattern(/^\+[1-9]\d{6,14}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "Phone number must be in E.164 format (e.g., +15551234567)",
+      "any.required": "Phone number is required",
+    }),
+  displayName: Joi.string()
+    .min(1)
+    .max(100)
+    .required()
+    .messages({
+      "string.min": "Display name must be at least 1 character",
+      "string.max": "Display name must not exceed 100 characters",
+      "any.required": "Display name is required for WhatsApp sender registration",
+    }),
+});
+
 module.exports = {
   smsProvisionSchema,
   phoneNumberSearchSchema,
@@ -154,4 +197,6 @@ module.exports = {
   emailConfigSchema,
   testMessageSchema,
   whatsappSenderRegistrationSchema,
+  whatsappTechProviderInitSchema,
+  whatsappTechProviderRegisterSchema,
 };

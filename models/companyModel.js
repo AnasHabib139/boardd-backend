@@ -153,6 +153,41 @@ const CompanySchema = new Schema(
       lastVerificationCheck: { type: Date }
     },
 
+    // WhatsApp Tech Provider Configuration (Meta Tech Provider Program via Twilio)
+    whatsappTechProvider: {
+      // Customer's WABA (created during their Embedded Signup flow)
+      wabaId: { type: String }, // WhatsApp Business Account ID (from Meta)
+      businessName: { type: String },
+
+      // WhatsApp Senders registered via Twilio Senders API
+      senders: [{
+        phoneNumber: { type: String, required: true }, // E.164: '+15551234567'
+        twilioNumber: { type: String, required: true }, // 'whatsapp:+15551234567'
+        senderSid: { type: String }, // Twilio Sender SID from Senders API
+        displayName: { type: String }, // Business display name for this sender
+        status: {
+          type: String,
+          enum: ['pending', 'active', 'failed', 'disabled'],
+          default: 'pending'
+        },
+        statusDetails: { type: String }, // Status message from Twilio
+        registeredAt: { type: Date },
+        lastStatusCheck: { type: Date },
+        failedReason: { type: String }
+      }],
+
+      // Meta Business Portfolio info (from Embedded Signup)
+      businessPortfolioId: { type: String },
+
+      // Embedded Signup tracking
+      signupCompleted: { type: Boolean, default: false },
+      signupCompletedAt: { type: Date },
+
+      // Overall status
+      active: { type: Boolean, default: false },
+      notes: { type: String }
+    },
+
     isActive: { type: Boolean, default: true },
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },

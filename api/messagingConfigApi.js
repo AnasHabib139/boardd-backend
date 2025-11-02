@@ -178,6 +178,75 @@ class MessagingConfigApi {
       requireCompanyAccess,
       controller.getWhatsappSenderStatus
     );
+
+    // ==================== WHATSAPP TECH PROVIDER (META TECH PROVIDER PROGRAM) ====================
+
+    /**
+     * POST /api/messaging/whatsapp/tech-provider/init-signup
+     * Initialize WhatsApp Embedded Signup for Tech Provider Program
+     * Body: { businessName, phoneNumber? }
+     * Returns: { authUrl, state } - redirect user to authUrl
+     * Required: company admin
+     */
+    router.post(
+      "/whatsapp/tech-provider/init-signup",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      requireCompanyAdmin,
+      controller.initWhatsappTechProviderSignup
+    );
+
+    /**
+     * GET /api/messaging/whatsapp/tech-provider/callback
+     * OAuth callback endpoint for Meta Embedded Signup (Tech Provider Program)
+     * Query params: code, state, waba_id, business_id (provided by Meta)
+     * This is called by Meta after OAuth authorization
+     * No auth required - OAuth state validation used instead
+     */
+    router.get(
+      "/whatsapp/tech-provider/callback",
+      controller.whatsappTechProviderCallback
+    );
+
+    /**
+     * POST /api/messaging/whatsapp/tech-provider/register-sender
+     * Register WhatsApp sender using Twilio Senders API
+     * Body: { phoneNumber, displayName }
+     * Must be called after customer completes Embedded Signup
+     * Required: company admin
+     */
+    router.post(
+      "/whatsapp/tech-provider/register-sender",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      requireCompanyAdmin,
+      controller.registerWhatsappSenderTechProvider
+    );
+
+    /**
+     * GET /api/messaging/whatsapp/tech-provider/status
+     * Get WhatsApp Tech Provider status (WABA + all senders)
+     * Returns WABA ID, signup status, and list of registered senders
+     * Required: company access
+     */
+    router.get(
+      "/whatsapp/tech-provider/status",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      requireCompanyAccess,
+      controller.getWhatsappTechProviderStatus
+    );
+
+    /**
+     * GET /api/messaging/whatsapp/tech-provider/sender-status/:phoneNumber
+     * Get specific WhatsApp sender status from Twilio
+     * Fetches real-time status from Twilio Senders API
+     * Required: company access
+     */
+    router.get(
+      "/whatsapp/tech-provider/sender-status/:phoneNumber",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      requireCompanyAccess,
+      controller.getWhatsappTechProviderSenderStatus
+    );
+
     // ==================== EMAIL CONFIGURATION ====================
 
     /**

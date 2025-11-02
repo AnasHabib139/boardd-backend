@@ -20,6 +20,8 @@ const {
   emailConfigSchema,
   testMessageSchema,
   whatsappSenderRegistrationSchema,
+  whatsappTechProviderInitSchema,
+  whatsappTechProviderRegisterSchema,
 } = require("../validation/messagingConfigValidation");
 
 // ==================== SMS ENDPOINTS ====================
@@ -517,6 +519,206 @@ exports.getWhatsappSenderStatus = async (req, res, next) => {
     });
   }
 };
+
+// ==================== WHATSAPP TECH PROVIDER (META TECH PROVIDER PROGRAM) ====================
+
+/**
+ * POST /api/messaging/whatsapp/tech-provider/init-signup
+ * Initialize WhatsApp Embedded Signup for Tech Provider Program
+ * Customer will complete OAuth to create their own WABA
+ */
+exports.initWhatsappTechProviderSignup = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+    const whatsappTechProvider = require("../services/whatsappTechProvider");
+
+    // Validate request body
+    const { error, value } = whatsappTechProviderInitSchema.validate(req.body || {});
+
+    if (error) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: error.details[0].message,
+      });
+    }
+
+    const { businessName, phoneNumber } = value;
+
+    // Generate Embedded Signup URL
+    const { authUrl, state } = await whatsappTechProvider.generateEmbeddedSignupUrl(
+      companyId,
+      businessName,
+      phoneNumber || null
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        authUrl,
+        state,
+        instructions: "Redirect user to authUrl to complete WhatsApp Business Account setup via Meta Embedded Signup",
+      },
+      message: "WhatsApp Tech Provider Embedded Signup initialized successfully",
+    });
+  } catch (error) {
+    console.error("Error in initWhatsappTechProviderSignup:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/messaging/whatsapp/tech-provider/callback
+ * OAuth callback from Meta after customer completes Embedded Signup
+ * Receives WABA ID and stores it for the company
+ */
+exports.whatsappTechProviderCallback = async (req, res, next) => {
+  try {
+    const whatsappTechProvider = require("../services/whatsappTechProvider");
+    const { code, state, waba_id, business_id, error: oauthError, error_description } = req.query;
+
+    // Handle OAuth errors
+    if (oauthError) {
+      console.error("OAuth error:", oauthError, error_description);
+      const frontendUrl = process.env.FRONTEND_URL || "https://boarddd-frontend-murex.vercel.app";
+      return res.redirect(
+        `${frontendUrl}/settings/configuration-contact?whatsapp_setup=error&error=${encodeURIComponent(error_description || oauthError)}`
+      );
+    }
+
+    if (!state) {
+      const frontendUrl = process.env.FRONTEND_URL || "https://boarddd-frontend-murex.vercel.app";
+      return res.redirect(
+        `${frontendUrl}/settings/configuration-contact?whatsapp_setup=error&error=${encodeURIComponent("Missing state parameter")}`
+      );
+    }
+
+    // Verify state token
+    const stateData = await whatsappTechProvider.verifyStateToken(state);
+    const { companyId } = stateData;
+
+    // Store WABA information
+    await whatsappTechProvider.handleEmbeddedSignupCallback(code, waba_id, business_id, companyId);
+
+    console.log(`✓ WhatsApp Tech Provider Embedded Signup completed for company ${companyId}, WABA: ${waba_id}`);
+
+    // Redirect to frontend success page
+    const frontendUrl = process.env.FRONTEND_URL || "https://boarddd-frontend-murex.vercel.app";
+    return res.redirect(
+      `${frontendUrl}/settings/configuration-contact?whatsapp_setup=success&wabaId=${waba_id || "created"}`
+    );
+  } catch (error) {
+    console.error("Error in whatsappTechProviderCallback:", error);
+    const frontendUrl = process.env.FRONTEND_URL || "https://boarddd-frontend-murex.vercel.app";
+    return res.redirect(
+      `${frontendUrl}/settings/configuration-contact?whatsapp_setup=error&error=${encodeURIComponent(error.message)}`
+    );
+  }
+};
+
+/**
+ * POST /api/messaging/whatsapp/tech-provider/register-sender
+ * Register WhatsApp sender using Twilio Senders API
+ * Must be called after customer completes Embedded Signup
+ */
+exports.registerWhatsappSenderTechProvider = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+    const whatsappTechProvider = require("../services/whatsappTechProvider");
+
+    // Validate request body
+    const { error, value } = whatsappTechProviderRegisterSchema.validate(req.body || {});
+
+    if (error) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: error.details[0].message,
+      });
+    }
+
+    const { phoneNumber, displayName } = value;
+
+    // Register sender via Twilio Senders API
+    const result = await whatsappTechProvider.registerWhatsappSender(
+      companyId,
+      phoneNumber,
+      displayName
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+      message: "WhatsApp sender registration initiated successfully",
+    });
+  } catch (error) {
+    console.error("Error in registerWhatsappSenderTechProvider:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/messaging/whatsapp/tech-provider/status
+ * Get WhatsApp Tech Provider status (WABA + senders)
+ */
+exports.getWhatsappTechProviderStatus = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+    const whatsappTechProvider = require("../services/whatsappTechProvider");
+
+    const status = await whatsappTechProvider.listWhatsappSenders(companyId);
+
+    return res.status(200).json({
+      success: true,
+      data: status,
+      message: "WhatsApp Tech Provider status retrieved successfully",
+    });
+  } catch (error) {
+    console.error("Error in getWhatsappTechProviderStatus:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/messaging/whatsapp/tech-provider/sender-status/:phoneNumber
+ * Get specific sender status from Twilio
+ */
+exports.getWhatsappTechProviderSenderStatus = async (req, res, next) => {
+  try {
+    const { companyId } = req;
+    const { phoneNumber } = req.params;
+    const whatsappTechProvider = require("../services/whatsappTechProvider");
+
+    if (!phoneNumber) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Phone number is required",
+      });
+    }
+
+    const status = await whatsappTechProvider.getWhatsappSenderStatus(companyId, phoneNumber);
+
+    return res.status(200).json({
+      success: true,
+      data: status,
+      message: "Sender status retrieved successfully",
+    });
+  } catch (error) {
+    console.error("Error in getWhatsappTechProviderSenderStatus:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
 // ==================== EMAIL ENDPOINTS ====================
 
 /**
