@@ -24,8 +24,8 @@ const Company = mongooseModel("Company");
 // Environment configuration
 const META_APP_ID = process.env.META_APP_ID; // Your Meta App ID (from Tech Provider setup)
 const META_APP_SECRET = process.env.META_APP_SECRET; // Your Meta App Secret
-const APP_BASE_URL = process.env.APP_BASE_URL || "https://api.yourdomain.com";
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://app.yourdomain.com";
+const BACKEND_URL = process.env.BACKEND_URL || "https://boarddd.ddns.net";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://boarddd-frontend-murex.vercel.app";
 
 // OAuth state token storage (use Redis in production for scalability)
 const stateTokenStore = new Map();
@@ -55,7 +55,7 @@ exports.generateEmbeddedSignupUrl = async (companyId, businessName, phoneNumber 
     setTimeout(() => stateTokenStore.delete(stateToken), 30 * 60 * 1000);
 
     // Build Meta Embedded Signup URL
-    const callbackUrl = `${APP_BASE_URL}/api/messaging/whatsapp/embedded-signup/callback`;
+    const callbackUrl = `${BACKEND_URL}/api/messaging/whatsapp/embedded-signup/callback`;
 
     const params = new URLSearchParams({
       client_id: META_APP_ID,
