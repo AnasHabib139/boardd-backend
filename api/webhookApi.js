@@ -32,6 +32,10 @@ const {
   handleInboundEmail,
 } = require("../controller/webhooks/sendgridInbound.controller");
 
+const {
+  twilioSmsWebhook,
+} = require("../controller/webhooks.controller");
+
 class WebhookApi {
   constructor() {
     this.router = Router();
@@ -57,6 +61,14 @@ class WebhookApi {
      * Middleware: verifyTwilioSignature - validates webhook signature and routes to company
      */
     router.post("/sms/twilio/inbound", verifyTwilioSignature, handleInboundSms);
+
+    /**
+     * POST /api/webhooks/twilio-sms
+     * Twilio SMS webhook for Meta WhatsApp verification codes
+     * Auto-verifies pre-verified phone numbers when verification SMS received
+     * No Auth middleware - uses Twilio signature validation
+     */
+    router.post("/twilio-sms", twilioSmsWebhook);
 
     // ==================== TWILIO WHATSAPP WEBHOOKS ====================
 

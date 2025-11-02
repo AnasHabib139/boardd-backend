@@ -13,6 +13,7 @@ const crypto = require("crypto");
 const { getRedis } = require("../utils/redis");
 const { model: mongooseModel } = require("mongoose");
 const Company = mongooseModel("Company");
+const twilio = require("twilio");
 
 // Meta Graph API configuration
 const META_GRAPH_API_BASE = `https://graph.facebook.com/${process.env.META_GRAPH_API_VERSION || "v18.0"}`;
@@ -26,9 +27,10 @@ const META_OAUTH_SCOPES = process.env.META_OAUTH_SCOPES || "whatsapp_business_ma
  * @param {String} companyId - Company ID
  * @param {String} businessName - Business name for display
  * @param {String} phoneNumber - Optional phone number to pre-select
+ * @param {String} preVerifiedPhoneId - Optional pre-verified phone ID from Meta
  * @returns {Promise<Object>} { authUrl, state }
  */
-exports.generateOAuthUrl = async (companyId, businessName, phoneNumber = null) => {
+exports.generateOAuthUrl = async (companyId, businessName, phoneNumber = null, preVerifiedPhoneId = null) => {
   try {
     // Generate secure state token
     const stateData = {
@@ -59,6 +61,20 @@ exports.generateOAuthUrl = async (companyId, businessName, phoneNumber = null) =
       config_id: process.env.META_EMBEDDED_SIGNUP_CONFIG_ID || "", // Optional: pre-configured setup
       setup_type: "standard", // or "advanced" for more control
     });
+
+    // Add pre-verified phone ID to extras if provided
+    if (preVerifiedPhoneId) {
+      const extras = {
+        setup: {
+          preVerifiedPhone: {
+            ids: [preVerifiedPhoneId]
+          }
+        },
+        sessionInfoVersion: "3"
+      };
+      params.append("extras", JSON.stringify(extras));
+      console.log(`  → Added pre-verified phone ID to OAuth: ${preVerifiedPhoneId}`);
+    }
 
     const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?${params.toString()}`;
 
@@ -445,6 +461,283 @@ exports.refreshAccessToken = async (companyId) => {
   } catch (error) {
     console.error("Error refreshing access token:", error.response?.data || error.message);
     throw new Error(`Failed to refresh access token: ${error.response?.data?.error?.message || error.message}`);
+  }
+};
+
+/**
+ * Pre-verify phone number with Meta
+ * This registers the phone number and gets a pre-verified phone ID
+ * that can be used in Embedded Signup to skip test number creation
+ *
+ * @param {String} companyId - Company ID
+ * @param {String} phoneNumber - Phone number in E.164 format (e.g., '+12028398241')
+ * @param {String} twilioSid - Twilio phone number SID for webhook matching
+ * @returns {Promise<Object>} { preVerifiedPhoneId, status }
+ */
+exports.preVerifyPhoneNumber = async (companyId, phoneNumber, twilioSid) => {
+  try {
+    console.log(`→ Pre-verifying phone number ${phoneNumber} for company ${companyId}`);
+
+    // Parse country code and local number
+    const numberWithoutPlus = phoneNumber.replace(/^\+/, '');
+    let countryCode, localNumber;
+
+    // Parse based on common country codes
+    if (numberWithoutPlus.startsWith('1') && numberWithoutPlus.length === 11) {
+      // US/Canada: +1 XXX XXX XXXX
+      countryCode = '1';
+      localNumber = numberWithoutPlus.substring(1);
+    } else if (numberWithoutPlus.startsWith('44')) {
+      // UK: +44 XXXX XXXXXX
+      countryCode = '44';
+      localNumber = numberWithoutPlus.substring(2);
+    } else if (numberWithoutPlus.startsWith('91') && numberWithoutPlus.length === 12) {
+      // India: +91 XXXXX XXXXX
+      countryCode = '91';
+      localNumber = numberWithoutPlus.substring(2);
+    } else {
+      // Generic: assume first 1-3 digits are country code
+      const match = numberWithoutPlus.match(/^(\d{1,3})(\d+)$/);
+      if (match) {
+        countryCode = match[1];
+        localNumber = match[2];
+      } else {
+        throw new Error(`Invalid phone number format: ${phoneNumber}`);
+      }
+    }
+
+    console.log(`  → Parsed: country_code=${countryCode}, phone_number=${localNumber}`);
+
+    // Call Meta API to create pre-verified phone number
+    const response = await axios.post(
+      `${META_GRAPH_API_BASE}/whatsapp_business_pre_verified_phone_numbers`,
+      {
+        phone_number: localNumber,
+        country_code: countryCode
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${META_APP_ID}|${META_APP_SECRET}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const preVerifiedPhoneId = response.data.id;
+    console.log(`✓ Pre-verified phone created with ID: ${preVerifiedPhoneId}`);
+
+    // Store in database
+    await Company.findByIdAndUpdate(companyId, {
+      $push: {
+        "whatsappEmbeddedSignup.preVerifiedPhones": {
+          phoneNumber: phoneNumber,
+          preVerifiedPhoneId: preVerifiedPhoneId,
+          twilioSid: twilioSid,
+          verificationStatus: 'pending',
+          codeRequestedAt: new Date(),
+          expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) // 14 days from now
+        }
+      }
+    });
+
+    // Configure Twilio webhook to receive SMS messages
+    try {
+      const company = await Company.findById(companyId);
+      await configureTwilioWebhook(company, twilioSid);
+      console.log(`✓ Twilio webhook configured for SMS forwarding`);
+    } catch (webhookError) {
+      console.error(`⚠ Warning: Could not configure Twilio webhook: ${webhookError.message}`);
+      // Don't fail the entire process if webhook config fails
+    }
+
+    return {
+      preVerifiedPhoneId: preVerifiedPhoneId,
+      status: 'pending',
+      phoneNumber: phoneNumber
+    };
+
+  } catch (error) {
+    console.error("Error pre-verifying phone number:", error.response?.data || error.message);
+    throw new Error(`Failed to pre-verify phone number: ${error.response?.data?.error?.message || error.message}`);
+  }
+};
+
+/**
+ * Configure Twilio phone number to forward SMS to webhook
+ * This allows automatic verification code extraction
+ *
+ * @param {Object} company - Company document
+ * @param {String} phoneNumberSid - Twilio phone number SID
+ * @returns {Promise<void>}
+ */
+async function configureTwilioWebhook(company, phoneNumberSid) {
+  try {
+    const twilioAccountSid = company.twilioConfig?.subAccountSid || process.env.TWILIO_ACCOUNT_SID;
+    const twilioAuthToken = company.twilioConfig?.authToken || process.env.TWILIO_AUTH_TOKEN;
+
+    if (!twilioAccountSid || !twilioAuthToken) {
+      throw new Error("Twilio credentials not found");
+    }
+
+    const client = twilio(twilioAccountSid, twilioAuthToken);
+
+    // Get base URL from environment or construct from redirect URI
+    const baseUrl = process.env.BASE_URL || process.env.META_OAUTH_REDIRECT_URI?.split('/api')[0] || 'https://boarddd.ddns.net';
+    const webhookUrl = `${baseUrl}/api/webhooks/twilio-sms`;
+
+    // Update phone number's SMS webhook URL
+    await client.incomingPhoneNumbers(phoneNumberSid)
+      .update({
+        smsUrl: webhookUrl,
+        smsMethod: 'POST'
+      });
+
+    console.log(`  → Twilio webhook configured: ${webhookUrl}`);
+
+  } catch (error) {
+    console.error("Error configuring Twilio webhook:", error.message);
+    throw error;
+  }
+}
+
+/**
+ * Request verification code to be sent via SMS
+ *
+ * @param {String} preVerifiedPhoneId - Pre-verified phone ID from Meta
+ * @returns {Promise<Object>} { success, message }
+ */
+exports.requestVerificationCode = async (preVerifiedPhoneId) => {
+  try {
+    console.log(`→ Requesting verification code for pre-verified phone: ${preVerifiedPhoneId}`);
+
+    const response = await axios.post(
+      `${META_GRAPH_API_BASE}/${preVerifiedPhoneId}/request_code`,
+      {},
+      {
+        headers: {
+          'Authorization': `Bearer ${META_APP_ID}|${META_APP_SECRET}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log(`✓ Verification code requested successfully`);
+
+    return {
+      success: response.data.success || true,
+      message: 'Verification code sent via SMS'
+    };
+
+  } catch (error) {
+    console.error("Error requesting verification code:", error.response?.data || error.message);
+    throw new Error(`Failed to request verification code: ${error.response?.data?.error?.message || error.message}`);
+  }
+};
+
+/**
+ * Verify phone number with code received via SMS
+ *
+ * @param {String} companyId - Company ID
+ * @param {String} preVerifiedPhoneId - Pre-verified phone ID from Meta
+ * @param {String} code - 6-digit verification code
+ * @returns {Promise<Object>} { verified, phoneNumber }
+ */
+exports.verifyPhoneCode = async (companyId, preVerifiedPhoneId, code) => {
+  try {
+    console.log(`→ Verifying code for pre-verified phone: ${preVerifiedPhoneId}`);
+
+    const response = await axios.post(
+      `${META_GRAPH_API_BASE}/${preVerifiedPhoneId}/verify_code`,
+      {
+        code: code
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${META_APP_ID}|${META_APP_SECRET}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log(`✓ Phone number verified successfully`);
+
+    // Update verification status in database
+    const company = await Company.findOneAndUpdate(
+      {
+        _id: companyId,
+        "whatsappEmbeddedSignup.preVerifiedPhones.preVerifiedPhoneId": preVerifiedPhoneId
+      },
+      {
+        $set: {
+          "whatsappEmbeddedSignup.preVerifiedPhones.$.verificationStatus": 'verified',
+          "whatsappEmbeddedSignup.preVerifiedPhones.$.verifiedAt": new Date()
+        }
+      },
+      { new: true }
+    );
+
+    const verifiedPhone = company.whatsappEmbeddedSignup.preVerifiedPhones.find(
+      p => p.preVerifiedPhoneId === preVerifiedPhoneId
+    );
+
+    return {
+      verified: true,
+      phoneNumber: verifiedPhone.phoneNumber,
+      preVerifiedPhoneId: preVerifiedPhoneId
+    };
+
+  } catch (error) {
+    console.error("Error verifying phone code:", error.response?.data || error.message);
+
+    // Update status to failed
+    await Company.findOneAndUpdate(
+      {
+        _id: companyId,
+        "whatsappEmbeddedSignup.preVerifiedPhones.preVerifiedPhoneId": preVerifiedPhoneId
+      },
+      {
+        $set: {
+          "whatsappEmbeddedSignup.preVerifiedPhones.$.verificationStatus": 'failed'
+        }
+      }
+    );
+
+    throw new Error(`Failed to verify phone code: ${error.response?.data?.error?.message || error.message}`);
+  }
+};
+
+/**
+ * Get pre-verified phone ID for a phone number
+ *
+ * @param {String} companyId - Company ID
+ * @param {String} phoneNumber - Phone number in E.164 format
+ * @returns {Promise<String|null>} Pre-verified phone ID or null if not found/expired
+ */
+exports.getPreVerifiedPhoneId = async (companyId, phoneNumber) => {
+  try {
+    const company = await Company.findById(companyId);
+
+    if (!company || !company.whatsappEmbeddedSignup?.preVerifiedPhones) {
+      return null;
+    }
+
+    // Find verified phone that hasn't expired
+    const verifiedPhone = company.whatsappEmbeddedSignup.preVerifiedPhones.find(p =>
+      p.phoneNumber === phoneNumber &&
+      p.verificationStatus === 'verified' &&
+      p.expiresAt > new Date()
+    );
+
+    if (verifiedPhone) {
+      console.log(`✓ Found verified phone ID: ${verifiedPhone.preVerifiedPhoneId}`);
+      return verifiedPhone.preVerifiedPhoneId;
+    }
+
+    return null;
+
+  } catch (error) {
+    console.error("Error getting pre-verified phone ID:", error.message);
+    return null;
   }
 };
 

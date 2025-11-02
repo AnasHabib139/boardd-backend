@@ -9,6 +9,8 @@
 
 const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
+const { model: mongooseModel } = require("mongoose");
+const Company = mongooseModel("Company");
 const twilioProvisioning = require("../services/twilioProvisioning");
 const whatsappTemplateService = require("../services/whatsappTemplateService");
 const emailProvisioning = require("../services/emailProvisioning");
@@ -542,10 +544,71 @@ exports.initWhatsappEmbeddedSignup = async (req, res, next) => {
       });
     }
 
+    let preVerifiedPhoneId = null;
+
+    // If phone number provided, handle pre-verification
+    if (value.phoneNumber) {
+      console.log(`→ Phone number provided: ${value.phoneNumber}`);
+
+      // Check if already pre-verified
+      preVerifiedPhoneId = await metaEmbeddedSignup.getPreVerifiedPhoneId(companyId, value.phoneNumber);
+
+      if (preVerifiedPhoneId) {
+        console.log(`✓ Phone already pre-verified with ID: ${preVerifiedPhoneId}`);
+      } else {
+        // Need to pre-verify this number
+        console.log(`→ Pre-verifying phone number: ${value.phoneNumber}`);
+
+        const company = await Company.findById(companyId);
+        if (!company) {
+          return next({
+            statusCode: STATUS_CODES.NOT_FOUND,
+            message: "Company not found",
+          });
+        }
+
+        // Find Twilio phone number SID
+        const twilioPhones = company.twilioConfig?.phoneNumbers || [];
+        const twilioPhone = twilioPhones.find(p => p.phoneNumber === value.phoneNumber);
+
+        if (!twilioPhone) {
+          return next({
+            statusCode: STATUS_CODES.BAD_REQUEST,
+            message: `Phone number ${value.phoneNumber} not found in your Twilio account. Please purchase it first via SMS setup.`,
+          });
+        }
+
+        try {
+          // Pre-verify with Meta
+          const preVerifyResult = await metaEmbeddedSignup.preVerifyPhoneNumber(
+            companyId,
+            value.phoneNumber,
+            twilioPhone.sid
+          );
+
+          preVerifiedPhoneId = preVerifyResult.preVerifiedPhoneId;
+          console.log(`✓ Phone pre-verified with ID: ${preVerifiedPhoneId}`);
+
+          // Request verification code (will be sent via SMS to Twilio number)
+          await metaEmbeddedSignup.requestVerificationCode(preVerifiedPhoneId);
+          console.log(`✓ Verification code requested - will be auto-verified via Twilio webhook`);
+
+        } catch (preVerifyError) {
+          console.error("Error during pre-verification:", preVerifyError);
+          return next({
+            statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+            message: `Failed to pre-verify phone number: ${preVerifyError.message}`,
+          });
+        }
+      }
+    }
+
+    // Generate OAuth URL (with pre-verified phone ID if available)
     const { authUrl, state } = await metaEmbeddedSignup.generateOAuthUrl(
       companyId,
       value.businessName,
-      value.phoneNumber
+      value.phoneNumber,
+      preVerifiedPhoneId
     );
 
     return res.status(200).json({
@@ -553,7 +616,10 @@ exports.initWhatsappEmbeddedSignup = async (req, res, next) => {
       data: {
         authUrl,
         state,
-        instructions: "Redirect user to authUrl to complete WhatsApp Business Account setup",
+        preVerifiedPhoneId: preVerifiedPhoneId || undefined,
+        instructions: preVerifiedPhoneId
+          ? "Phone pre-verification initiated. Verification code sent via SMS. OAuth will use pre-verified number."
+          : "Redirect user to authUrl to complete WhatsApp Business Account setup",
       },
       message: "WhatsApp Embedded Signup initialized successfully",
     });

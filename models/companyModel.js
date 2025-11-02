@@ -207,6 +207,26 @@ const CompanySchema = new Schema(
         registeredAt: { type: Date }
       }],
 
+      // Pre-verified phone numbers (for Embedded Signup without test numbers)
+      preVerifiedPhones: [{
+        phoneNumber: { type: String },              // E.164: '+15551234567'
+        preVerifiedPhoneId: { type: String },       // Meta's pre-verified phone ID
+        twilioSid: { type: String },                // Twilio phone number SID for webhook matching
+        verificationStatus: {                       // Verification status
+          type: String,
+          enum: ['pending', 'code_sent', 'verified', 'failed'],
+          default: 'pending'
+        },
+        verificationCode: {                         // Expected verification code (temporary)
+          type: String,
+          default: null,
+          select: false                             // Don't return by default
+        },
+        codeRequestedAt: { type: Date },            // When code was requested
+        verifiedAt: { type: Date },                 // When verification completed
+        expiresAt: { type: Date }                   // Pre-verified ID expires after 14 days
+      }],
+
       // Verification status
       verificationStatus: {
         type: String,
