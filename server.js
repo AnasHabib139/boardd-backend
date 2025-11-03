@@ -48,7 +48,14 @@ const io = initSocket(server);
 // Make io available to controllers
 app.set('io', io);
 
-app.use(express.json());
+// Conditional JSON parsing - exempt webhook route (needs raw body)
+app.use((req, res, next) => {
+  if (req.path === '/api/payments/webhooks/stripe') {
+    next(); // Skip JSON parsing for webhook
+  } else {
+    express.json()(req, res, next);
+  }
+});
 app.use(express.urlencoded({ extended: true, limit: "30mb" }));
 app.use(cookieParser());
 // Files are now served from S3 via FileServeApi

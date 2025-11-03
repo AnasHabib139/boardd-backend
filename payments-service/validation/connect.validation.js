@@ -9,13 +9,22 @@ const config = require("../config");
  * Validate tax ID format based on country
  */
 function validateTaxId(value, helpers) {
-  const country = helpers.state.ancestors[0].country;
+  // Get country from root object (ancestors[1] is root, ancestors[0] is businessInfo)
+  const rootObj = helpers.state.ancestors[1];
+  const country = rootObj?.country;
+
+  // If no country in request (e.g., during updates), skip validation - Stripe will validate
+  if (!country) {
+    console.log("Tax ID provided without country in request, skipping client-side validation");
+    return value;
+  }
+
   const taxIdFormat = config.taxIdFormats[country];
 
   if (!taxIdFormat) {
-    return helpers.error("any.invalid", {
-      message: `Tax ID validation not configured for country: ${country}`,
-    });
+    // If country not in our config, skip validation (Stripe will validate)
+    console.log(`Tax ID validation not configured for country: ${country}, skipping client-side validation`);
+    return value;
   }
 
   if (!taxIdFormat.format.test(value)) {
@@ -60,6 +69,7 @@ const addressSchema = Joi.object({
 exports.validateCreateAccount = async (req, res, next) => {
   try {
     const schema = Joi.object({
+      // REQUIRED: Minimal fields to create account
       country: Joi.string()
         .trim()
         .length(2)
@@ -87,10 +97,10 @@ exports.validateCreateAccount = async (req, res, next) => {
           "any.required": "Email is required",
         }),
 
+      // OPTIONAL: Progressive onboarding fields
       businessInfo: Joi.object({
-        legalName: Joi.string().trim().min(1).max(200).required().messages({
-          "string.empty": "Legal business name is required",
-          "any.required": "Legal business name is required",
+        legalName: Joi.string().trim().min(1).max(200).optional().messages({
+          "string.empty": "Legal business name cannot be empty if provided",
         }),
 
         dba: Joi.string().trim().max(200).optional().allow("").messages({
@@ -99,37 +109,30 @@ exports.validateCreateAccount = async (req, res, next) => {
 
         taxId: Joi.string()
           .trim()
-          .required()
+          .optional()
           .custom(validateTaxId)
           .messages({
-            "string.empty": "Tax ID is required",
-            "any.required": "Tax ID is required",
             "any.invalid": "Invalid tax ID format",
           }),
 
-        industry: Joi.string().trim().min(1).max(100).required().messages({
-          "string.empty": "Industry is required",
-          "any.required": "Industry is required",
+        industry: Joi.string().trim().min(1).max(100).optional().messages({
+          "string.empty": "Industry cannot be empty if provided",
         }),
 
-        description: Joi.string().trim().min(10).max(500).required().messages({
-          "string.empty": "Business description is required",
+        description: Joi.string().trim().min(10).max(500).optional().messages({
           "string.min": "Description must be at least 10 characters",
-          "any.required": "Business description is required",
         }),
 
-        url: Joi.string().trim().uri().required().messages({
+        url: Joi.string().trim().uri().optional().messages({
           "string.uri": "Please provide a valid business URL",
-          "any.required": "Business URL is required",
         }),
 
         phone: Joi.string()
           .trim()
           .pattern(/^\+?[1-9]\d{1,14}$/)
-          .required()
+          .optional()
           .messages({
             "string.pattern.base": "Please provide a valid phone number in E.164 format (e.g., +14155551234)",
-            "any.required": "Phone number is required",
           }),
 
         timezone: Joi.string().trim().optional().allow(""),
@@ -142,22 +145,20 @@ exports.validateCreateAccount = async (req, res, next) => {
             "string.pattern.base": "MCC must be a 4-digit code",
           }),
 
-        address: addressSchema.required(),
-      }).required(),
+        address: addressSchema.optional(),
+      }).optional(),
 
       publicDetails: Joi.object({
-        supportEmail: Joi.string().trim().email().required().messages({
+        supportEmail: Joi.string().trim().email().optional().messages({
           "string.email": "Please provide a valid support email address",
-          "any.required": "Support email is required",
         }),
 
         supportPhone: Joi.string()
           .trim()
           .pattern(/^\+?[1-9]\d{1,14}$/)
-          .required()
+          .optional()
           .messages({
             "string.pattern.base": "Please provide a valid support phone number",
-            "any.required": "Support phone number is required",
           }),
 
         supportUrl: Joi.string().trim().uri().optional().allow("").messages({
@@ -169,7 +170,7 @@ exports.validateCreateAccount = async (req, res, next) => {
         descriptor: Joi.string().trim().max(22).optional().allow("").messages({
           "string.max": "Statement descriptor cannot exceed 22 characters",
         }),
-      }).required(),
+      }).optional(),
 
       accountRepresentative: Joi.string()
         .trim()
@@ -184,7 +185,7 @@ exports.validateCreateAccount = async (req, res, next) => {
 
     const { error, value } = schema.validate(req.body, {
       abortEarly: false,
-      stripUnknown: true,
+      stripUnknown: false, // Allow Stripe country-specific fields through
     });
 
     if (error) {
@@ -214,6 +215,15 @@ exports.validateUpdateAccount = async (req, res, next) => {
       businessInfo: Joi.object({
         legalName: Joi.string().trim().min(1).max(200).optional(),
         dba: Joi.string().trim().max(200).optional().allow(""),
+
+        taxId: Joi.string()
+          .trim()
+          .optional()
+          .custom(validateTaxId)
+          .messages({
+            "any.invalid": "Invalid tax ID format",
+          }),
+
         description: Joi.string().trim().min(10).max(500).optional(),
         url: Joi.string().trim().uri().optional(),
         phone: Joi.string()
@@ -238,11 +248,16 @@ exports.validateUpdateAccount = async (req, res, next) => {
         supportAddress: addressSchema.optional(),
         descriptor: Joi.string().trim().max(22).optional().allow(""),
       }).optional(),
+
+      tosAcceptance: Joi.object({
+        date: Joi.number().optional(),
+        ip: Joi.string().trim().optional(),
+      }).optional(),
     });
 
     const { error, value } = schema.validate(req.body, {
       abortEarly: false,
-      stripUnknown: true,
+      stripUnknown: false, // Allow Stripe country-specific fields through
     });
 
     if (error) {
@@ -330,7 +345,7 @@ exports.validateAddPerson = async (req, res, next) => {
 
     const { error, value } = schema.validate(req.body, {
       abortEarly: false,
-      stripUnknown: true,
+      stripUnknown: false, // Allow Stripe country-specific fields through
     });
 
     if (error) {
@@ -344,6 +359,77 @@ exports.validateAddPerson = async (req, res, next) => {
     next();
   } catch (error) {
     console.error("Validation error in validateAddPerson:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Validation middleware for updating person (representative/owner)
+ */
+exports.validateUpdatePerson = async (req, res, next) => {
+  try {
+    const schema = Joi.object({
+      relationship: Joi.object({
+        representative: Joi.boolean().optional(),
+        owner: Joi.boolean().optional(),
+        title: Joi.string().trim().max(100).optional(),
+        percentOwnership: Joi.number().min(0).max(100).optional(),
+      }).optional(),
+
+      firstName: Joi.string().trim().min(1).max(100).optional(),
+
+      lastName: Joi.string().trim().min(1).max(100).optional(),
+
+      email: Joi.string().trim().email().optional().messages({
+        "string.email": "Please provide a valid email address",
+      }),
+
+      phone: Joi.string()
+        .trim()
+        .pattern(/^\+?[1-9]\d{1,14}$/)
+        .optional()
+        .messages({
+          "string.pattern.base": "Please provide a valid phone number",
+        }),
+
+      dateOfBirth: Joi.object({
+        day: Joi.number().min(1).max(31).optional(),
+        month: Joi.number().min(1).max(12).optional(),
+        year: Joi.number().min(1900).max(new Date().getFullYear() - 18).optional(),
+      }).optional(),
+
+      address: addressSchema.optional(),
+
+      ssnLast4: Joi.string()
+        .trim()
+        .pattern(/^\d{4}$/)
+        .optional()
+        .messages({
+          "string.pattern.base": "SSN last 4 must be 4 digits",
+        }),
+
+      idNumber: Joi.string().trim().optional(),
+    });
+
+    const { error, value } = schema.validate(req.body, {
+      abortEarly: false,
+      stripUnknown: false, // Allow Stripe country-specific fields through
+    });
+
+    if (error) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: error.details[0].message,
+      });
+    }
+
+    req.validatedBody = value;
+    next();
+  } catch (error) {
+    console.error("Validation error in validateUpdatePerson:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error.message,
@@ -380,7 +466,7 @@ exports.validateAddExternalAccount = async (req, res, next) => {
 
     const { error, value } = schema.validate(req.body, {
       abortEarly: false,
-      stripUnknown: true,
+      stripUnknown: false, // Allow Stripe country-specific fields through
     });
 
     if (error) {

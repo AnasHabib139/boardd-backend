@@ -10,6 +10,7 @@ const {
   createAccount,
   updateAccount,
   addPerson,
+  updatePerson,
   uploadPersonDocument,
   getAccountStatus,
   addExternalAccount,
@@ -20,6 +21,7 @@ const {
   validateCreateAccount,
   validateUpdateAccount,
   validateAddPerson,
+  validateUpdatePerson,
   validateAddExternalAccount,
   validateGetAccountStatus,
 } = require("../validation/connect.validation");
@@ -61,6 +63,7 @@ class PaymentsAPI {
      * Create Stripe Custom Connect account
      * Auth: Admin only
      * Body: Business information, address, tax ID, etc.
+     * Returns: Account ID and dynamic requirements from Stripe
      */
     router.post(
       "/connect/accounts",
@@ -106,6 +109,19 @@ class PaymentsAPI {
       Auth([ROLES.ADMIN]),
       validateAddPerson,
       addPerson
+    );
+
+    /**
+     * PUT /api/payments/connect/accounts/:companyId/persons/:personId
+     * Update existing representative or beneficial owner
+     * Auth: Admin (same company)
+     * Body: Person details to update (all fields optional)
+     */
+    router.put(
+      "/connect/accounts/:companyId/persons/:personId",
+      Auth([ROLES.ADMIN]),
+      validateUpdatePerson,
+      updatePerson
     );
 
     /**

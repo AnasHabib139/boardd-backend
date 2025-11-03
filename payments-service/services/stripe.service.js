@@ -39,48 +39,15 @@ exports.createConnectAccount = async (companyId, accountData, tosData) => {
       capabilities[capKey] = { requested: true };
     });
 
-    // Create Stripe account
-    const stripeAccount = await stripe.accounts.create({
+    // Build account creation request (progressive onboarding - only send provided fields)
+    const createAccountRequest = {
       type: config.connect.accountType,
       country: accountData.country,
       email: accountData.email,
       business_type: accountData.businessType,
       capabilities,
 
-      // Business profile
-      business_profile: {
-        name: accountData.businessInfo.legalName,
-        url: accountData.businessInfo.url,
-        mcc: accountData.businessInfo.mcc,
-        product_description: accountData.businessInfo.description,
-        support_email: accountData.publicDetails.supportEmail,
-        support_phone: accountData.publicDetails.supportPhone,
-        support_url: accountData.publicDetails.supportUrl,
-      },
-
-      // Company information
-      company: {
-        name: accountData.businessInfo.legalName,
-        phone: accountData.businessInfo.phone,
-        tax_id: accountData.businessInfo.taxId,
-        address: {
-          line1: accountData.businessInfo.address.line1,
-          line2: accountData.businessInfo.address.line2 || undefined,
-          city: accountData.businessInfo.address.city,
-          state: accountData.businessInfo.address.state,
-          postal_code: accountData.businessInfo.address.postalCode,
-          country: accountData.businessInfo.address.country,
-        },
-      },
-
-      // TOS acceptance
-      tos_acceptance: {
-        date: tosData.date || Math.floor(Date.now() / 1000),
-        ip: tosData.ip,
-        user_agent: tosData.userAgent,
-      },
-
-      // Settings
+      // Settings (always set for platform control)
       settings: {
         payouts: {
           schedule: {
@@ -88,7 +55,81 @@ exports.createConnectAccount = async (companyId, accountData, tosData) => {
           },
         },
       },
-    });
+    };
+
+    // Conditionally add business_profile if any fields provided
+    if (accountData.businessInfo || accountData.publicDetails) {
+      const businessProfile = {};
+
+      if (accountData.businessInfo?.legalName) {
+        businessProfile.name = accountData.businessInfo.legalName;
+      }
+      if (accountData.businessInfo?.url) {
+        businessProfile.url = accountData.businessInfo.url;
+      }
+      if (accountData.businessInfo?.mcc) {
+        businessProfile.mcc = accountData.businessInfo.mcc;
+      }
+      if (accountData.businessInfo?.description) {
+        businessProfile.product_description = accountData.businessInfo.description;
+      }
+      if (accountData.publicDetails?.supportEmail) {
+        businessProfile.support_email = accountData.publicDetails.supportEmail;
+      }
+      if (accountData.publicDetails?.supportPhone) {
+        businessProfile.support_phone = accountData.publicDetails.supportPhone;
+      }
+      if (accountData.publicDetails?.supportUrl) {
+        businessProfile.support_url = accountData.publicDetails.supportUrl;
+      }
+
+      if (Object.keys(businessProfile).length > 0) {
+        createAccountRequest.business_profile = businessProfile;
+      }
+    }
+
+    // Conditionally add company information if provided
+    if (accountData.businessInfo && accountData.businessType === "company") {
+      const company = {};
+
+      if (accountData.businessInfo.legalName) {
+        company.name = accountData.businessInfo.legalName;
+      }
+      if (accountData.businessInfo.phone) {
+        company.phone = accountData.businessInfo.phone;
+      }
+      if (accountData.businessInfo.taxId) {
+        company.tax_id = accountData.businessInfo.taxId;
+      }
+      if (accountData.businessInfo.address) {
+        company.address = {
+          line1: accountData.businessInfo.address.line1,
+          line2: accountData.businessInfo.address.line2 || undefined,
+          city: accountData.businessInfo.address.city,
+          state: accountData.businessInfo.address.state,
+          postal_code: accountData.businessInfo.address.postalCode,
+          country: accountData.businessInfo.address.country,
+        };
+      }
+
+      if (Object.keys(company).length > 0) {
+        createAccountRequest.company = company;
+      }
+    }
+
+    // Conditionally add TOS acceptance if IP is available
+    if (tosData?.ip) {
+      createAccountRequest.tos_acceptance = {
+        date: tosData.date || Math.floor(Date.now() / 1000),
+        ip: tosData.ip,
+        user_agent: tosData.userAgent,
+      };
+    }
+
+    console.log('Creating Stripe account with minimal fields:', Object.keys(createAccountRequest));
+
+    // Create Stripe account
+    const stripeAccount = await stripe.accounts.create(createAccountRequest);
 
     console.log(`Stripe account created: ${stripeAccount.id}`);
 
@@ -96,7 +137,7 @@ exports.createConnectAccount = async (companyId, accountData, tosData) => {
     const capabilitiesMap = {
       cardPayments: stripeAccount.capabilities?.card_payments || "inactive",
       transfers: stripeAccount.capabilities?.transfers || "inactive",
-      issuing: stripeAccount.capabilities?.issuing || "inactive",
+      issuing: stripeAccount.capabilities?.card_issuing || "inactive",
     };
 
     // Store in database (secrets will be auto-encrypted by pre-save hook)
@@ -166,6 +207,12 @@ exports.updateConnectAccount = async (companyId, updates) => {
 
     if (updates.businessInfo) {
       stripeUpdates.business_profile = {};
+
+      // Map legalName to both business_profile.name and company.name
+      if (updates.businessInfo.legalName) {
+        stripeUpdates.business_profile.name = updates.businessInfo.legalName;
+      }
+
       if (updates.businessInfo.url) {
         stripeUpdates.business_profile.url = updates.businessInfo.url;
       }
@@ -177,6 +224,17 @@ exports.updateConnectAccount = async (companyId, updates) => {
       }
 
       stripeUpdates.company = {};
+
+      // Map legalName to company.name (required by Stripe)
+      if (updates.businessInfo.legalName) {
+        stripeUpdates.company.name = updates.businessInfo.legalName;
+      }
+
+      // Map taxId to company.tax_id
+      if (updates.businessInfo.taxId) {
+        stripeUpdates.company.tax_id = updates.businessInfo.taxId;
+      }
+
       if (updates.businessInfo.phone) {
         stripeUpdates.company.phone = updates.businessInfo.phone;
       }
@@ -205,10 +263,20 @@ exports.updateConnectAccount = async (companyId, updates) => {
       }
     }
 
+    // TOS Acceptance
+    if (updates.tosAcceptance) {
+      stripeUpdates.tos_acceptance = {
+        date: updates.tosAcceptance.date || Math.floor(Date.now() / 1000),
+        ip: updates.tosAcceptance.ip,
+      };
+    }
+
     // Update in Stripe
     if (Object.keys(stripeUpdates).length > 0) {
-      await stripe.accounts.update(accountRecord.stripeAccountId, stripeUpdates);
+      console.log('Sending to Stripe:', JSON.stringify(stripeUpdates, null, 2));
+      const updatedAccount = await stripe.accounts.update(accountRecord.stripeAccountId, stripeUpdates);
       console.log(`Stripe account updated: ${accountRecord.stripeAccountId}`);
+      console.log('Stripe requirements after update:', JSON.stringify(updatedAccount.requirements?.currently_due, null, 2));
     }
 
     // Update in database
@@ -327,6 +395,104 @@ exports.addAccountPerson = async (companyId, personData) => {
 };
 
 /**
+ * Update existing person (representative/owner)
+ * @param {string} companyId - MongoDB company ID
+ * @param {string} personId - Stripe person ID
+ * @param {object} updates - Person information updates
+ * @returns {object} Updated person details
+ */
+exports.updateAccountPerson = async (companyId, personId, updates) => {
+  try {
+    console.log(`Updating person ${personId} for company: ${companyId}`);
+
+    // Find account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // Build Stripe update payload
+    const stripeUpdates = {};
+
+    if (updates.firstName) stripeUpdates.first_name = updates.firstName;
+    if (updates.lastName) stripeUpdates.last_name = updates.lastName;
+    if (updates.email) stripeUpdates.email = updates.email;
+    if (updates.phone) stripeUpdates.phone = updates.phone;
+
+    if (updates.dateOfBirth) {
+      stripeUpdates.dob = {
+        day: updates.dateOfBirth.day,
+        month: updates.dateOfBirth.month,
+        year: updates.dateOfBirth.year,
+      };
+    }
+
+    if (updates.address) {
+      stripeUpdates.address = {
+        line1: updates.address.line1,
+        line2: updates.address.line2 || undefined,
+        city: updates.address.city,
+        state: updates.address.state,
+        postal_code: updates.address.postalCode,
+        country: updates.address.country,
+      };
+    }
+
+    if (updates.relationship) {
+      stripeUpdates.relationship = {
+        representative: updates.relationship.representative,
+        owner: updates.relationship.owner,
+        title: updates.relationship.title || undefined,
+        percent_ownership: updates.relationship.percentOwnership || undefined,
+      };
+    }
+
+    if (updates.ssnLast4) stripeUpdates.ssn_last_4 = updates.ssnLast4;
+    if (updates.idNumber) stripeUpdates.id_number = updates.idNumber;
+
+    // Update person in Stripe
+    const person = await stripe.accounts.updatePerson(
+      accountRecord.stripeAccountId,
+      personId,
+      stripeUpdates
+    );
+
+    console.log(`Person updated in Stripe: ${person.id}`);
+
+    // Update in database
+    const dbUpdates = {};
+    if (updates.relationship) dbUpdates["persons.$.relationship"] = updates.relationship;
+    if (updates.firstName) dbUpdates["persons.$.firstName"] = updates.firstName;
+    if (updates.lastName) dbUpdates["persons.$.lastName"] = updates.lastName;
+    if (updates.email) dbUpdates["persons.$.email"] = updates.email;
+    if (updates.phone) dbUpdates["persons.$.phone"] = updates.phone;
+    if (updates.dateOfBirth) dbUpdates["persons.$.dateOfBirth"] = updates.dateOfBirth;
+    if (updates.address) dbUpdates["persons.$.address"] = updates.address;
+
+    // Update verification status from Stripe
+    if (person.verification) {
+      dbUpdates["persons.$.verification.status"] = person.verification.status;
+    }
+
+    await updateAccount(
+      { _id: accountRecord._id, "persons.personId": personId },
+      { $set: dbUpdates }
+    );
+
+    console.log(`Person updated in database record`);
+
+    return {
+      success: true,
+      personId: person.id,
+      verificationStatus: person.verification?.status,
+    };
+  } catch (error) {
+    console.error("Error updating person:", error);
+    throw new Error(`Failed to update person: ${error.message}`);
+  }
+};
+
+/**
  * Upload verification document for person
  * @param {string} companyId - MongoDB company ID
  * @param {string} personId - Stripe person ID
@@ -419,7 +585,7 @@ exports.getAccountStatus = async (companyId) => {
       detailsSubmitted: stripeAccount.details_submitted,
       "capabilities.cardPayments": stripeAccount.capabilities?.card_payments || "inactive",
       "capabilities.transfers": stripeAccount.capabilities?.transfers || "inactive",
-      "capabilities.issuing": stripeAccount.capabilities?.issuing || "inactive",
+      "capabilities.issuing": stripeAccount.capabilities?.card_issuing || "inactive",
       "requirements.currentlyDue": stripeAccount.requirements?.currently_due || [],
       "requirements.eventuallyDue": stripeAccount.requirements?.eventually_due || [],
       "requirements.pastDue": stripeAccount.requirements?.past_due || [],
@@ -441,6 +607,43 @@ exports.getAccountStatus = async (companyId) => {
       updates
     );
 
+    // Calculate onboarding progress
+    const currentlyDue = stripeAccount.requirements?.currently_due || [];
+    const eventuallyDue = stripeAccount.requirements?.eventually_due || [];
+    const pastDue = stripeAccount.requirements?.past_due || [];
+
+    // Total requirements = currently_due + eventually_due (unique)
+    const allRequirements = [...new Set([...currentlyDue, ...eventuallyDue])];
+    const totalRequirements = allRequirements.length;
+    const remainingRequirements = currentlyDue.length;
+
+    // Calculate progress percentage
+    let progressPercentage = 0;
+    if (totalRequirements > 0) {
+      const completedRequirements = totalRequirements - remainingRequirements;
+      progressPercentage = Math.round((completedRequirements / totalRequirements) * 100);
+    } else if (onboardingComplete) {
+      progressPercentage = 100;
+    }
+
+    // Group requirements by category for better UX
+    const requirementCategories = {
+      businessInfo: currentlyDue.filter(r => r.startsWith('business_profile.') || r.startsWith('company.')),
+      representatives: currentlyDue.filter(r => r.includes('owners_provided') || r.startsWith('person.')),
+      bankAccount: currentlyDue.filter(r => r.includes('external_account')),
+      verification: currentlyDue.filter(r => r.includes('verification.document')),
+      terms: currentlyDue.filter(r => r.includes('tos_acceptance')),
+      other: currentlyDue.filter(r =>
+        !r.startsWith('business_profile.') &&
+        !r.startsWith('company.') &&
+        !r.includes('owners_provided') &&
+        !r.startsWith('person.') &&
+        !r.includes('external_account') &&
+        !r.includes('verification.document') &&
+        !r.includes('tos_acceptance')
+      ),
+    };
+
     return {
       success: true,
       accountId: accountRecord.stripeAccountId,
@@ -448,17 +651,27 @@ exports.getAccountStatus = async (companyId) => {
       payoutsEnabled: stripeAccount.payouts_enabled,
       onboardingComplete,
       detailsSubmitted: stripeAccount.details_submitted,
+
+      // Progress tracking
+      progress: {
+        percentage: progressPercentage,
+        totalRequirements,
+        remainingRequirements,
+        completedRequirements: totalRequirements - remainingRequirements,
+      },
+
       capabilities: {
         cardPayments: stripeAccount.capabilities?.card_payments || "inactive",
         transfers: stripeAccount.capabilities?.transfers || "inactive",
-        issuing: stripeAccount.capabilities?.issuing || "inactive",
+        issuing: stripeAccount.capabilities?.card_issuing || "inactive",
       },
       requirements: {
-        currentlyDue: stripeAccount.requirements?.currently_due || [],
-        eventuallyDue: stripeAccount.requirements?.eventually_due || [],
-        pastDue: stripeAccount.requirements?.past_due || [],
+        currentlyDue: currentlyDue,
+        eventuallyDue: eventuallyDue,
+        pastDue: pastDue,
         disabledReason: stripeAccount.requirements?.disabled_reason || null,
         currentDeadline: stripeAccount.requirements?.current_deadline || null,
+        categories: requirementCategories,
       },
       persons: updatedRecord.persons,
       externalAccounts: updatedRecord.externalAccounts,
@@ -577,7 +790,7 @@ exports.syncAccountFromWebhook = async (event) => {
       if (stripeAccount.capabilities) {
         updates["capabilities.cardPayments"] = stripeAccount.capabilities.card_payments || "inactive";
         updates["capabilities.transfers"] = stripeAccount.capabilities.transfers || "inactive";
-        updates["capabilities.issuing"] = stripeAccount.capabilities.issuing || "inactive";
+        updates["capabilities.issuing"] = stripeAccount.capabilities.card_issuing || "inactive";
       }
 
       // Check if onboarding complete

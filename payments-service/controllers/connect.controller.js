@@ -111,6 +111,14 @@ exports.updateAccount = async (req, res, next) => {
 
     console.log(`Updating Stripe Connect account for company: ${companyId}`);
 
+    // If TOS acceptance is being updated, capture IP and timestamp
+    if (updates.tosAcceptance) {
+      updates.tosAcceptance = {
+        date: updates.tosAcceptance.date || Math.floor(Date.now() / 1000),
+        ip: updates.tosAcceptance.ip || req.ip || req.connection.remoteAddress,
+      };
+    }
+
     const result = await stripeService.updateConnectAccount(companyId, updates);
 
     return generateResponse(
@@ -201,6 +209,67 @@ exports.addPerson = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message || "Failed to add person to account",
+    });
+  }
+};
+
+/**
+ * Update existing person (representative/owner)
+ * PUT /api/payments/connect/accounts/:companyId/persons/:personId
+ */
+exports.updatePerson = async (req, res, next) => {
+  try {
+    const { companyId, personId } = req.params;
+    const userId = req.user.id;
+    const updates = req.validatedBody;
+
+    // Fetch user to get companyId (JWT doesn't include it)
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.UNAUTHORIZED,
+        message: "User not found",
+      });
+    }
+
+    // Security check
+    if (companyId !== user.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You do not have permission to modify this account",
+      });
+    }
+
+    console.log(`Updating person ${personId} for company: ${companyId}`);
+
+    const result = await stripeService.updateAccountPerson(companyId, personId, updates);
+
+    return generateResponse(
+      {
+        personId: result.personId,
+        verificationStatus: result.verificationStatus,
+        updated: true,
+      },
+      "Person updated successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in updatePerson controller:", error);
+
+    if (error.message.includes("not found")) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Stripe account or person not found",
+      });
+    }
+
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to update person",
     });
   }
 };

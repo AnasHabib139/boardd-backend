@@ -5,9 +5,9 @@ const config = require("../config");
 
 /**
  * Initialize and export Stripe client
+ * Note: apiVersion is omitted - Stripe SDK will use its built-in version
  */
 const stripe = Stripe(config.stripe.secretKey, {
-  apiVersion: config.stripe.apiVersion,
   maxNetworkRetries: 2,
   timeout: 80000,
   telemetry: true,

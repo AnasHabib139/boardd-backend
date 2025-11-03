@@ -11,7 +11,7 @@ module.exports = {
     secretKey: process.env.STRIPE_SECRET_KEY,
     publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-    apiVersion: process.env.STRIPE_API_VERSION || "2024-11-20",
+    // Note: apiVersion is not specified - Stripe SDK uses its built-in version
   },
 
   // Service Configuration
@@ -33,8 +33,9 @@ module.exports = {
 
   // Stripe Connect Configuration
   connect: {
-    defaultCapabilities: ["card_payments", "transfers", "issuing"],
+    defaultCapabilities: ["card_payments", "transfers"],
     accountType: "custom",
+    // Note: card_issuing can be requested later via Account update when user needs it
   },
 
   // Country-specific tax ID formats
