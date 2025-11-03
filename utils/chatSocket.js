@@ -299,6 +299,18 @@ const processChatMessageSend = async (socket, data, io) => {
       );
     }
 
+    // Notify channel members
+    if (conversation.type === "channel") {
+      await notifyChannelMembers(
+        io,
+        conversation,
+        message,
+        userId,
+        author,
+        contentText
+      );
+    }
+
     // Success response
     socket.emit("chat:message:sent", {
       success: true,
@@ -665,9 +677,12 @@ const handleMentionNotifications = async (
   if (channelMention && conversation.type === "channel") {
     const channel = await findChannel({ _id: conversation.channelId });
     if (channel) {
+      // Convert ObjectIds to strings for proper Socket.IO room targeting
+      const memberIds = channel.members.map(id => id.toString());
+
       // Notify all channel members except author
-      for (const memberId of channel.members) {
-        if (memberId.toString() !== author._id.toString()) {
+      for (const memberId of memberIds) {
+        if (memberId !== author._id.toString()) {
           // Emit to user room
           io.to(`user:${memberId}`).emit("chat:notification", {
             type: "CHAT_MENTION",
@@ -765,6 +780,64 @@ const notifyDMParticipants = async (
 
       if (!isInConversation) {
         io.to(`user:${participantId}`).emit("chat:notification", {
+          type: "CHAT_MESSAGE",
+          conversationId: conversation._id,
+          messageId: message._id,
+          fromUser: {
+            _id: author._id,
+            name: author.name,
+            image: author.image,
+          },
+          messagePreview: contentText.substring(0, 100),
+          conversationType: conversation.type,
+          timestamp: new Date(),
+        });
+      }
+    }
+  }
+};
+
+/**
+ * Helper: Notify channel members
+ */
+const notifyChannelMembers = async (
+  io,
+  conversation,
+  message,
+  senderId,
+  author,
+  contentText
+) => {
+  // Get channel members
+  const channel = await findChannel({ _id: conversation.channelId });
+  if (!channel) {
+    console.error(`Channel not found for conversation ${conversation._id}`);
+    return;
+  }
+
+  // Get list of sockets in conversation room
+  const socketsInRoom = await io.in(`conversation:${conversation._id}`).allSockets();
+
+  // Convert ObjectIds to strings for proper Socket.IO room targeting
+  const memberIds = channel.members.map(id => id.toString());
+
+  for (const memberId of memberIds) {
+    if (memberId !== senderId.toString()) {
+      // Check if user is in conversation room (skip notification if they are)
+      const userSocketRoom = `user:${memberId}`;
+      const userSockets = await io.in(userSocketRoom).allSockets();
+
+      // Only notify if user is not currently in the conversation room
+      let isInConversation = false;
+      for (const socketId of userSockets) {
+        if (socketsInRoom.has(socketId)) {
+          isInConversation = true;
+          break;
+        }
+      }
+
+      if (!isInConversation) {
+        io.to(`user:${memberId}`).emit("chat:notification", {
           type: "CHAT_MESSAGE",
           conversationId: conversation._id,
           messageId: message._id,
