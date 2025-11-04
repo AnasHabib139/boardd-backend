@@ -39,16 +39,16 @@ exports.createConnectAccount = async (companyId, accountData, tosData) => {
       capabilities[capKey] = { requested: true };
     });
 
-    // Build account creation request (progressive onboarding - only send provided fields)
+    // Build account creation request (Stripe format - pass through directly)
     const createAccountRequest = {
       type: config.connect.accountType,
       country: accountData.country,
       email: accountData.email,
-      business_type: accountData.businessType,
+      business_type: accountData.business_type,
       capabilities,
 
       // Settings (always set for platform control)
-      settings: {
+      settings: accountData.settings || {
         payouts: {
           schedule: {
             interval: "manual", // Platform controls payouts
@@ -57,72 +57,26 @@ exports.createConnectAccount = async (companyId, accountData, tosData) => {
       },
     };
 
-    // Conditionally add business_profile if any fields provided
-    if (accountData.businessInfo || accountData.publicDetails) {
-      const businessProfile = {};
-
-      if (accountData.businessInfo?.legalName) {
-        businessProfile.name = accountData.businessInfo.legalName;
-      }
-      if (accountData.businessInfo?.url) {
-        businessProfile.url = accountData.businessInfo.url;
-      }
-      if (accountData.businessInfo?.mcc) {
-        businessProfile.mcc = accountData.businessInfo.mcc;
-      }
-      if (accountData.businessInfo?.description) {
-        businessProfile.product_description = accountData.businessInfo.description;
-      }
-      if (accountData.publicDetails?.supportEmail) {
-        businessProfile.support_email = accountData.publicDetails.supportEmail;
-      }
-      if (accountData.publicDetails?.supportPhone) {
-        businessProfile.support_phone = accountData.publicDetails.supportPhone;
-      }
-      if (accountData.publicDetails?.supportUrl) {
-        businessProfile.support_url = accountData.publicDetails.supportUrl;
-      }
-
-      if (Object.keys(businessProfile).length > 0) {
-        createAccountRequest.business_profile = businessProfile;
-      }
+    // Pass through Stripe objects directly (no mapping needed!)
+    if (accountData.company) {
+      createAccountRequest.company = accountData.company;
     }
 
-    // Conditionally add company information if provided
-    if (accountData.businessInfo && accountData.businessType === "company") {
-      const company = {};
-
-      if (accountData.businessInfo.legalName) {
-        company.name = accountData.businessInfo.legalName;
-      }
-      if (accountData.businessInfo.phone) {
-        company.phone = accountData.businessInfo.phone;
-      }
-      if (accountData.businessInfo.taxId) {
-        company.tax_id = accountData.businessInfo.taxId;
-      }
-      if (accountData.businessInfo.address) {
-        company.address = {
-          line1: accountData.businessInfo.address.line1,
-          line2: accountData.businessInfo.address.line2 || undefined,
-          city: accountData.businessInfo.address.city,
-          state: accountData.businessInfo.address.state,
-          postal_code: accountData.businessInfo.address.postalCode,
-          country: accountData.businessInfo.address.country,
-        };
-      }
-
-      if (Object.keys(company).length > 0) {
-        createAccountRequest.company = company;
-      }
+    if (accountData.business_profile) {
+      createAccountRequest.business_profile = accountData.business_profile;
     }
 
-    // Conditionally add TOS acceptance if IP is available
-    if (tosData?.ip) {
+    if (accountData.individual) {
+      createAccountRequest.individual = accountData.individual;
+    }
+
+    // TOS acceptance - auto-capture IP and timestamp if provided
+    if (accountData.tos_acceptance || tosData?.ip) {
       createAccountRequest.tos_acceptance = {
-        date: tosData.date || Math.floor(Date.now() / 1000),
-        ip: tosData.ip,
-        user_agent: tosData.userAgent,
+        ...accountData.tos_acceptance,
+        date: accountData.tos_acceptance?.date || tosData?.date || Math.floor(Date.now() / 1000),
+        ip: accountData.tos_acceptance?.ip || tosData?.ip,
+        user_agent: accountData.tos_acceptance?.user_agent || tosData?.userAgent,
       };
     }
 
@@ -146,7 +100,7 @@ exports.createConnectAccount = async (companyId, accountData, tosData) => {
       stripeAccountId: stripeAccount.id,
       country: accountData.country,
       accountType: config.connect.accountType,
-      businessType: accountData.businessType,
+      businessType: accountData.business_type,
       email: accountData.email,
       capabilities: capabilitiesMap,
       chargesEnabled: stripeAccount.charges_enabled || false,
@@ -154,20 +108,11 @@ exports.createConnectAccount = async (companyId, accountData, tosData) => {
       detailsSubmitted: stripeAccount.details_submitted || false,
       onboardingComplete: false,
       publishableKey: config.stripe.publishableKey,
-      businessInfo: accountData.businessInfo,
-      publicDetails: accountData.publicDetails,
-      accountRepresentative: accountData.accountRepresentative,
-      ownership: accountData.ownership,
       requirements: {
         currentlyDue: stripeAccount.requirements?.currently_due || [],
         eventuallyDue: stripeAccount.requirements?.eventually_due || [],
         pastDue: stripeAccount.requirements?.past_due || [],
         disabledReason: stripeAccount.requirements?.disabled_reason || null,
-      },
-      tosAcceptance: {
-        date: tosData.date || Math.floor(Date.now() / 1000),
-        ip: tosData.ip,
-        userAgent: tosData.userAgent,
       },
     });
 
@@ -202,73 +147,28 @@ exports.updateConnectAccount = async (companyId, updates) => {
       throw new Error("Stripe account not found for this company");
     }
 
-    // Prepare Stripe update payload
+    // Prepare Stripe update payload - pass through directly (no mapping needed!)
     const stripeUpdates = {};
 
-    if (updates.businessInfo) {
-      stripeUpdates.business_profile = {};
-
-      // Map legalName to both business_profile.name and company.name
-      if (updates.businessInfo.legalName) {
-        stripeUpdates.business_profile.name = updates.businessInfo.legalName;
-      }
-
-      if (updates.businessInfo.url) {
-        stripeUpdates.business_profile.url = updates.businessInfo.url;
-      }
-      if (updates.businessInfo.description) {
-        stripeUpdates.business_profile.product_description = updates.businessInfo.description;
-      }
-      if (updates.businessInfo.mcc) {
-        stripeUpdates.business_profile.mcc = updates.businessInfo.mcc;
-      }
-
-      stripeUpdates.company = {};
-
-      // Map legalName to company.name (required by Stripe)
-      if (updates.businessInfo.legalName) {
-        stripeUpdates.company.name = updates.businessInfo.legalName;
-      }
-
-      // Map taxId to company.tax_id
-      if (updates.businessInfo.taxId) {
-        stripeUpdates.company.tax_id = updates.businessInfo.taxId;
-      }
-
-      if (updates.businessInfo.phone) {
-        stripeUpdates.company.phone = updates.businessInfo.phone;
-      }
-      if (updates.businessInfo.address) {
-        stripeUpdates.company.address = {
-          line1: updates.businessInfo.address.line1,
-          line2: updates.businessInfo.address.line2 || undefined,
-          city: updates.businessInfo.address.city,
-          state: updates.businessInfo.address.state,
-          postal_code: updates.businessInfo.address.postalCode,
-          country: updates.businessInfo.address.country,
-        };
-      }
+    // Pass through Stripe objects directly
+    if (updates.company) {
+      stripeUpdates.company = updates.company;
     }
 
-    if (updates.publicDetails) {
-      stripeUpdates.business_profile = stripeUpdates.business_profile || {};
-      if (updates.publicDetails.supportEmail) {
-        stripeUpdates.business_profile.support_email = updates.publicDetails.supportEmail;
-      }
-      if (updates.publicDetails.supportPhone) {
-        stripeUpdates.business_profile.support_phone = updates.publicDetails.supportPhone;
-      }
-      if (updates.publicDetails.supportUrl) {
-        stripeUpdates.business_profile.support_url = updates.publicDetails.supportUrl;
-      }
+    if (updates.business_profile) {
+      stripeUpdates.business_profile = updates.business_profile;
     }
 
-    // TOS Acceptance
-    if (updates.tosAcceptance) {
-      stripeUpdates.tos_acceptance = {
-        date: updates.tosAcceptance.date || Math.floor(Date.now() / 1000),
-        ip: updates.tosAcceptance.ip,
-      };
+    if (updates.tos_acceptance) {
+      stripeUpdates.tos_acceptance = updates.tos_acceptance;
+    }
+
+    if (updates.settings) {
+      stripeUpdates.settings = updates.settings;
+    }
+
+    if (updates.individual) {
+      stripeUpdates.individual = updates.individual;
     }
 
     // Update in Stripe
@@ -279,29 +179,12 @@ exports.updateConnectAccount = async (companyId, updates) => {
       console.log('Stripe requirements after update:', JSON.stringify(updatedAccount.requirements?.currently_due, null, 2));
     }
 
-    // Update in database
-    const updatePayload = {};
-    if (updates.businessInfo) {
-      updatePayload["businessInfo"] = {
-        ...accountRecord.businessInfo,
-        ...updates.businessInfo,
-      };
-    }
-    if (updates.publicDetails) {
-      updatePayload["publicDetails"] = {
-        ...accountRecord.publicDetails,
-        ...updates.publicDetails,
-      };
-    }
-
-    const updatedRecord = await updateAccount(
-      { _id: accountRecord._id },
-      updatePayload
-    );
+    // Note: DB sync happens via webhooks or next getAccountStatus() call
+    // No need to update DB here since Stripe is source of truth
 
     return {
       success: true,
-      account: updatedRecord,
+      account: accountRecord,
     };
   } catch (error) {
     console.error("Error updating Stripe Connect account:", error);
@@ -325,50 +208,20 @@ exports.addAccountPerson = async (companyId, personData) => {
       throw new Error("Stripe account not found for this company");
     }
 
-    // Create person in Stripe
+    // Create person in Stripe (pass through Stripe format directly)
     const person = await stripe.accounts.createPerson(
       accountRecord.stripeAccountId,
-      {
-        first_name: personData.firstName,
-        last_name: personData.lastName,
-        email: personData.email,
-        phone: personData.phone,
-        dob: {
-          day: personData.dateOfBirth.day,
-          month: personData.dateOfBirth.month,
-          year: personData.dateOfBirth.year,
-        },
-        address: {
-          line1: personData.address.line1,
-          line2: personData.address.line2 || undefined,
-          city: personData.address.city,
-          state: personData.address.state,
-          postal_code: personData.address.postalCode,
-          country: personData.address.country,
-        },
-        relationship: {
-          representative: personData.relationship.representative,
-          owner: personData.relationship.owner,
-          title: personData.relationship.title || undefined,
-          percent_ownership: personData.relationship.percentOwnership || undefined,
-        },
-        ssn_last_4: personData.ssnLast4 || undefined,
-        id_number: personData.idNumber || undefined,
-      }
+      personData
     );
 
     console.log(`Person created in Stripe: ${person.id}`);
 
-    // Add to database record
+    // Add to database record (store minimal info)
     const personRecord = {
       personId: person.id,
-      relationship: personData.relationship,
-      firstName: personData.firstName,
-      lastName: personData.lastName,
-      email: personData.email,
-      phone: personData.phone,
-      dateOfBirth: personData.dateOfBirth,
-      address: personData.address,
+      first_name: person.first_name,
+      last_name: person.last_name,
+      email: person.email,
       verification: {
         status: person.verification?.status || "unverified",
       },
@@ -411,73 +264,32 @@ exports.updateAccountPerson = async (companyId, personId, updates) => {
       throw new Error("Stripe account not found for this company");
     }
 
-    // Build Stripe update payload
-    const stripeUpdates = {};
-
-    if (updates.firstName) stripeUpdates.first_name = updates.firstName;
-    if (updates.lastName) stripeUpdates.last_name = updates.lastName;
-    if (updates.email) stripeUpdates.email = updates.email;
-    if (updates.phone) stripeUpdates.phone = updates.phone;
-
-    if (updates.dateOfBirth) {
-      stripeUpdates.dob = {
-        day: updates.dateOfBirth.day,
-        month: updates.dateOfBirth.month,
-        year: updates.dateOfBirth.year,
-      };
-    }
-
-    if (updates.address) {
-      stripeUpdates.address = {
-        line1: updates.address.line1,
-        line2: updates.address.line2 || undefined,
-        city: updates.address.city,
-        state: updates.address.state,
-        postal_code: updates.address.postalCode,
-        country: updates.address.country,
-      };
-    }
-
-    if (updates.relationship) {
-      stripeUpdates.relationship = {
-        representative: updates.relationship.representative,
-        owner: updates.relationship.owner,
-        title: updates.relationship.title || undefined,
-        percent_ownership: updates.relationship.percentOwnership || undefined,
-      };
-    }
-
-    if (updates.ssnLast4) stripeUpdates.ssn_last_4 = updates.ssnLast4;
-    if (updates.idNumber) stripeUpdates.id_number = updates.idNumber;
-
-    // Update person in Stripe
+    // Update person in Stripe (pass through Stripe format directly)
     const person = await stripe.accounts.updatePerson(
       accountRecord.stripeAccountId,
       personId,
-      stripeUpdates
+      updates
     );
 
     console.log(`Person updated in Stripe: ${person.id}`);
 
-    // Update in database
+    // Update minimal info in database
     const dbUpdates = {};
-    if (updates.relationship) dbUpdates["persons.$.relationship"] = updates.relationship;
-    if (updates.firstName) dbUpdates["persons.$.firstName"] = updates.firstName;
-    if (updates.lastName) dbUpdates["persons.$.lastName"] = updates.lastName;
+    if (updates.first_name) dbUpdates["persons.$.first_name"] = updates.first_name;
+    if (updates.last_name) dbUpdates["persons.$.last_name"] = updates.last_name;
     if (updates.email) dbUpdates["persons.$.email"] = updates.email;
-    if (updates.phone) dbUpdates["persons.$.phone"] = updates.phone;
-    if (updates.dateOfBirth) dbUpdates["persons.$.dateOfBirth"] = updates.dateOfBirth;
-    if (updates.address) dbUpdates["persons.$.address"] = updates.address;
 
     // Update verification status from Stripe
     if (person.verification) {
       dbUpdates["persons.$.verification.status"] = person.verification.status;
     }
 
-    await updateAccount(
-      { _id: accountRecord._id, "persons.personId": personId },
-      { $set: dbUpdates }
-    );
+    if (Object.keys(dbUpdates).length > 0) {
+      await updateAccount(
+        { _id: accountRecord._id, "persons.personId": personId },
+        { $set: dbUpdates }
+      );
+    }
 
     console.log(`Person updated in database record`);
 
@@ -617,6 +429,12 @@ exports.getAccountStatus = async (companyId) => {
     const totalRequirements = allRequirements.length;
     const remainingRequirements = currentlyDue.length;
 
+    // Helper fields: Deduplicate requirements for frontend convenience
+    const uniqueFields = [...new Set(eventuallyDue)]; // Unique fields from eventuallyDue
+    const totalUniqueCount = uniqueFields.length;
+    const currentCount = currentlyDue.length;
+    const overdueCount = pastDue.length;
+
     // Calculate progress percentage
     let progressPercentage = 0;
     if (totalRequirements > 0) {
@@ -672,6 +490,12 @@ exports.getAccountStatus = async (companyId) => {
         disabledReason: stripeAccount.requirements?.disabled_reason || null,
         currentDeadline: stripeAccount.requirements?.current_deadline || null,
         categories: requirementCategories,
+
+        // Helper fields for frontend (deduplicated)
+        uniqueFields: uniqueFields,
+        totalUniqueCount: totalUniqueCount,
+        currentCount: currentCount,
+        overdueCount: overdueCount,
       },
       persons: updatedRecord.persons,
       externalAccounts: updatedRecord.externalAccounts,
@@ -822,5 +646,213 @@ exports.syncAccountFromWebhook = async (event) => {
   } catch (error) {
     console.error("Error syncing account from webhook:", error);
     return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Convert snake_case to Title Case
+ * @param {string} str - Snake case string (e.g., "tax_id")
+ * @returns {string} Title case string (e.g., "Tax Id")
+ */
+function toTitleCase(str) {
+  return str
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
+ * Dynamically generate human-readable label from Stripe requirement field path
+ * @param {string} fieldPath - Stripe field path (e.g., "company.tax_id")
+ * @returns {object} { label, description, category }
+ */
+function getRequirementLabel(fieldPath) {
+  // Small override map for special cases that need custom wording
+  const overrideMap = {
+    "external_account": {
+      label: "Add Bank Account",
+      description: "Bank account for receiving payouts"
+    },
+    "company.owners_provided": {
+      label: "Provide Account Representative",
+      description: "Add at least one owner or representative for the business"
+    },
+    "tos_acceptance.date": {
+      label: "Accept Terms of Service",
+      description: "Accept Stripe's terms of service"
+    },
+    "tos_acceptance.ip": {
+      label: "Accept Terms of Service",
+      description: "Accept Stripe's terms of service"
+    },
+    "business_profile.url": {
+      label: "Provide Business Website",
+      description: "URL of the business website"
+    },
+    "business_profile.mcc": {
+      label: "Provide Merchant Category Code",
+      description: "MCC code representing your business type"
+    },
+    "company.name": {
+      label: "Provide Legal Business Name",
+      description: "Official registered name of the business"
+    },
+  };
+
+  // Check override map first
+  if (overrideMap[fieldPath]) {
+    const override = overrideMap[fieldPath];
+    return {
+      label: override.label,
+      description: override.description,
+      category: getCategoryFromPath(fieldPath)
+    };
+  }
+
+  // Dynamic label generation
+  const parts = fieldPath.split('.');
+  const lastPart = parts[parts.length - 1];
+  const fieldName = toTitleCase(lastPart);
+
+  // Determine action word based on field type
+  let actionWord = "Provide";
+  if (fieldPath.includes("verification.document") || fieldPath.includes(".document")) {
+    actionWord = "Upload";
+  } else if (fieldPath.includes("tos_acceptance")) {
+    actionWord = "Accept";
+  } else if (fieldPath === "external_account") {
+    actionWord = "Add";
+  }
+
+  // Generate label with context based on path prefix
+  let label;
+  let description;
+
+  if (fieldPath.startsWith("person.")) {
+    const contextField = toTitleCase(lastPart);
+    label = `${actionWord} Representative ${contextField}`;
+    description = `${contextField} of business representative`;
+  } else if (fieldPath.startsWith("individual.")) {
+    const contextField = toTitleCase(lastPart);
+    label = `${actionWord} Your ${contextField}`;
+    description = `Your ${contextField.toLowerCase()}`;
+  } else if (fieldPath.startsWith("company.")) {
+    const contextField = toTitleCase(lastPart);
+    label = `${actionWord} Company ${contextField}`;
+    description = `Company ${contextField.toLowerCase()}`;
+  } else if (fieldPath.startsWith("business_profile.")) {
+    const contextField = toTitleCase(lastPart);
+    label = `${actionWord} ${contextField}`;
+    description = `Business ${contextField.toLowerCase()}`;
+  } else {
+    // Generic fallback
+    label = `${actionWord} ${fieldName}`;
+    description = `Required: ${fieldName}`;
+  }
+
+  return {
+    label,
+    description,
+    category: getCategoryFromPath(fieldPath)
+  };
+}
+
+/**
+ * Determine category from field path
+ * @param {string} fieldPath - Stripe field path
+ * @returns {string} Category name
+ */
+function getCategoryFromPath(fieldPath) {
+  if (fieldPath.startsWith("person.") || fieldPath.includes("owners_provided")) {
+    return "representatives";
+  }
+  if (fieldPath.includes("external_account") || fieldPath.includes("bank")) {
+    return "bankAccount";
+  }
+  if (fieldPath.includes("verification.document") || fieldPath.includes(".document")) {
+    return "verification";
+  }
+  if (fieldPath.includes("tos_acceptance")) {
+    return "terms";
+  }
+  if (fieldPath.startsWith("company.") || fieldPath.startsWith("business_profile.") || fieldPath.startsWith("individual.")) {
+    return "businessInfo";
+  }
+  return "other";
+}
+
+/**
+ * Get requirements list with human-readable labels
+ * @param {string} companyId - MongoDB company ID
+ * @param {string} status - 'active' or 'completed'
+ * @returns {object} Requirements list
+ */
+exports.getRequirementsList = async (companyId, status) => {
+  try {
+    console.log(`Fetching ${status} requirements for company: ${companyId}`);
+
+    // Find account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // Fetch fresh account data from Stripe
+    const stripeAccount = await stripe.accounts.retrieve(accountRecord.stripeAccountId);
+
+    const currentlyDue = stripeAccount.requirements?.currently_due || [];
+    const eventuallyDue = stripeAccount.requirements?.eventually_due || [];
+    const pastDue = stripeAccount.requirements?.past_due || [];
+
+    // Get all unique requirements
+    const allUniqueRequirements = [...new Set(eventuallyDue)];
+
+    // Separate active (pending) and completed requirements
+    const activeRequirements = currentlyDue;
+    const completedRequirementFields = allUniqueRequirements.filter(
+      field => !currentlyDue.includes(field)
+    );
+
+    let requirementsList = [];
+
+    if (status === "active") {
+      // Return pending requirements
+      requirementsList = activeRequirements.map(fieldPath => {
+        const labelInfo = getRequirementLabel(fieldPath);
+        return {
+          field: fieldPath,
+          label: labelInfo.label,
+          description: labelInfo.description,
+          category: labelInfo.category,
+          completed: false,
+          overdue: pastDue.includes(fieldPath)
+        };
+      });
+    } else if (status === "completed") {
+      // Return completed requirements
+      requirementsList = completedRequirementFields.map(fieldPath => {
+        const labelInfo = getRequirementLabel(fieldPath);
+        return {
+          field: fieldPath,
+          label: labelInfo.label,
+          description: labelInfo.description,
+          category: labelInfo.category,
+          completed: true,
+          overdue: false
+        };
+      });
+    } else {
+      throw new Error("Invalid status parameter. Must be 'active' or 'completed'");
+    }
+
+    return {
+      success: true,
+      status,
+      count: requirementsList.length,
+      requirements: requirementsList
+    };
+  } catch (error) {
+    console.error("Error fetching requirements list:", error);
+    throw new Error(`Failed to fetch requirements list: ${error.message}`);
   }
 };

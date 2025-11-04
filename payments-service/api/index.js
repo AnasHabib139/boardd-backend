@@ -13,6 +13,7 @@ const {
   updatePerson,
   uploadPersonDocument,
   getAccountStatus,
+  getRequirementsList,
   addExternalAccount,
   handleWebhook,
 } = require("../controllers/connect.controller");
@@ -94,6 +95,18 @@ class PaymentsAPI {
       "/connect/accounts/:companyId/status",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       getAccountStatus
+    );
+
+    /**
+     * GET /api/payments/connect/accounts/:companyId/requirements
+     * Get requirements list with human-readable labels
+     * Query: ?status=active|completed
+     * Auth: Admin or Employee (same company)
+     */
+    router.get(
+      "/connect/accounts/:companyId/requirements",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getRequirementsList
     );
 
     // ==================== Person Routes ====================

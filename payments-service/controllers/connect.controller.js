@@ -111,11 +111,12 @@ exports.updateAccount = async (req, res, next) => {
 
     console.log(`Updating Stripe Connect account for company: ${companyId}`);
 
-    // If TOS acceptance is being updated, capture IP and timestamp
-    if (updates.tosAcceptance) {
-      updates.tosAcceptance = {
-        date: updates.tosAcceptance.date || Math.floor(Date.now() / 1000),
-        ip: updates.tosAcceptance.ip || req.ip || req.connection.remoteAddress,
+    // If TOS acceptance is being updated, capture IP and timestamp automatically
+    if (updates.tos_acceptance) {
+      updates.tos_acceptance = {
+        ...updates.tos_acceptance,
+        date: updates.tos_acceptance.date || Math.floor(Date.now() / 1000),
+        ip: updates.tos_acceptance.ip || req.ip || req.connection.remoteAddress,
       };
     }
 
@@ -530,6 +531,75 @@ exports.handleWebhook = async (req, res, next) => {
     return res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({
       error: "Webhook processing error",
       message: error.message,
+    });
+  }
+};
+
+/**
+ * Get requirements list with human-readable labels
+ * GET /api/payments/connect/accounts/:companyId/requirements?status=active|completed
+ */
+exports.getRequirementsList = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+    const { status } = req.query;
+    const userId = req.user.id;
+
+    console.log(`Fetching ${status} requirements list for company: ${companyId}`);
+
+    // Validate status parameter
+    if (!status || !["active", "completed"].includes(status)) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Query parameter 'status' is required and must be either 'active' or 'completed'",
+      });
+    }
+
+    // Fetch user to get companyId (JWT doesn't include it)
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.UNAUTHORIZED,
+        message: "User not found",
+      });
+    }
+
+    // Security check
+    if (companyId !== user.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You do not have permission to view this account",
+      });
+    }
+
+    const result = await stripeService.getRequirementsList(companyId, status);
+
+    return generateResponse(
+      {
+        status: result.status,
+        count: result.count,
+        requirements: result.requirements,
+      },
+      `${status === "active" ? "Active" : "Completed"} requirements retrieved successfully`,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getRequirementsList controller:", error);
+
+    if (error.message.includes("not found")) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Stripe account not found for this company. Please complete onboarding first.",
+      });
+    }
+
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to fetch requirements list",
     });
   }
 };

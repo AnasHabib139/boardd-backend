@@ -287,8 +287,8 @@ const processChatMessageSend = async (socket, data, io) => {
       contentText
     );
 
-    // Notify DM participants
-    if (conversation.type === "dm" || conversation.type === "group_dm") {
+    // Notify DM participants (including client chat)
+    if (conversation.type === "dm" || conversation.type === "group_dm" || conversation.type === "client") {
       await notifyDMParticipants(
         io,
         conversation,
@@ -721,6 +721,44 @@ const handleMentionNotifications = async (
             createdBy: author._id,
           });
         }
+      }
+    }
+  }
+
+  // Handle @channel mention in client conversations
+  if (channelMention && conversation.type === "client") {
+    // Client conversations use participantIds (like group_dm)
+    const participantIds = conversation.participantIds.map(id => id.toString());
+
+    // Notify all participants except author
+    for (const participantId of participantIds) {
+      if (participantId !== author._id.toString()) {
+        // Emit to user room
+        io.to(`user:${participantId}`).emit("chat:notification", {
+          type: "CHAT_MENTION",
+          conversationId: conversation._id,
+          messageId: message._id,
+          fromUser: {
+            _id: author._id,
+            name: author.name,
+            image: author.image,
+          },
+          messagePreview: contentText.substring(0, 100),
+          conversationType: conversation.type,
+          mentionType: "channel",
+          timestamp: new Date(),
+        });
+
+        // Create persistent notification
+        await createNotification({
+          userId: participantId,
+          type: "CHAT_MENTION",
+          title: "@channel in Client Chat",
+          message: `${author.name} mentioned everyone: ${contentText.substring(0, 100)}`,
+          conversationId: conversation._id,
+          messageId: message._id,
+          createdBy: author._id,
+        });
       }
     }
   }

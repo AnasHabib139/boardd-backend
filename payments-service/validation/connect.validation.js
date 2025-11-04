@@ -69,7 +69,7 @@ const addressSchema = Joi.object({
 exports.validateCreateAccount = async (req, res, next) => {
   try {
     const schema = Joi.object({
-      // REQUIRED: Minimal fields to create account
+      // REQUIRED: Minimal fields to create account (Stripe format)
       country: Joi.string()
         .trim()
         .length(2)
@@ -80,7 +80,7 @@ exports.validateCreateAccount = async (req, res, next) => {
           "any.required": "Country is required",
         }),
 
-      businessType: Joi.string()
+      business_type: Joi.string()
         .valid(...Object.values(BUSINESS_TYPES))
         .required()
         .messages({
@@ -97,90 +97,16 @@ exports.validateCreateAccount = async (req, res, next) => {
           "any.required": "Email is required",
         }),
 
-      // OPTIONAL: Progressive onboarding fields
-      businessInfo: Joi.object({
-        legalName: Joi.string().trim().min(1).max(200).optional().messages({
-          "string.empty": "Legal business name cannot be empty if provided",
-        }),
+      // OPTIONAL: Stripe format objects - accept any fields (Stripe validates)
+      company: Joi.object().unknown(true).optional(),
 
-        dba: Joi.string().trim().max(200).optional().allow("").messages({
-          "string.max": "DBA cannot exceed 200 characters",
-        }),
+      business_profile: Joi.object().unknown(true).optional(),
 
-        taxId: Joi.string()
-          .trim()
-          .optional()
-          .custom(validateTaxId)
-          .messages({
-            "any.invalid": "Invalid tax ID format",
-          }),
+      tos_acceptance: Joi.object().unknown(true).optional(),
 
-        industry: Joi.string().trim().min(1).max(100).optional().messages({
-          "string.empty": "Industry cannot be empty if provided",
-        }),
+      settings: Joi.object().unknown(true).optional(),
 
-        description: Joi.string().trim().min(10).max(500).optional().messages({
-          "string.min": "Description must be at least 10 characters",
-        }),
-
-        url: Joi.string().trim().uri().optional().messages({
-          "string.uri": "Please provide a valid business URL",
-        }),
-
-        phone: Joi.string()
-          .trim()
-          .pattern(/^\+?[1-9]\d{1,14}$/)
-          .optional()
-          .messages({
-            "string.pattern.base": "Please provide a valid phone number in E.164 format (e.g., +14155551234)",
-          }),
-
-        timezone: Joi.string().trim().optional().allow(""),
-
-        mcc: Joi.string()
-          .trim()
-          .pattern(/^\d{4}$/)
-          .optional()
-          .messages({
-            "string.pattern.base": "MCC must be a 4-digit code",
-          }),
-
-        address: addressSchema.optional(),
-      }).optional(),
-
-      publicDetails: Joi.object({
-        supportEmail: Joi.string().trim().email().optional().messages({
-          "string.email": "Please provide a valid support email address",
-        }),
-
-        supportPhone: Joi.string()
-          .trim()
-          .pattern(/^\+?[1-9]\d{1,14}$/)
-          .optional()
-          .messages({
-            "string.pattern.base": "Please provide a valid support phone number",
-          }),
-
-        supportUrl: Joi.string().trim().uri().optional().allow("").messages({
-          "string.uri": "Please provide a valid support URL",
-        }),
-
-        supportAddress: addressSchema.optional(),
-
-        descriptor: Joi.string().trim().max(22).optional().allow("").messages({
-          "string.max": "Statement descriptor cannot exceed 22 characters",
-        }),
-      }).optional(),
-
-      accountRepresentative: Joi.string()
-        .trim()
-        .pattern(/^[0-9a-fA-F]{24}$/)
-        .optional()
-        .messages({
-          "string.pattern.base": "Account representative must be a valid user ID",
-        }),
-
-      ownership: Joi.string().trim().max(200).optional().allow(""),
+      individual: Joi.object().unknown(true).optional(),
     });
 
     const { error, value } = schema.validate(req.body, {
@@ -212,47 +138,20 @@ exports.validateCreateAccount = async (req, res, next) => {
 exports.validateUpdateAccount = async (req, res, next) => {
   try {
     const schema = Joi.object({
-      businessInfo: Joi.object({
-        legalName: Joi.string().trim().min(1).max(200).optional(),
-        dba: Joi.string().trim().max(200).optional().allow(""),
+      // Stripe company object - accept any fields (Stripe validates)
+      company: Joi.object().unknown(true).optional(),
 
-        taxId: Joi.string()
-          .trim()
-          .optional()
-          .custom(validateTaxId)
-          .messages({
-            "any.invalid": "Invalid tax ID format",
-          }),
+      // Stripe business_profile object - accept any fields (Stripe validates)
+      business_profile: Joi.object().unknown(true).optional(),
 
-        description: Joi.string().trim().min(10).max(500).optional(),
-        url: Joi.string().trim().uri().optional(),
-        phone: Joi.string()
-          .trim()
-          .pattern(/^\+?[1-9]\d{1,14}$/)
-          .optional(),
-        timezone: Joi.string().trim().optional().allow(""),
-        mcc: Joi.string()
-          .trim()
-          .pattern(/^\d{4}$/)
-          .optional(),
-        address: addressSchema.optional(),
-      }).optional(),
+      // Stripe tos_acceptance object - accept any fields (Stripe validates)
+      tos_acceptance: Joi.object().unknown(true).optional(),
 
-      publicDetails: Joi.object({
-        supportEmail: Joi.string().trim().email().optional(),
-        supportPhone: Joi.string()
-          .trim()
-          .pattern(/^\+?[1-9]\d{1,14}$/)
-          .optional(),
-        supportUrl: Joi.string().trim().uri().optional().allow(""),
-        supportAddress: addressSchema.optional(),
-        descriptor: Joi.string().trim().max(22).optional().allow(""),
-      }).optional(),
+      // Stripe settings object - accept any fields (Stripe validates)
+      settings: Joi.object().unknown(true).optional(),
 
-      tosAcceptance: Joi.object({
-        date: Joi.number().optional(),
-        ip: Joi.string().trim().optional(),
-      }).optional(),
+      // Stripe individual object (for sole proprietors) - accept any fields
+      individual: Joi.object().unknown(true).optional(),
     });
 
     const { error, value } = schema.validate(req.body, {
@@ -280,68 +179,12 @@ exports.validateUpdateAccount = async (req, res, next) => {
 
 /**
  * Validation middleware for adding person (representative/owner)
+ * Accepts Stripe format (snake_case)
  */
 exports.validateAddPerson = async (req, res, next) => {
   try {
-    const schema = Joi.object({
-      relationship: Joi.object({
-        representative: Joi.boolean().required(),
-        owner: Joi.boolean().required(),
-        title: Joi.string().trim().max(100).when("representative", {
-          is: true,
-          then: Joi.required(),
-          otherwise: Joi.optional(),
-        }),
-        percentOwnership: Joi.number().min(0).max(100).when("owner", {
-          is: true,
-          then: Joi.required(),
-          otherwise: Joi.optional(),
-        }),
-      }).required(),
-
-      firstName: Joi.string().trim().min(1).max(100).required().messages({
-        "string.empty": "First name is required",
-        "any.required": "First name is required",
-      }),
-
-      lastName: Joi.string().trim().min(1).max(100).required().messages({
-        "string.empty": "Last name is required",
-        "any.required": "Last name is required",
-      }),
-
-      email: Joi.string().trim().email().required().messages({
-        "string.email": "Please provide a valid email address",
-        "any.required": "Email is required",
-      }),
-
-      phone: Joi.string()
-        .trim()
-        .pattern(/^\+?[1-9]\d{1,14}$/)
-        .optional()
-        .messages({
-          "string.pattern.base": "Please provide a valid phone number",
-        }),
-
-      dateOfBirth: Joi.object({
-        day: Joi.number().min(1).max(31).required(),
-        month: Joi.number().min(1).max(12).required(),
-        year: Joi.number().min(1900).max(new Date().getFullYear() - 18).required(),
-      }).required().messages({
-        "any.required": "Date of birth is required",
-      }),
-
-      address: addressSchema.required(),
-
-      ssnLast4: Joi.string()
-        .trim()
-        .pattern(/^\d{4}$/)
-        .optional()
-        .messages({
-          "string.pattern.base": "SSN last 4 must be 4 digits",
-        }),
-
-      idNumber: Joi.string().trim().optional(),
-    });
+    // Accept any fields Stripe supports - Stripe will validate
+    const schema = Joi.object().unknown(true);
 
     const { error, value } = schema.validate(req.body, {
       abortEarly: false,
@@ -368,51 +211,12 @@ exports.validateAddPerson = async (req, res, next) => {
 
 /**
  * Validation middleware for updating person (representative/owner)
+ * Accepts Stripe format (snake_case)
  */
 exports.validateUpdatePerson = async (req, res, next) => {
   try {
-    const schema = Joi.object({
-      relationship: Joi.object({
-        representative: Joi.boolean().optional(),
-        owner: Joi.boolean().optional(),
-        title: Joi.string().trim().max(100).optional(),
-        percentOwnership: Joi.number().min(0).max(100).optional(),
-      }).optional(),
-
-      firstName: Joi.string().trim().min(1).max(100).optional(),
-
-      lastName: Joi.string().trim().min(1).max(100).optional(),
-
-      email: Joi.string().trim().email().optional().messages({
-        "string.email": "Please provide a valid email address",
-      }),
-
-      phone: Joi.string()
-        .trim()
-        .pattern(/^\+?[1-9]\d{1,14}$/)
-        .optional()
-        .messages({
-          "string.pattern.base": "Please provide a valid phone number",
-        }),
-
-      dateOfBirth: Joi.object({
-        day: Joi.number().min(1).max(31).optional(),
-        month: Joi.number().min(1).max(12).optional(),
-        year: Joi.number().min(1900).max(new Date().getFullYear() - 18).optional(),
-      }).optional(),
-
-      address: addressSchema.optional(),
-
-      ssnLast4: Joi.string()
-        .trim()
-        .pattern(/^\d{4}$/)
-        .optional()
-        .messages({
-          "string.pattern.base": "SSN last 4 must be 4 digits",
-        }),
-
-      idNumber: Joi.string().trim().optional(),
-    });
+    // Accept any fields Stripe supports - Stripe will validate
+    const schema = Joi.object().unknown(true);
 
     const { error, value } = schema.validate(req.body, {
       abortEarly: false,
