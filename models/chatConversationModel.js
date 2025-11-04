@@ -275,7 +275,7 @@ exports.markAsRead = async (conversationId, userId, readAt = new Date()) => {
   return ChatConversation.findOneAndUpdate(
     {
       _id: conversationId,
-      "participants.userId": userId,
+      "participants.userId": new Types.ObjectId(userId),
     },
     {
       $set: {

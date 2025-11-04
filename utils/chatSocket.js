@@ -632,7 +632,18 @@ const processChatReadSync = async (socket, data, io) => {
     }
 
     // Update read status
-    await markAsRead(conversationId, userId, new Date());
+    const updatedConversation = await markAsRead(conversationId, userId, new Date());
+
+    // Check if update was successful
+    if (!updatedConversation) {
+      console.error(
+        `Failed to mark conversation ${conversationId} as read for user ${userId}: User not found in participants`
+      );
+      socket.emit("chat:read:error", {
+        error: "Failed to update read status. You may not be a participant in this conversation.",
+      });
+      return;
+    }
 
     // Broadcast to conversation
     io.to(`conversation:${conversationId}`).emit("chat:read:updated", {

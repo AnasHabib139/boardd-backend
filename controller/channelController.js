@@ -11,7 +11,7 @@ const {
   removeFileFromChannel,
   findManyChannels,
 } = require("../models/channelModel");
-const { createChatConversation } = require("../models/chatConversationModel");
+const { createChatConversation, addChannelParticipant } = require("../models/chatConversationModel");
 const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const {
@@ -409,6 +409,20 @@ exports.addUserToChannel = async (req, res, next) => {
             );
 
             await Promise.all(tabUpdatePromises);
+          }
+        }
+
+        // Sync chat conversation participants
+        // Add new members to the channel's conversation participants array
+        for (const userId of usersToAdd) {
+          try {
+            await addChannelParticipant(channel._id, userId);
+          } catch (participantError) {
+            console.error(
+              `Failed to add user ${userId} to conversation participants:`,
+              participantError
+            );
+            // Continue with other users even if one fails
           }
         }
       } catch (updateError) {
