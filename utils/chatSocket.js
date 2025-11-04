@@ -698,7 +698,7 @@ const handleMentionNotifications = async (
   author,
   contentText
 ) => {
-  const { userMentions, channelMention } = mentions;
+  const { userMentions, channelMention, allMention } = mentions;
 
   // Handle @channel mention
   if (channelMention && conversation.type === "channel") {
@@ -741,10 +741,18 @@ const handleMentionNotifications = async (
     }
   }
 
-  // Handle @channel mention in client conversations
-  if (channelMention && conversation.type === "client") {
-    // Client conversations use participantIds (like group_dm)
+  // Handle @all mention in client and group_dm conversations
+  if (allMention && (conversation.type === "client" || conversation.type === "group_dm")) {
+    // These conversation types use participantIds
     const participantIds = conversation.participantIds.map(id => id.toString());
+
+    // Determine conversation name for notification
+    let conversationName;
+    if (conversation.type === "client") {
+      conversationName = conversation.clientContact?.name || "Client Chat";
+    } else {
+      conversationName = "Group Chat";
+    }
 
     // Notify all participants except author
     for (const participantId of participantIds) {
@@ -761,7 +769,7 @@ const handleMentionNotifications = async (
           },
           messagePreview: contentText.substring(0, 100),
           conversationType: conversation.type,
-          mentionType: "channel",
+          mentionType: "all",
           timestamp: new Date(),
         });
 
@@ -769,7 +777,7 @@ const handleMentionNotifications = async (
         await createNotification({
           userId: participantId,
           type: "CHAT_MENTION",
-          title: "@channel in Client Chat",
+          title: `@all in ${conversationName}`,
           message: `${author.name} mentioned everyone: ${contentText.substring(0, 100)}`,
           conversationId: conversation._id,
           messageId: message._id,

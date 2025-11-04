@@ -170,7 +170,7 @@ function sanitizeAttrs(nodeType, attrs, errors = [], options = {}) {
         sanitized.type = attrs.type || "user";
 
         // Validate mention type
-        if (!["user", "channel"].includes(sanitized.type)) {
+        if (!["user", "channel", "all"].includes(sanitized.type)) {
           sanitized.type = "user";
         }
 
@@ -181,6 +181,19 @@ function sanitizeAttrs(nodeType, attrs, errors = [], options = {}) {
           // @channel only allowed in channel conversations
           if (options.conversationType && options.conversationType !== "channel") {
             errors.push("@channel mentions are only allowed in channel conversations");
+            return null;
+          }
+        }
+
+        // Validate @all mentions
+        if (sanitized.id === "@all") {
+          sanitized.type = "all";
+
+          // @all only allowed in client and group_dm conversations
+          if (options.conversationType &&
+              options.conversationType !== "client" &&
+              options.conversationType !== "group_dm") {
+            errors.push("@all mentions are only allowed in client and group DM conversations");
             return null;
           }
         }
@@ -312,11 +325,12 @@ function validateStructure(node, errors = []) {
 /**
  * Extract all mention IDs from contentDoc
  * @param {Object} contentDoc - TipTap JSON document
- * @returns {Object} { userMentions: [userId], channelMention: boolean }
+ * @returns {Object} { userMentions: [userId], channelMention: boolean, allMention: boolean }
  */
 exports.extractMentions = (contentDoc) => {
   const userMentions = [];
   let channelMention = false;
+  let allMention = false;
 
   function traverse(node) {
     if (!node || typeof node !== "object") return;
@@ -324,6 +338,8 @@ exports.extractMentions = (contentDoc) => {
     if (node.type === "mention" && node.attrs) {
       if (node.attrs.id === "@channel" && node.attrs.type === "channel") {
         channelMention = true;
+      } else if (node.attrs.id === "@all" && node.attrs.type === "all") {
+        allMention = true;
       } else if (node.attrs.type === "user" && node.attrs.id) {
         userMentions.push(node.attrs.id);
       }
@@ -339,6 +355,7 @@ exports.extractMentions = (contentDoc) => {
   return {
     userMentions: [...new Set(userMentions)], // Remove duplicates
     channelMention,
+    allMention,
   };
 };
 
