@@ -164,6 +164,13 @@ const chatMessageSchema = new Schema(
       ref: "User",
       default: null,
     },
+    // Thread participants (users who have replied to this thread)
+    threadParticipants: [
+      {
+        type: Types.ObjectId,
+        ref: "User",
+      },
+    ],
     // Client chat multi-channel delivery tracking
     deliveries: [deliverySchema],
     // Message direction (for client chat)
@@ -222,6 +229,9 @@ chatMessageSchema.index({ "deliveries.channel": 1, createdAt: -1 });
 
 // 6. Author's messages
 chatMessageSchema.index({ authorId: 1, createdAt: -1 });
+
+// 7. Thread participants lookups (for thread notification queries)
+chatMessageSchema.index({ _id: 1, threadParticipants: 1 });
 
 // Register plugins
 chatMessageSchema.plugin(mongoosePaginate);
@@ -451,6 +461,9 @@ exports.incrementThreadCount = async (rootMessageId, replyData) => {
         lastReplyAt: new Date(),
         lastReplyText: replyText.substring(0, 200),
         lastReplyAuthorId: replyAuthorId,
+      },
+      $addToSet: {
+        threadParticipants: replyAuthorId, // Add reply author to thread participants (no duplicates)
       },
     },
     { new: true }

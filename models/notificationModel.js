@@ -8,7 +8,7 @@ const notificationSchema = new Schema({
   // Notification metadata
   type: {
     type: String,
-    enum: ["MENTION", "CHANNEL", "WORK_IN_PROGRESS", "CHAT_MENTION", "CHAT_MESSAGE"],
+    enum: ["MENTION", "CHANNEL", "WORK_IN_PROGRESS", "CHAT_MENTION", "CHAT_MESSAGE", "CHAT_THREAD_REPLY"],
     required: true,
   },
 

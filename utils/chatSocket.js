@@ -277,7 +277,7 @@ const processChatMessageSend = async (socket, data, io) => {
       });
     }
 
-    // Handle mentions and notifications
+    // Handle mentions (works for both root messages and thread replies)
     await handleMentionNotifications(
       io,
       conversation,
@@ -287,28 +287,44 @@ const processChatMessageSend = async (socket, data, io) => {
       contentText
     );
 
-    // Notify DM participants (including client chat)
-    if (conversation.type === "dm" || conversation.type === "group_dm" || conversation.type === "client") {
-      await notifyDMParticipants(
+    // Handle notifications based on message type
+    if (parentMessageId) {
+      // Thread reply - notify only thread participants (root author + previous repliers)
+      await notifyThreadParticipants(
         io,
         conversation,
         message,
+        parentMessageId,
         userId,
         author,
         contentText
       );
-    }
+    } else {
+      // Root message - notify all conversation participants
 
-    // Notify channel members
-    if (conversation.type === "channel") {
-      await notifyChannelMembers(
-        io,
-        conversation,
-        message,
-        userId,
-        author,
-        contentText
-      );
+      // Notify DM participants (including client chat)
+      if (conversation.type === "dm" || conversation.type === "group_dm" || conversation.type === "client") {
+        await notifyDMParticipants(
+          io,
+          conversation,
+          message,
+          userId,
+          author,
+          contentText
+        );
+      }
+
+      // Notify channel members
+      if (conversation.type === "channel") {
+        await notifyChannelMembers(
+          io,
+          conversation,
+          message,
+          userId,
+          author,
+          contentText
+        );
+      }
     }
 
     // Success response
@@ -809,25 +825,35 @@ const notifyDMParticipants = async (
   author,
   contentText
 ) => {
-  // Get list of sockets in conversation room
-  const socketsInRoom = await io.in(`conversation:${conversation._id}`).allSockets();
+  // Determine which room to check based on message type
+  let roomToCheck;
+  if (message.parentMessageId) {
+    // For thread replies, check if user is in THIS specific thread
+    roomToCheck = `thread:${message.parentMessageId}`;
+  } else {
+    // For root messages, check if user is in conversation
+    roomToCheck = `conversation:${conversation._id}`;
+  }
+
+  // Get list of sockets in the appropriate room
+  const socketsInRoom = await io.in(roomToCheck).allSockets();
 
   for (const participantId of conversation.participantIds) {
     if (participantId.toString() !== senderId.toString()) {
-      // Check if user is in conversation room (skip notification if they are)
+      // Check if user is in the room (skip notification if they are)
       const userSocketRoom = `user:${participantId}`;
       const userSockets = await io.in(userSocketRoom).allSockets();
 
-      // Only notify if user is not currently in the conversation room
-      let isInConversation = false;
+      // Only notify if user is not currently in the room
+      let isInRoom = false;
       for (const socketId of userSockets) {
         if (socketsInRoom.has(socketId)) {
-          isInConversation = true;
+          isInRoom = true;
           break;
         }
       }
 
-      if (!isInConversation) {
+      if (!isInRoom) {
         io.to(`user:${participantId}`).emit("chat:notification", {
           type: "CHAT_MESSAGE",
           conversationId: conversation._id,
@@ -864,28 +890,38 @@ const notifyChannelMembers = async (
     return;
   }
 
-  // Get list of sockets in conversation room
-  const socketsInRoom = await io.in(`conversation:${conversation._id}`).allSockets();
+  // Determine which room to check based on message type
+  let roomToCheck;
+  if (message.parentMessageId) {
+    // For thread replies, check if user is in THIS specific thread
+    roomToCheck = `thread:${message.parentMessageId}`;
+  } else {
+    // For root messages, check if user is in conversation
+    roomToCheck = `conversation:${conversation._id}`;
+  }
+
+  // Get list of sockets in the appropriate room
+  const socketsInRoom = await io.in(roomToCheck).allSockets();
 
   // Convert ObjectIds to strings for proper Socket.IO room targeting
   const memberIds = channel.members.map(id => id.toString());
 
   for (const memberId of memberIds) {
     if (memberId !== senderId.toString()) {
-      // Check if user is in conversation room (skip notification if they are)
+      // Check if user is in the room (skip notification if they are)
       const userSocketRoom = `user:${memberId}`;
       const userSockets = await io.in(userSocketRoom).allSockets();
 
-      // Only notify if user is not currently in the conversation room
-      let isInConversation = false;
+      // Only notify if user is not currently in the room
+      let isInRoom = false;
       for (const socketId of userSockets) {
         if (socketsInRoom.has(socketId)) {
-          isInConversation = true;
+          isInRoom = true;
           break;
         }
       }
 
-      if (!isInConversation) {
+      if (!isInRoom) {
         io.to(`user:${memberId}`).emit("chat:notification", {
           type: "CHAT_MESSAGE",
           conversationId: conversation._id,
@@ -900,6 +936,91 @@ const notifyChannelMembers = async (
           timestamp: new Date(),
         });
       }
+    }
+  }
+};
+
+/**
+ * Helper: Notify thread participants
+ * Notifies root message author and users who have replied to the thread
+ */
+const notifyThreadParticipants = async (
+  io,
+  conversation,
+  message,
+  parentMessageId,
+  senderId,
+  author,
+  contentText
+) => {
+  // Fetch root message to get author and thread participants
+  const rootMessage = await findChatMessage({ _id: parentMessageId });
+  if (!rootMessage) {
+    console.error(`Root message ${parentMessageId} not found for thread reply notification`);
+    return;
+  }
+
+  // Get list of sockets in THIS specific thread room
+  const socketsInRoom = await io.in(`thread:${parentMessageId}`).allSockets();
+
+  // Collect users to notify: root author + thread participants
+  const usersToNotify = new Set();
+
+  // Add root message author (if not the reply author)
+  if (rootMessage.authorId.toString() !== senderId.toString()) {
+    usersToNotify.add(rootMessage.authorId.toString());
+  }
+
+  // Add thread participants (if any)
+  if (rootMessage.threadParticipants && rootMessage.threadParticipants.length > 0) {
+    rootMessage.threadParticipants.forEach((participantId) => {
+      if (participantId.toString() !== senderId.toString()) {
+        usersToNotify.add(participantId.toString());
+      }
+    });
+  }
+
+  // Notify each user
+  for (const userId of usersToNotify) {
+    // Check if user is currently viewing this thread (skip notification if they are)
+    const userSocketRoom = `user:${userId}`;
+    const userSockets = await io.in(userSocketRoom).allSockets();
+
+    let isInThread = false;
+    for (const socketId of userSockets) {
+      if (socketsInRoom.has(socketId)) {
+        isInThread = true;
+        break;
+      }
+    }
+
+    if (!isInThread) {
+      // Emit notification
+      io.to(`user:${userId}`).emit("chat:notification", {
+        type: "CHAT_THREAD_REPLY",
+        conversationId: conversation._id,
+        messageId: message._id,
+        parentMessageId: parentMessageId,
+        fromUser: {
+          _id: author._id,
+          name: author.name,
+          image: author.image,
+        },
+        messagePreview: contentText.substring(0, 100),
+        conversationType: conversation.type,
+        timestamp: new Date(),
+      });
+
+      // Create persistent notification
+      await createNotification({
+        userId: userId,
+        type: "CHAT_THREAD_REPLY",
+        title: "New thread reply",
+        message: `${author.name} replied: ${contentText.substring(0, 100)}`,
+        conversationId: conversation._id,
+        messageId: message._id,
+        createdBy: author._id,
+      });
     }
   }
 };
