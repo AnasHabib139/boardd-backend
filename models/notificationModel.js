@@ -8,7 +8,7 @@ const notificationSchema = new Schema({
   // Notification metadata
   type: {
     type: String,
-    enum: ["MENTION", "CHANNEL", "WORK_IN_PROGRESS"],
+    enum: ["MENTION", "CHANNEL", "WORK_IN_PROGRESS", "CHAT_MENTION", "CHAT_MESSAGE"],
     required: true,
   },
 
@@ -17,6 +17,8 @@ const notificationSchema = new Schema({
   channelId: { type: Types.ObjectId, ref: "Channel" },
   tabId: { type: Types.ObjectId, ref: "ChannelTab" },
   taskId: { type: Types.ObjectId, ref: "Task" },
+  conversationId: { type: Types.ObjectId, ref: "ChatConversation" },
+  messageId: { type: Types.ObjectId, ref: "ChatMessage" },
 
   // Who created this notification
   createdBy: { type: Types.ObjectId, ref: "User", required: true },
