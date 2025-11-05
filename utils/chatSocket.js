@@ -17,6 +17,7 @@ const {
   editMessage,
   softDeleteMessage,
   incrementThreadCount,
+  countChatMessages,
 } = require("../models/chatMessageModel");
 const {
   addReaction,
@@ -326,6 +327,9 @@ const processChatMessageSend = async (socket, data, io) => {
         );
       }
     }
+
+    // Emit unread count updates to participants
+    await emitUnreadCountUpdates(io, conversation, message, userId);
 
     // Success response
     socket.emit("chat:message:sent", {
@@ -666,6 +670,13 @@ const processChatReadSync = async (socket, data, io) => {
       conversationId,
       userId,
       lastReadAt: new Date(),
+    });
+
+    // Emit unread count update to user (always 0 after marking as read)
+    io.to(`user:${userId}`).emit("chat:unread:updated", {
+      conversationId,
+      unreadCount: 0,
+      lastMessageAt: updatedConversation.lastMessageAt,
     });
 
     socket.emit("chat:read:synced", {
@@ -1030,6 +1041,113 @@ const notifyThreadParticipants = async (
         createdBy: author._id,
       });
     }
+  }
+};
+
+/**
+ * Helper: Calculate unread count for a user in a conversation
+ * @param {String} conversationId
+ * @param {String} userId
+ * @returns {Promise<Number>} Unread count
+ */
+const calculateUnreadCount = async (conversationId, userId) => {
+  // Get conversation to find user's lastReadAt
+  const conversation = await findChatConversation({ _id: conversationId });
+  if (!conversation) return 0;
+
+  // Find participant's lastReadAt
+  const participant = conversation.participants?.find(
+    (p) => p.userId.toString() === userId.toString()
+  );
+
+  // Build query to count unread messages
+  const query = {
+    conversationId: new Types.ObjectId(conversationId),
+    authorId: { $ne: new Types.ObjectId(userId) }, // Exclude user's own messages
+    deletedAt: null, // Exclude deleted messages
+  };
+
+  // If user has read before, only count messages after lastReadAt
+  if (participant?.lastReadAt) {
+    query.createdAt = { $gt: participant.lastReadAt };
+  }
+
+  // Count unread messages
+  return await countChatMessages(query);
+};
+
+/**
+ * Helper: Emit unread count updates to conversation participants
+ * Calculates and emits updated unread counts after a new message
+ */
+const emitUnreadCountUpdates = async (
+  io,
+  conversation,
+  message,
+  senderId
+) => {
+  try {
+    // Get participant IDs based on conversation type
+    let participantIds = [];
+
+    if (conversation.type === "dm" || conversation.type === "group_dm" || conversation.type === "client") {
+      // DM, Group DM, and Client use participantIds
+      participantIds = conversation.participantIds.map((id) => id.toString());
+    } else if (conversation.type === "channel") {
+      // Channels get members from channel document
+      const channel = await findChannel({ _id: conversation.channelId });
+      if (channel) {
+        participantIds = channel.members.map((id) => id.toString());
+      }
+    }
+
+    // Determine which room to check (conversation or thread)
+    let roomToCheck;
+    if (message.parentMessageId) {
+      // For thread replies, check if user is in THIS specific thread
+      roomToCheck = `thread:${message.parentMessageId}`;
+    } else {
+      // For root messages, check if user is in conversation
+      roomToCheck = `conversation:${conversation._id}`;
+    }
+
+    // Get sockets currently in the room
+    const socketsInRoom = await io.in(roomToCheck).allSockets();
+
+    // Update each participant (except sender)
+    for (const participantId of participantIds) {
+      if (participantId === senderId.toString()) continue; // Skip sender
+
+      // Check if user is actively viewing the conversation/thread
+      const userSocketRoom = `user:${participantId}`;
+      const userSockets = await io.in(userSocketRoom).allSockets();
+
+      let isActivelyViewing = false;
+      for (const socketId of userSockets) {
+        if (socketsInRoom.has(socketId)) {
+          isActivelyViewing = true;
+          break;
+        }
+      }
+
+      // Only emit if user is NOT actively viewing
+      if (!isActivelyViewing) {
+        // Calculate accurate unread count
+        const unreadCount = await calculateUnreadCount(
+          conversation._id,
+          participantId
+        );
+
+        // Emit to user's personal room
+        io.to(`user:${participantId}`).emit("chat:unread:updated", {
+          conversationId: conversation._id,
+          unreadCount: unreadCount,
+          lastMessageAt: message.createdAt,
+        });
+      }
+    }
+  } catch (error) {
+    console.error("Error emitting unread count updates:", error);
   }
 };
 
