@@ -917,3 +917,212 @@ exports.getRequirementsList = async (companyId, status) => {
     throw new Error(`Failed to fetch requirements list: ${error.message}`);
   }
 };
+
+/**
+ * Upload branding file (logo or icon) to Stripe
+ * @param {string} companyId - MongoDB company ID
+ * @param {object} file - Multer file object with buffer
+ * @param {string} purpose - 'business_logo' or 'business_icon'
+ * @returns {object} File upload result with file ID
+ */
+exports.uploadBrandingFile = async (companyId, file, purpose) => {
+  try {
+    console.log(`Uploading branding file: ${file.originalname}, purpose: ${purpose}`);
+
+    // Validate purpose
+    const validPurposes = ["business_logo", "business_icon"];
+    if (!validPurposes.includes(purpose)) {
+      throw new Error(`Invalid purpose. Must be one of: ${validPurposes.join(", ")}`);
+    }
+
+    // Find account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // Create file upload to Stripe (Upload to platform account - can be used by all connected accounts)
+    const fileUpload = await stripe.files.create({
+      file: {
+        data: file.buffer,
+        name: file.originalname,
+        type: file.mimetype,
+      },
+      purpose: purpose,
+    });
+
+    console.log(`File uploaded successfully to platform (for account ${accountRecord.stripeAccountId}): ${fileUpload.id}`);
+
+    return {
+      success: true,
+      fileId: fileUpload.id,
+      filename: fileUpload.filename,
+      url: fileUpload.url,
+      size: fileUpload.size,
+      purpose: fileUpload.purpose,
+    };
+  } catch (error) {
+    console.error("Error uploading branding file:", error);
+    throw new Error(`Failed to upload branding file: ${error.message}`);
+  }
+};
+
+/**
+ * Update branding settings for Connect account
+ * @param {string} companyId - MongoDB company ID
+ * @param {object} brandingData - { icon, logo, primary_color, secondary_color }
+ * @returns {object} Update result
+ */
+exports.updateBrandingSettings = async (companyId, brandingData) => {
+  try {
+    console.log(`Updating branding settings for company: ${companyId}`);
+
+    // Find account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // Build branding updates
+    const brandingUpdates = {};
+
+    if (brandingData.icon !== undefined) {
+      brandingUpdates.icon = brandingData.icon;
+    }
+
+    if (brandingData.logo !== undefined) {
+      brandingUpdates.logo = brandingData.logo;
+    }
+
+    if (brandingData.primary_color !== undefined) {
+      brandingUpdates.primary_color = brandingData.primary_color;
+    }
+
+    if (brandingData.secondary_color !== undefined) {
+      brandingUpdates.secondary_color = brandingData.secondary_color;
+    }
+
+    // Update account in Stripe
+    const updatedAccount = await stripe.accounts.update(
+      accountRecord.stripeAccountId,
+      {
+        settings: {
+          branding: brandingUpdates,
+        },
+      }
+    );
+
+    console.log(`Branding settings updated successfully for account: ${accountRecord.stripeAccountId}`);
+
+    return {
+      success: true,
+      accountId: updatedAccount.id,
+      branding: updatedAccount.settings?.branding || {},
+    };
+  } catch (error) {
+    console.error("Error updating branding settings:", error);
+    throw new Error(`Failed to update branding settings: ${error.message}`);
+  }
+};
+
+/**
+ * Get current branding settings for Connect account
+ * @param {string} companyId - MongoDB company ID
+ * @returns {object} Branding settings
+ */
+exports.getBrandingSettings = async (companyId) => {
+  try {
+    console.log(`Fetching branding settings for company: ${companyId}`);
+
+    // Find account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // Fetch account from Stripe
+    const stripeAccount = await stripe.accounts.retrieve(accountRecord.stripeAccountId);
+
+    const branding = stripeAccount.settings?.branding || {};
+
+    // Fetch file URLs if file IDs exist
+    const brandingWithUrls = { ...branding };
+
+    if (branding.icon) {
+      try {
+        const iconFile = await stripe.files.retrieve(branding.icon);
+        brandingWithUrls.icon_url = iconFile.url;
+        brandingWithUrls.icon_filename = iconFile.filename;
+      } catch (err) {
+        console.error("Error fetching icon file:", err.message);
+      }
+    }
+
+    if (branding.logo) {
+      try {
+        const logoFile = await stripe.files.retrieve(branding.logo);
+        brandingWithUrls.logo_url = logoFile.url;
+        brandingWithUrls.logo_filename = logoFile.filename;
+      } catch (err) {
+        console.error("Error fetching logo file:", err.message);
+      }
+    }
+
+    return {
+      success: true,
+      accountId: stripeAccount.id,
+      branding: brandingWithUrls,
+    };
+  } catch (error) {
+    console.error("Error fetching branding settings:", error);
+    throw new Error(`Failed to fetch branding settings: ${error.message}`);
+  }
+};
+
+/**
+ * Remove branding asset (icon or logo) from Connect account
+ * @param {string} companyId - MongoDB company ID
+ * @param {string} assetType - 'icon' or 'logo'
+ * @returns {object} Update result
+ */
+exports.removeBrandingAsset = async (companyId, assetType) => {
+  try {
+    console.log(`Removing branding ${assetType} for company: ${companyId}`);
+
+    // Find account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // Validate asset type
+    if (!["icon", "logo"].includes(assetType)) {
+      throw new Error("Invalid asset type. Must be 'icon' or 'logo'");
+    }
+
+    // Update account in Stripe (set to null to remove)
+    const brandingUpdates = {};
+    brandingUpdates[assetType] = null;
+
+    const updatedAccount = await stripe.accounts.update(
+      accountRecord.stripeAccountId,
+      {
+        settings: {
+          branding: brandingUpdates,
+        },
+      }
+    );
+
+    console.log(`Branding ${assetType} removed successfully`);
+
+    return {
+      success: true,
+      accountId: updatedAccount.id,
+      removed: assetType,
+      branding: updatedAccount.settings?.branding || {},
+    };
+  } catch (error) {
+    console.error(`Error removing branding ${assetType}:`, error);
+    throw new Error(`Failed to remove branding ${assetType}: ${error.message}`);
+  }
+};

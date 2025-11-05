@@ -20,6 +20,13 @@ const {
 } = require("../controllers/connect.controller");
 
 const {
+  uploadBrandingFile,
+  updateBranding,
+  getBranding,
+  removeBrandingAsset,
+} = require("../controllers/branding.controller");
+
+const {
   validateCreateAccount,
   validateUpdateAccount,
   validateAddPerson,
@@ -28,6 +35,11 @@ const {
   validateGetAccountStatus,
   validateSetPersonsProvided,
 } = require("../validation/connect.validation");
+
+const {
+  validateBrandingFileUpload,
+  validateUpdateBranding,
+} = require("../validation/branding.validation");
 
 // Configure multer for file uploads (memory storage for Stripe Files API)
 const upload = multer({
@@ -178,6 +190,58 @@ class PaymentsAPI {
       Auth([ROLES.ADMIN]),
       validateAddExternalAccount,
       addExternalAccount
+    );
+
+    // ==================== Branding Routes ====================
+
+    /**
+     * POST /api/payments/connect/accounts/:companyId/branding/upload
+     * Upload branding file (icon or logo)
+     * Auth: Admin (same company)
+     * Body: Multipart form with file and purpose
+     */
+    router.post(
+      "/connect/accounts/:companyId/branding/upload",
+      Auth([ROLES.ADMIN]),
+      upload.single("file"),
+      validateBrandingFileUpload,
+      uploadBrandingFile
+    );
+
+    /**
+     * PUT /api/payments/connect/accounts/:companyId/branding
+     * Update branding settings (colors, icon, logo)
+     * Auth: Admin (same company)
+     * Body: { icon, logo, primary_color, secondary_color }
+     */
+    router.put(
+      "/connect/accounts/:companyId/branding",
+      Auth([ROLES.ADMIN]),
+      validateUpdateBranding,
+      updateBranding
+    );
+
+    /**
+     * GET /api/payments/connect/accounts/:companyId/branding
+     * Get current branding settings
+     * Auth: Admin or Employee (same company)
+     */
+    router.get(
+      "/connect/accounts/:companyId/branding",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getBranding
+    );
+
+    /**
+     * DELETE /api/payments/connect/accounts/:companyId/branding/:type
+     * Remove branding asset (icon or logo)
+     * Auth: Admin (same company)
+     * Params: type = 'icon' or 'logo'
+     */
+    router.delete(
+      "/connect/accounts/:companyId/branding/:type",
+      Auth([ROLES.ADMIN]),
+      removeBrandingAsset
     );
 
     // ==================== Webhook Routes ====================
