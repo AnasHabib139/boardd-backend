@@ -906,10 +906,26 @@ exports.getRequirementsList = async (companyId, status) => {
       throw new Error("Invalid status parameter. Must be 'active' or 'completed'");
     }
 
+    // Calculate progress
+    const totalRequirements = allUniqueRequirements.length;
+    const completedCount = completedRequirementFields.length;
+    const remainingCount = activeRequirements.length;
+    const progressPercentage = totalRequirements > 0
+      ? Math.round((completedCount / totalRequirements) * 100)
+      : 0;
+
+    console.log(`Progress: ${progressPercentage}% (${completedCount}/${totalRequirements})`);
+
     return {
       success: true,
       status,
       count: requirementsList.length,
+      progress: {
+        percentage: progressPercentage,
+        completed: completedCount,
+        total: totalRequirements,
+        remaining: remainingCount
+      },
       requirements: requirementsList
     };
   } catch (error) {
