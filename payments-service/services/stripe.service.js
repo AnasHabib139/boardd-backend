@@ -1126,3 +1126,38 @@ exports.removeBrandingAsset = async (companyId, assetType) => {
     throw new Error(`Failed to remove branding ${assetType}: ${error.message}`);
   }
 };
+
+/**
+ * Get list of all Stripe-supported countries with specifications
+ * @returns {object} List of country specs
+ */
+exports.getCountrySpecs = async () => {
+  try {
+    console.log("Fetching country specs from Stripe");
+
+    // Fetch all country specs from Stripe (max 100 per request)
+    const countrySpecs = await stripe.countrySpecs.list({
+      limit: 100,
+    });
+
+    // Format the response for frontend consumption
+    const countries = countrySpecs.data.map((spec) => ({
+      code: spec.id,
+      default_currency: spec.default_currency,
+      supported_payment_currencies: spec.supported_payment_currencies || [],
+      supported_payment_methods: spec.supported_payment_methods || [],
+      supported_bank_account_currencies: spec.supported_bank_account_currencies || {},
+      supported_transfer_countries: spec.supported_transfer_countries || [],
+    }));
+
+    console.log(`Retrieved ${countries.length} country specs`);
+
+    return {
+      success: true,
+      countries: countries,
+    };
+  } catch (error) {
+    console.error("Error fetching country specs:", error);
+    throw new Error(`Failed to fetch country specs: ${error.message}`);
+  }
+};

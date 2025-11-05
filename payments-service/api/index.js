@@ -17,6 +17,7 @@ const {
   addExternalAccount,
   handleWebhook,
   setPersonsProvided,
+  getCountries,
 } = require("../controllers/connect.controller");
 
 const {
@@ -70,6 +71,16 @@ class PaymentsAPI {
 
   setupRoutes() {
     const router = this.router;
+
+    // ==================== Utility Routes ====================
+
+    /**
+     * GET /api/payments/countries
+     * Get list of all Stripe-supported countries with specifications
+     * Auth: None (public endpoint)
+     * Returns: List of countries with currency, payment methods, etc.
+     */
+    router.get("/countries", getCountries);
 
     // ==================== Connect Account Routes ====================
 

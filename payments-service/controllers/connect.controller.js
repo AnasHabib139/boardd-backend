@@ -663,3 +663,30 @@ exports.setPersonsProvided = async (req, res, next) => {
     });
   }
 };
+
+/**
+ * Get list of Stripe-supported countries
+ * GET /api/payments/countries
+ */
+exports.getCountries = async (req, res, next) => {
+  try {
+    console.log("Fetching list of supported countries");
+
+    const result = await stripeService.getCountrySpecs();
+
+    return generateResponse(
+      {
+        countries: result.countries,
+      },
+      "Countries retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getCountries controller:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to fetch countries",
+    });
+  }
+};
