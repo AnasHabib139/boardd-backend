@@ -603,3 +603,63 @@ exports.getRequirementsList = async (req, res, next) => {
     });
   }
 };
+
+/**
+ * Set attestation that all persons have been provided
+ * POST /api/payments/connect/accounts/:companyId/persons-provided
+ */
+exports.setPersonsProvided = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+    const userId = req.user.id;
+    const attestations = req.validatedBody;
+
+    console.log(`Setting persons provided for company: ${companyId}`);
+
+    // Fetch user to get companyId (JWT doesn't include it)
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.UNAUTHORIZED,
+        message: "User not found",
+      });
+    }
+
+    // Security check
+    if (companyId !== user.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You do not have permission to modify this account",
+      });
+    }
+
+    const result = await stripeService.setPersonsProvided(companyId, attestations);
+
+    return generateResponse(
+      {
+        accountId: result.accountId,
+        attestations: result.attestations,
+      },
+      "Persons provided attestation set successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in setPersonsProvided controller:", error);
+
+    if (error.message.includes("not found")) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Stripe account not found for this company",
+      });
+    }
+
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to set persons provided attestation",
+    });
+  }
+};

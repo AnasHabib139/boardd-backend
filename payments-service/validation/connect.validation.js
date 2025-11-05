@@ -152,6 +152,9 @@ exports.validateUpdateAccount = async (req, res, next) => {
 
       // Stripe individual object (for sole proprietors) - accept any fields
       individual: Joi.object().unknown(true).optional(),
+
+      // Note: 'representative' is NOT valid for company accounts
+      // For companies, use Person API with relationship.representative: true
     });
 
     const { error, value } = schema.validate(req.body, {
@@ -319,6 +322,49 @@ exports.validateGetAccountStatus = async (req, res, next) => {
     next();
   } catch (error) {
     console.error("Validation error in validateGetAccountStatus:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Validation middleware for setting persons provided attestation
+ */
+exports.validateSetPersonsProvided = async (req, res, next) => {
+  try {
+    const schema = Joi.object({
+      directors_provided: Joi.boolean().optional().messages({
+        "boolean.base": "directors_provided must be true or false",
+      }),
+
+      executives_provided: Joi.boolean().optional().messages({
+        "boolean.base": "executives_provided must be true or false",
+      }),
+
+      owners_provided: Joi.boolean().optional().messages({
+        "boolean.base": "owners_provided must be true or false",
+      }),
+    }).min(1).messages({
+      "object.min": "At least one attestation field is required",
+    });
+
+    const { error, value } = schema.validate(req.body, {
+      abortEarly: false,
+    });
+
+    if (error) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: error.details[0].message,
+      });
+    }
+
+    req.validatedBody = value;
+    next();
+  } catch (error) {
+    console.error("Validation error in validateSetPersonsProvided:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error.message,

@@ -171,6 +171,9 @@ exports.updateConnectAccount = async (companyId, updates) => {
       stripeUpdates.individual = updates.individual;
     }
 
+    // Note: 'representative' is NOT a valid parameter for companies
+    // For company accounts, use Person API with relationship.representative: true
+
     // Update in Stripe
     if (Object.keys(stripeUpdates).length > 0) {
       console.log('Sending to Stripe:', JSON.stringify(stripeUpdates, null, 2));
@@ -301,6 +304,64 @@ exports.updateAccountPerson = async (companyId, personId, updates) => {
   } catch (error) {
     console.error("Error updating person:", error);
     throw new Error(`Failed to update person: ${error.message}`);
+  }
+};
+
+/**
+ * Set attestation that all persons of a type have been provided
+ * This tells Stripe you've finished adding all directors, executives, or owners
+ * @param {string} companyId - MongoDB company ID
+ * @param {object} attestations - { directors_provided, executives_provided, owners_provided }
+ * @returns {object} Update result
+ */
+exports.setPersonsProvided = async (companyId, attestations) => {
+  try {
+    console.log(`Setting persons provided flags for company: ${companyId}`);
+
+    // Find account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // Build company updates object
+    const updates = { company: {} };
+
+    if (attestations.directors_provided !== undefined) {
+      updates.company.directors_provided = attestations.directors_provided;
+      console.log(`Setting directors_provided: ${attestations.directors_provided}`);
+    }
+
+    if (attestations.executives_provided !== undefined) {
+      updates.company.executives_provided = attestations.executives_provided;
+      console.log(`Setting executives_provided: ${attestations.executives_provided}`);
+    }
+
+    if (attestations.owners_provided !== undefined) {
+      updates.company.owners_provided = attestations.owners_provided;
+      console.log(`Setting owners_provided: ${attestations.owners_provided}`);
+    }
+
+    // Update in Stripe
+    const updatedAccount = await stripe.accounts.update(
+      accountRecord.stripeAccountId,
+      updates
+    );
+
+    console.log(`Persons provided flags set successfully`);
+
+    return {
+      success: true,
+      accountId: updatedAccount.id,
+      attestations: {
+        directors_provided: updates.company.directors_provided,
+        executives_provided: updates.company.executives_provided,
+        owners_provided: updates.company.owners_provided,
+      },
+    };
+  } catch (error) {
+    console.error("Error setting persons provided:", error);
+    throw new Error(`Failed to set persons provided: ${error.message}`);
   }
 };
 

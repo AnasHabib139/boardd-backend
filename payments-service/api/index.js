@@ -16,6 +16,7 @@ const {
   getRequirementsList,
   addExternalAccount,
   handleWebhook,
+  setPersonsProvided,
 } = require("../controllers/connect.controller");
 
 const {
@@ -25,6 +26,7 @@ const {
   validateUpdatePerson,
   validateAddExternalAccount,
   validateGetAccountStatus,
+  validateSetPersonsProvided,
 } = require("../validation/connect.validation");
 
 // Configure multer for file uploads (memory storage for Stripe Files API)
@@ -148,6 +150,19 @@ class PaymentsAPI {
       Auth([ROLES.ADMIN]),
       upload.single("document"),
       uploadPersonDocument
+    );
+
+    /**
+     * POST /api/payments/connect/accounts/:companyId/persons-provided
+     * Set attestation that all persons of a type have been provided
+     * Auth: Admin (same company)
+     * Body: { directors_provided, executives_provided, owners_provided }
+     */
+    router.post(
+      "/connect/accounts/:companyId/persons-provided",
+      Auth([ROLES.ADMIN]),
+      validateSetPersonsProvided,
+      setPersonsProvided
     );
 
     // ==================== External Account Routes ====================
