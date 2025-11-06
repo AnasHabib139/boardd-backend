@@ -33,13 +33,13 @@ module.exports = {
           unique: true,
           partialFilterExpression: {
             type: { $in: ["channel", "client"] },
-            channelId: { $ne: null },
+            channelId: { $exists: true },
           },
           name: "companyId_1_type_1_channelId_1",
         }
       );
       console.log(
-        "✅ Created new partial index with filter: type in [channel, client] and channelId != null"
+        "✅ Created new partial index with filter: type in [channel, client] and channelId exists"
       );
 
       // Step 3: Verify the index

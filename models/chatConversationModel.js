@@ -96,7 +96,7 @@ chatConversationSchema.index(
     unique: true,
     partialFilterExpression: {
       type: { $in: ["channel", "client"] },
-      channelId: { $ne: null }
+      channelId: { $exists: true }
     }
   }
 );
