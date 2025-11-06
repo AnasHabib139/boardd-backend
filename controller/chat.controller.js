@@ -4,7 +4,7 @@ const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { findChatConversation, aggregateChatConversations } = require("../models/chatConversationModel");
 const { getAllChatMessages } = require("../models/chatMessageModel");
-const { getConversationMessagesQuery, getUserConversationsQuery } = require("./queries/chatQueries");
+const { getConversationMessagesQuery, getUserConversationsQuery, getConversationWithChatName } = require("./queries/chatQueries");
 
 /**
  * Get chat messages for a conversation
@@ -357,9 +357,22 @@ exports.resolveConversation = async (req, res, next) => {
       true // createIfMissing = true
     );
 
+    // Add chatName for dm and group_dm types
+    let conversationWithChatName = result.conversation;
+    if (type === "dm" || type === "group_dm") {
+      const pipeline = getConversationWithChatName(
+        result.conversation._id.toString(),
+        userId
+      );
+      const enrichedConversations = await aggregateChatConversations(pipeline);
+      if (enrichedConversations && enrichedConversations.length > 0) {
+        conversationWithChatName = enrichedConversations[0];
+      }
+    }
+
     return generateResponse(
       {
-        conversation: result.conversation,
+        conversation: conversationWithChatName,
         created: result.created,
       },
       result.created ? "Conversation created successfully" : "Conversation found",

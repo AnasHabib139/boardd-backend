@@ -696,3 +696,95 @@ exports.getUserConversationsQuery = (userId, companyId, page = 1, limit = 20) =>
     },
   ];
 };
+
+/**
+ * Get conversation with chatName field
+ * Adds chatName for dm and group_dm conversation types
+ * @param {string} conversationId - Conversation ID
+ * @param {string} userId - Current user ID (to exclude from participant names)
+ * @returns {Array} Aggregation pipeline
+ */
+exports.getConversationWithChatName = (conversationId, userId) => {
+  const userObjectId = Types.ObjectId.createFromHexString(userId);
+  const conversationObjectId = Types.ObjectId.createFromHexString(conversationId);
+
+  return [
+    // Match the specific conversation
+    {
+      $match: {
+        _id: conversationObjectId,
+      },
+    },
+
+    // Lookup participants details (excluding current user)
+    {
+      $lookup: {
+        from: "users",
+        let: { participantIds: "$participantIds" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $in: ["$_id", "$$participantIds"] },
+                  { $ne: ["$_id", userObjectId] }, // Filter out logged-in user
+                ],
+              },
+            },
+          },
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              email: 1,
+              image: 1,
+            },
+          },
+        ],
+        as: "participantsDetails",
+      },
+    },
+
+    // Add computed chatName field
+    {
+      $addFields: {
+        chatName: {
+          $switch: {
+            branches: [
+              {
+                case: { $eq: ["$type", "dm"] },
+                then: { $arrayElemAt: ["$participantsDetails.name", 0] }, // DM: other person's name
+              },
+              {
+                case: { $eq: ["$type", "group_dm"] },
+                then: {
+                  // Group DM: comma-separated names
+                  $reduce: {
+                    input: "$participantsDetails",
+                    initialValue: "",
+                    in: {
+                      $concat: [
+                        "$$value",
+                        { $cond: [{ $eq: ["$$value", ""] }, "", ", "] },
+                        "$$this.name",
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+            default: null, // No chatName for channel/client types
+          },
+        },
+      },
+    },
+
+    // Remove the temporary participantsDetails field
+    {
+      $project: {
+        participantsDetails: 0,
+      },
+    },
+  ];
+};
+
