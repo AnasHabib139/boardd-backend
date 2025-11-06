@@ -16,10 +16,23 @@ exports.generateResponse = (data, message, res, code = 200) => {
 };
 
 exports.parseBody = (body) => {
-  let obj;
-  if (typeof body === "object") obj = body;
-  else obj = JSON.parse(body);
-  return obj;
+  // Handle missing, null, or undefined body
+  if (!body || (typeof body === 'object' && Object.keys(body).length === 0 && body.constructor === Object)) {
+    return {};
+  }
+
+  // If body is already an object, return it
+  if (typeof body === "object") {
+    return body;
+  }
+
+  // If body is a string, try to parse it
+  try {
+    return JSON.parse(body);
+  } catch (error) {
+    // If parsing fails, return empty object
+    return {};
+  }
 };
 
 exports.generateRandomOTP = () => {

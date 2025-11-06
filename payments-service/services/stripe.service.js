@@ -1177,3 +1177,302 @@ exports.getCountrySpecs = async () => {
     throw new Error(`Failed to fetch country specs: ${error.message}`);
   }
 };
+
+// ==================== Client Payment Methods ====================
+
+/**
+ * Create Stripe customer for client on connected account
+ * @param {string} companyId - MongoDB company ID
+ * @param {object} clientData - { name, email, phone }
+ * @returns {object} Customer creation result
+ */
+exports.createClientCustomer = async (companyId, clientData) => {
+  try {
+    console.log(`Creating Stripe customer for client on company: ${companyId}`);
+
+    // Find account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // Validate account is ready to collect payments
+    // Fetch latest account status from Stripe
+    const stripeAccount = await stripe.accounts.retrieve(accountRecord.stripeAccountId);
+
+    // Check if account can accept payments
+    if (!stripeAccount.charges_enabled) {
+      throw new Error(
+        "Stripe account is not verified. Please complete account setup before collecting payment methods."
+      );
+    }
+
+    // Check if there are pending requirements
+    if (
+      stripeAccount.requirements?.currently_due &&
+      stripeAccount.requirements.currently_due.length > 0
+    ) {
+      throw new Error(
+        `Stripe account has pending requirements: ${stripeAccount.requirements.currently_due.join(", ")}. Please complete account setup first.`
+      );
+    }
+
+    // Create customer on connected account
+    const customer = await stripe.customers.create(
+      {
+        name: clientData.name,
+        email: clientData.email,
+        phone: clientData.phone,
+        metadata: {
+          source: "boardd_client_management",
+          companyId: companyId,
+        },
+      },
+      {
+        stripeAccount: accountRecord.stripeAccountId,
+      }
+    );
+
+    console.log(`Customer created on connected account: ${customer.id}`);
+
+    return {
+      success: true,
+      customerId: customer.id,
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+      },
+    };
+  } catch (error) {
+    console.error("Error creating client customer:", error);
+    throw new Error(`Failed to create customer: ${error.message}`);
+  }
+};
+
+/**
+ * Create SetupIntent for collecting payment method without charging
+ * @param {string} companyId - MongoDB company ID
+ * @param {string} customerId - Stripe customer ID
+ * @returns {object} SetupIntent with client_secret
+ */
+exports.createClientSetupIntent = async (companyId, customerId) => {
+  try {
+    console.log(`Creating SetupIntent for customer ${customerId} on company: ${companyId}`);
+
+    // Find account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // Validate account is ready
+    const stripeAccount = await stripe.accounts.retrieve(accountRecord.stripeAccountId);
+
+    if (!stripeAccount.charges_enabled) {
+      throw new Error(
+        "Stripe account is not verified. Please complete account setup before collecting payment methods."
+      );
+    }
+
+    // Check if there are pending requirements
+    if (
+      stripeAccount.requirements?.currently_due &&
+      stripeAccount.requirements.currently_due.length > 0
+    ) {
+      throw new Error(
+        `Stripe account has pending requirements: ${stripeAccount.requirements.currently_due.join(", ")}. Please complete account setup first.`
+      );
+    }
+
+    // Create SetupIntent for payment method collection
+    const setupIntent = await stripe.setupIntents.create(
+      {
+        customer: customerId,
+        payment_method_types: ["card"],
+        usage: "off_session", // For future charges when customer not present
+        metadata: {
+          companyId: companyId,
+          source: "boardd_client_management",
+        },
+      },
+      {
+        stripeAccount: accountRecord.stripeAccountId,
+      }
+    );
+
+    console.log(`SetupIntent created: ${setupIntent.id}`);
+
+    return {
+      success: true,
+      setupIntentId: setupIntent.id,
+      clientSecret: setupIntent.client_secret,
+      status: setupIntent.status,
+    };
+  } catch (error) {
+    console.error("Error creating SetupIntent:", error);
+    throw new Error(`Failed to create SetupIntent: ${error.message}`);
+  }
+};
+
+/**
+ * Retrieve payment method details after successful SetupIntent
+ * Returns non-sensitive card data for database storage
+ * @param {string} companyId - MongoDB company ID
+ * @param {string} setupIntentId - Stripe SetupIntent ID
+ * @returns {object} Payment method details
+ */
+exports.retrievePaymentMethodDetails = async (companyId, setupIntentId) => {
+  try {
+    console.log(`Retrieving payment method from SetupIntent: ${setupIntentId}`);
+
+    // Find account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // Retrieve SetupIntent to get payment method ID
+    const setupIntent = await stripe.setupIntents.retrieve(
+      setupIntentId,
+      {},
+      {
+        stripeAccount: accountRecord.stripeAccountId,
+      }
+    );
+
+    if (setupIntent.status !== "succeeded") {
+      throw new Error(
+        `SetupIntent has not succeeded. Current status: ${setupIntent.status}`
+      );
+    }
+
+    if (!setupIntent.payment_method) {
+      throw new Error("No payment method attached to this SetupIntent");
+    }
+
+    // Retrieve payment method details
+    const paymentMethod = await stripe.paymentMethods.retrieve(
+      setupIntent.payment_method,
+      {},
+      {
+        stripeAccount: accountRecord.stripeAccountId,
+      }
+    );
+
+    // Extract non-sensitive card details for database storage
+    const cardDetails = {
+      paymentMethodId: paymentMethod.id,
+      type: paymentMethod.type, // 'card'
+      card: {
+        brand: paymentMethod.card?.brand, // 'visa', 'mastercard', 'amex', etc.
+        last4: paymentMethod.card?.last4, // Last 4 digits
+        expMonth: paymentMethod.card?.exp_month, // 1-12
+        expYear: paymentMethod.card?.exp_year, // 2025, 2026, etc.
+        funding: paymentMethod.card?.funding, // 'credit', 'debit', 'prepaid'
+      },
+    };
+
+    console.log(`Payment method retrieved: ${paymentMethod.id} (${cardDetails.card.brand} **** ${cardDetails.card.last4})`);
+
+    return {
+      success: true,
+      paymentMethod: cardDetails,
+    };
+  } catch (error) {
+    console.error("Error retrieving payment method details:", error);
+    throw new Error(`Failed to retrieve payment method: ${error.message}`);
+  }
+};
+
+/**
+ * List all payment methods for a customer
+ * @param {string} companyId - MongoDB company ID
+ * @param {string} customerId - Stripe customer ID
+ * @returns {object} List of payment methods
+ */
+exports.listClientPaymentMethods = async (companyId, customerId) => {
+  try {
+    console.log(`Listing payment methods for customer: ${customerId}`);
+
+    // Find account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // List payment methods for customer
+    const paymentMethods = await stripe.paymentMethods.list(
+      {
+        customer: customerId,
+        type: "card",
+      },
+      {
+        stripeAccount: accountRecord.stripeAccountId,
+      }
+    );
+
+    // Format payment methods
+    const formattedMethods = paymentMethods.data.map((pm) => ({
+      paymentMethodId: pm.id,
+      type: pm.type,
+      card: {
+        brand: pm.card?.brand,
+        last4: pm.card?.last4,
+        expMonth: pm.card?.exp_month,
+        expYear: pm.card?.exp_year,
+        funding: pm.card?.funding,
+      },
+    }));
+
+    console.log(`Found ${formattedMethods.length} payment methods`);
+
+    return {
+      success: true,
+      paymentMethods: formattedMethods,
+      count: formattedMethods.length,
+    };
+  } catch (error) {
+    console.error("Error listing payment methods:", error);
+    throw new Error(`Failed to list payment methods: ${error.message}`);
+  }
+};
+
+/**
+ * Detach payment method from customer (remove card)
+ * @param {string} companyId - MongoDB company ID
+ * @param {string} paymentMethodId - Stripe payment method ID
+ * @returns {object} Detach result
+ */
+exports.detachPaymentMethod = async (companyId, paymentMethodId) => {
+  try {
+    console.log(`Detaching payment method: ${paymentMethodId}`);
+
+    // Find account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // Detach payment method from customer
+    const paymentMethod = await stripe.paymentMethods.detach(
+      paymentMethodId,
+      {},
+      {
+        stripeAccount: accountRecord.stripeAccountId,
+      }
+    );
+
+    console.log(`Payment method detached: ${paymentMethod.id}`);
+
+    return {
+      success: true,
+      paymentMethodId: paymentMethod.id,
+      detached: true,
+    };
+  } catch (error) {
+    console.error("Error detaching payment method:", error);
+    throw new Error(`Failed to detach payment method: ${error.message}`);
+  }
+};

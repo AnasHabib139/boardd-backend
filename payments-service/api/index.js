@@ -21,6 +21,14 @@ const {
 } = require("../controllers/connect.controller");
 
 const {
+  createClientSetupIntent,
+  savePaymentMethod,
+  listClientPaymentMethods,
+  removePaymentMethod,
+  setDefaultPaymentMethod,
+} = require("../controllers/clientPayment.controller");
+
+const {
   uploadBrandingFile,
   updateBranding,
   getBranding,
@@ -253,6 +261,70 @@ class PaymentsAPI {
       "/connect/accounts/:companyId/branding/:type",
       Auth([ROLES.ADMIN]),
       removeBrandingAsset
+    );
+
+    // ==================== Client Payment Routes ====================
+
+    /**
+     * POST /api/payments/clients/:tabId/payment/setup-intent
+     * Create SetupIntent for collecting payment card from client
+     * Auth: Admin or Employee (must be tab member)
+     * Body: { name, email, phone } (optional, for creating customer if doesn't exist)
+     * Returns: client_secret for Payment Element
+     */
+    router.post(
+      "/clients/:tabId/payment/setup-intent",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      createClientSetupIntent
+    );
+
+    /**
+     * POST /api/payments/clients/:tabId/payment/methods
+     * Save payment method after successful SetupIntent
+     * Auth: Admin or Employee (must be tab member)
+     * Body: { setupIntentId }
+     * Returns: Saved payment method details
+     */
+    router.post(
+      "/clients/:tabId/payment/methods",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      savePaymentMethod
+    );
+
+    /**
+     * GET /api/payments/clients/:tabId/payment/methods
+     * List all payment methods for client
+     * Auth: Admin or Employee (must be tab member)
+     * Returns: Array of payment methods with default flag
+     */
+    router.get(
+      "/clients/:tabId/payment/methods",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      listClientPaymentMethods
+    );
+
+    /**
+     * DELETE /api/payments/clients/:tabId/payment/methods/:paymentMethodId
+     * Remove payment method from client
+     * Auth: Admin or Employee (must be tab member)
+     * Returns: Confirmation of removal
+     */
+    router.delete(
+      "/clients/:tabId/payment/methods/:paymentMethodId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      removePaymentMethod
+    );
+
+    /**
+     * POST /api/payments/clients/:tabId/payment/methods/:paymentMethodId/set-default
+     * Set payment method as default for client
+     * Auth: Admin or Employee (must be tab member)
+     * Returns: Confirmation of default change
+     */
+    router.post(
+      "/clients/:tabId/payment/methods/:paymentMethodId/set-default",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      setDefaultPaymentMethod
     );
 
     // ==================== Webhook Routes ====================

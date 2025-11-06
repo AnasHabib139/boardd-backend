@@ -38,6 +38,29 @@ const clientSchema = new Schema({
   tabId: { type: Types.ObjectId, ref: "ChannelTab", required: true },
   projects: [projectSchema],
 
+  // Stripe payment information
+  stripe: {
+    customerId: { type: String, index: true }, // Stripe customer ID (cus_xxx)
+    paymentMethods: [
+      {
+        paymentMethodId: { type: String, required: true }, // pm_xxx
+        type: { type: String, required: true }, // 'card', 'us_bank_account'
+        card: {
+          brand: String, // 'visa', 'mastercard', 'amex'
+          last4: String, // Last 4 digits
+          expMonth: Number, // 1-12
+          expYear: Number, // 2025, 2026, etc.
+          funding: String, // 'credit', 'debit', 'prepaid'
+        },
+        isDefault: { type: Boolean, default: false },
+        addedBy: { type: Types.ObjectId, ref: "User" },
+        addedAt: { type: Date, default: Date.now },
+      },
+    ],
+    defaultPaymentMethod: String, // pm_xxx ID of default card
+  },
+  companyId: { type: Types.ObjectId, ref: "Company" }, // Link to company for Stripe account lookup
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
@@ -86,6 +109,64 @@ exports.addProject = async (clientId, projectData) => {
     clientId,
     {
       $push: { projects: projectData },
+      updatedAt: new Date(),
+    },
+    { new: true }
+  );
+};
+
+// Payment method utility functions
+exports.addPaymentMethod = async (clientId, paymentMethodData) => {
+  return ClientModel.findByIdAndUpdate(
+    clientId,
+    {
+      $push: { "stripe.paymentMethods": paymentMethodData },
+      updatedAt: new Date(),
+    },
+    { new: true }
+  );
+};
+
+exports.removePaymentMethod = async (clientId, paymentMethodId) => {
+  return ClientModel.findByIdAndUpdate(
+    clientId,
+    {
+      $pull: { "stripe.paymentMethods": { paymentMethodId } },
+      updatedAt: new Date(),
+    },
+    { new: true }
+  );
+};
+
+exports.setDefaultPaymentMethod = async (clientId, paymentMethodId) => {
+  // First, unset all isDefault flags
+  await ClientModel.updateOne(
+    { _id: clientId },
+    { $set: { "stripe.paymentMethods.$[].isDefault": false } }
+  );
+
+  // Then set the specified payment method as default
+  return ClientModel.findByIdAndUpdate(
+    clientId,
+    {
+      $set: {
+        "stripe.defaultPaymentMethod": paymentMethodId,
+        "stripe.paymentMethods.$[elem].isDefault": true,
+        updatedAt: new Date(),
+      },
+    },
+    {
+      arrayFilters: [{ "elem.paymentMethodId": paymentMethodId }],
+      new: true,
+    }
+  );
+};
+
+exports.updateClientStripeCustomer = async (clientId, customerId) => {
+  return ClientModel.findByIdAndUpdate(
+    clientId,
+    {
+      $set: { "stripe.customerId": customerId },
       updatedAt: new Date(),
     },
     { new: true }

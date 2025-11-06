@@ -140,6 +140,7 @@ exports.createOrUpdateClient = async (req, res, next) => {
         personalDetails: personalDetails ? [personalDetails] : [],
         attachments: attachments || [], // Use attachments array directly
         projects: projects ? [projects] : [],
+        companyId: tab.companyId, // Link to company for payment processing
       };
 
       client = await createClient(newClientData);

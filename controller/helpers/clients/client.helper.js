@@ -124,3 +124,108 @@ exports.createProjectActivity = async ({
     message: projectMessage,
   });
 };
+
+/**
+ * Create payment method added activity
+ */
+exports.createPaymentMethodAddedActivity = async ({
+  tabId,
+  userId,
+  userName,
+  client,
+  paymentMethod,
+}) => {
+  const cardBrand = paymentMethod?.card?.brand || "card";
+  const cardLast4 = paymentMethod?.card?.last4 || "****";
+  const cardInfo = `${cardBrand} ending in ${cardLast4}`;
+
+  const paymentMethodMessage = {
+    forCreator: `You added payment method (${cardInfo})`,
+    forOthers: `${userName} added payment method (${cardInfo})`,
+  };
+
+  return createActivity({
+    tabId,
+    clientId: client._id,
+    userId,
+    actionType: ACTION_TYPE.CLIENT_PAYMENT_ADDED,
+    field: "stripe.paymentMethods",
+    newValue: {
+      paymentMethodId: paymentMethod?.paymentMethodId,
+      brand: paymentMethod?.card?.brand,
+      last4: paymentMethod?.card?.last4,
+    },
+    timestamp: new Date(),
+    message: paymentMethodMessage,
+  });
+};
+
+/**
+ * Create payment method removed activity
+ */
+exports.createPaymentMethodRemovedActivity = async ({
+  tabId,
+  userId,
+  userName,
+  client,
+  paymentMethod,
+}) => {
+  const cardBrand = paymentMethod?.card?.brand || "card";
+  const cardLast4 = paymentMethod?.card?.last4 || "****";
+  const cardInfo = `${cardBrand} ending in ${cardLast4}`;
+
+  const paymentMethodMessage = {
+    forCreator: `You removed payment method (${cardInfo})`,
+    forOthers: `${userName} removed payment method (${cardInfo})`,
+  };
+
+  return createActivity({
+    tabId,
+    clientId: client._id,
+    userId,
+    actionType: ACTION_TYPE.CLIENT_PAYMENT_REMOVED,
+    field: "stripe.paymentMethods",
+    newValue: {
+      paymentMethodId: paymentMethod?.paymentMethodId,
+      brand: paymentMethod?.card?.brand,
+      last4: paymentMethod?.card?.last4,
+    },
+    timestamp: new Date(),
+    message: paymentMethodMessage,
+  });
+};
+
+/**
+ * Create payment method set default activity
+ */
+exports.createPaymentMethodSetDefaultActivity = async ({
+  tabId,
+  userId,
+  userName,
+  client,
+  paymentMethod,
+}) => {
+  const cardBrand = paymentMethod?.card?.brand || "card";
+  const cardLast4 = paymentMethod?.card?.last4 || "****";
+  const cardInfo = `${cardBrand} ending in ${cardLast4}`;
+
+  const paymentMethodMessage = {
+    forCreator: `You set ${cardInfo} as default payment method`,
+    forOthers: `${userName} set ${cardInfo} as default payment method`,
+  };
+
+  return createActivity({
+    tabId,
+    clientId: client._id,
+    userId,
+    actionType: ACTION_TYPE.CLIENT_PAYMENT_SET_DEFAULT,
+    field: "stripe.defaultPaymentMethod",
+    newValue: {
+      paymentMethodId: paymentMethod?.paymentMethodId,
+      brand: paymentMethod?.card?.brand,
+      last4: paymentMethod?.card?.last4,
+    },
+    timestamp: new Date(),
+    message: paymentMethodMessage,
+  });
+};
