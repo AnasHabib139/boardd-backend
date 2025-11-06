@@ -88,9 +88,17 @@ const chatConversationSchema = new Schema(
 
 // Indexes for performance
 // 1. For channel and client conversations lookup (unique per channel)
+// Using partial index to only apply uniqueness constraint to channel/client types
+// This allows dm/group_dm conversations to have channelId: null without conflicts
 chatConversationSchema.index(
   { companyId: 1, type: 1, channelId: 1 },
-  { sparse: true, unique: true }
+  {
+    unique: true,
+    partialFilterExpression: {
+      type: { $in: ["channel", "client"] },
+      channelId: { $ne: null }
+    }
+  }
 );
 
 // 2. For DM/group DM lookup (participantIds should be sorted before query)
