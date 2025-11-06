@@ -12,8 +12,10 @@ const {
   findManyChannels,
 } = require("../models/channelModel");
 const { createChatConversation, addChannelParticipant } = require("../models/chatConversationModel");
+const { createNotification } = require("../models/notificationModel");
 const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
+const { getIO, emitUnreadCountsUpdate } = require("../utils/socket");
 const {
   createChannelTab,
   getAllTabs,
@@ -31,7 +33,7 @@ const {
 } = require("./queries/channelQueries");
 const { findCompany } = require("../models/companyModel");
 // Import required functions
-const { findInviteSlot } = require("../models/inviteSlotModel");
+const { findInviteSlot, updateInviteSlot } = require("../models/inviteSlotModel");
 const Mailer = require("../utils/mailer");
 const { generateChannelInviteEmail } = require("../utils/emailTemplates");
 exports.createChannel = async (req, res, next) => {
@@ -423,6 +425,60 @@ exports.addUserToChannel = async (req, res, next) => {
               participantError
             );
             // Continue with other users even if one fails
+          }
+        }
+
+        // ========== Create Channel Invitation Notifications ==========
+        // Create notifications for each successfully added user
+        const io = getIO();
+        for (const addedUser of addedUsers) {
+          try {
+            const notification = await createNotification({
+              userId: addedUser._id,
+              type: "CHANNEL_INVITATION",
+              activityCategory: "invitation",
+              title: "Channel invitation",
+              message: `${requestingUser.name} added you to ${channel.channelName}`,
+              channelId: channel._id,
+              channelName: channel.channelName,
+              createdBy: requestingUserId,
+            });
+
+            // Emit real-time activity update to invited user
+            io.to(`user:${addedUser._id}`).emit("activity:new", {
+              _id: notification._id,
+              type: "CHANNEL_INVITATION",
+              activityCategory: "invitation",
+              subtitle: `invited to ${channel.channelName}`,
+              title: "Channel invitation",
+              messagePreview: `${requestingUser.name} added you to ${channel.channelName}`,
+              actor: {
+                _id: requestingUser._id,
+                name: requestingUser.name,
+                email: requestingUser.email,
+                image: requestingUser.image,
+              },
+              channelName: channel.channelName,
+              timestamp: notification.timestamp,
+              isRead: false,
+              navigationContext: {
+                conversationId: null,
+                messageId: null,
+                channelId: channel._id,
+                projectId: null,
+                taskId: null,
+                tabId: null,
+              },
+            });
+
+            // Emit updated unread counts
+            await emitUnreadCountsUpdate(addedUser._id.toString(), io);
+          } catch (notificationError) {
+            console.error(
+              `Failed to create invitation notification for user ${addedUser._id}:`,
+              notificationError
+            );
+            // Continue with other notifications even if one fails
           }
         }
       } catch (updateError) {
@@ -942,6 +998,69 @@ exports.joinChannelWithInvite = async (req, res, next) => {
         channelId: channel._id, // Set channelId when actually used
       }
     );
+
+    // ========== Create Channel Invitation Notification ==========
+    // Create notification for user who joined via invite link
+    try {
+      // Find the user who created the invite slot (inviter)
+      const inviter = inviteSlot.createdBy
+        ? await findUser({ _id: inviteSlot.createdBy })
+        : null;
+
+      const notification = await createNotification({
+        userId: currentUserId,
+        type: "CHANNEL_INVITATION",
+        activityCategory: "invitation",
+        title: "Channel invitation",
+        message: inviter
+          ? `${inviter.name} invited you to ${channel.channelName}`
+          : `You joined ${channel.channelName}`,
+        channelId: channel._id,
+        channelName: channel.channelName,
+        createdBy: inviteSlot.createdBy || currentUserId,
+      });
+
+      // Emit real-time activity update
+      const io = getIO();
+      const actor = inviter || currentUser;
+
+      io.to(`user:${currentUserId}`).emit("activity:new", {
+        _id: notification._id,
+        type: "CHANNEL_INVITATION",
+        activityCategory: "invitation",
+        subtitle: `invited to ${channel.channelName}`,
+        title: "Channel invitation",
+        messagePreview: inviter
+          ? `${inviter.name} invited you to ${channel.channelName}`
+          : `You joined ${channel.channelName}`,
+        actor: {
+          _id: actor._id,
+          name: actor.name,
+          email: actor.email,
+          image: actor.image,
+        },
+        channelName: channel.channelName,
+        timestamp: notification.timestamp,
+        isRead: false,
+        navigationContext: {
+          conversationId: null,
+          messageId: null,
+          channelId: channel._id,
+          projectId: null,
+          taskId: null,
+          tabId: null,
+        },
+      });
+
+      // Emit updated unread counts
+      await emitUnreadCountsUpdate(currentUserId.toString(), io);
+    } catch (notificationError) {
+      console.error(
+        `Failed to create invitation notification for user ${currentUserId}:`,
+        notificationError
+      );
+      // Continue even if notification fails
+    }
 
     // Prepare response data
     const responseData = {

@@ -27,6 +27,7 @@ const {
 const { findChannel } = require("../models/channelModel");
 const { findUser } = require("../models/userModel");
 const { createNotification } = require("../models/notificationModel");
+const { emitUnreadCountsUpdate } = require("./socket");
 const {
   validateAndSanitize,
   extractMentions,
@@ -564,6 +565,91 @@ const processChatReactionAdd = async (socket, data, io) => {
       });
     }
 
+    // ========== Create Reaction Notification ==========
+    // Only notify if reactor is not the message author
+    if (message.authorId.toString() !== userId.toString()) {
+      try {
+        // Fetch reactor user info
+        const reactor = await findUser({ _id: userId });
+        if (!reactor) {
+          console.error("Reactor user not found:", userId);
+        } else {
+          // Fetch conversation to get context
+          const conversation = await findChatConversation({
+            _id: message.conversationId,
+          });
+
+          if (conversation) {
+            let channelName = null;
+
+            // Get channel name if conversation is channel type
+            if (conversation.type === "channel" && conversation.channelId) {
+              const channel = await findChannel({ _id: conversation.channelId });
+              channelName = channel?.channelName || null;
+            }
+
+            // Create notification
+            const notification = await createNotification({
+              userId: message.authorId,
+              type: "CHAT_REACTION",
+              activityCategory: "reaction",
+              title: "New reaction",
+              message: `${reactor.name} reacted ${emoji} to your message`,
+              channelId: conversation.channelId || null,
+              channelName: channelName,
+              conversationId: message.conversationId,
+              conversationType: conversation.type,
+              messageId: message._id,
+              reactionEmoji: emoji,
+              createdBy: userId,
+              aggregationKey: `reaction:${messageId}:${emoji}`, // For future aggregation
+            });
+
+            // Emit real-time activity update to message author
+            io.to(`user:${message.authorId}`).emit("activity:new", {
+              _id: notification._id,
+              type: "CHAT_REACTION",
+              activityCategory: "reaction",
+              subtitle: channelName
+                ? `reaction in ${channelName}`
+                : conversation.type === "dm"
+                ? "reaction in Direct Message"
+                : conversation.type === "group_dm"
+                ? "reaction in Group Chat"
+                : conversation.type === "client"
+                ? "reaction in Client Chat"
+                : "reaction",
+              title: "New reaction",
+              messagePreview: `${reactor.name} reacted ${emoji} to your message`,
+              actor: {
+                _id: reactor._id,
+                name: reactor.name,
+                email: reactor.email,
+                image: reactor.image,
+              },
+              reactionEmoji: emoji,
+              timestamp: notification.timestamp,
+              isRead: false,
+              navigationContext: {
+                conversationId: message.conversationId,
+                messageId: message._id,
+                channelId: conversation.channelId || null,
+              },
+            });
+
+            // Emit updated unread counts
+            await emitUnreadCountsUpdate(message.authorId.toString(), io);
+          }
+        }
+      } catch (notificationError) {
+        // Don't fail the reaction if notification fails
+        console.error(
+          "Error creating reaction notification:",
+          notificationError
+        );
+      }
+    }
+
     socket.emit("chat:reaction:added", {
       success: true,
       messageId,
@@ -665,6 +751,31 @@ const processChatReadSync = async (socket, data, io) => {
       return;
     }
 
+    // ========== Sync: Mark related activity feed notifications as read ==========
+    // When user marks conversation as read, also mark all chat notifications for that conversation as read
+    try {
+      const { model } = require("mongoose");
+      const NotificationModel = model("Notification");
+
+      const result = await NotificationModel.updateMany(
+        {
+          userId: new Types.ObjectId(userId),
+          conversationId: new Types.ObjectId(conversationId),
+          type: { $in: ["CHAT_MESSAGE", "CHAT_MENTION", "CHAT_THREAD_REPLY", "CHAT_REACTION"] },
+          isRead: false,
+        },
+        { $set: { isRead: true } }
+      );
+
+      // Emit updated activity unread counts if any notifications were marked as read
+      if (result.modifiedCount > 0) {
+        await emitUnreadCountsUpdate(userId.toString(), io);
+      }
+    } catch (notifError) {
+      console.error("Error syncing activity notifications read status:", notifError);
+      // Don't fail the read sync if notification update fails
+    }
+
     // Broadcast to conversation
     io.to(`conversation:${conversationId}`).emit("chat:read:updated", {
       conversationId,
@@ -738,15 +849,50 @@ const handleMentionNotifications = async (
           });
 
           // Create persistent notification
-          await createNotification({
+          const notification = await createNotification({
             userId: memberId,
             type: "CHAT_MENTION",
+            activityCategory: "mention",
+            conversationType: conversation.type,
+            channelName: channel.channelName,
             title: `@channel in ${channel.channelName}`,
             message: `${author.name} mentioned everyone: ${contentText.substring(0, 100)}`,
+            channelId: conversation.channelId,
             conversationId: conversation._id,
             messageId: message._id,
             createdBy: author._id,
           });
+
+          // Emit real-time activity update
+          io.to(`user:${memberId}`).emit("activity:new", {
+            _id: notification._id,
+            type: "CHAT_MENTION",
+            activityCategory: "mention",
+            subtitle: `mention in ${channel.channelName}`,
+            title: `@channel in ${channel.channelName}`,
+            messagePreview: `${author.name} mentioned everyone: ${contentText.substring(0, 100)}`,
+            actor: {
+              _id: author._id,
+              name: author.name,
+              email: author.email,
+              image: author.image,
+            },
+            conversationType: conversation.type,
+            channelName: channel.channelName,
+            timestamp: notification.timestamp,
+            isRead: false,
+            navigationContext: {
+              conversationId: conversation._id,
+              messageId: message._id,
+              channelId: conversation.channelId,
+              projectId: null,
+              taskId: null,
+              tabId: null,
+            },
+          });
+
+          // Emit updated unread counts
+          await emitUnreadCountsUpdate(memberId.toString(), io);
         }
       }
     }
@@ -785,15 +931,53 @@ const handleMentionNotifications = async (
         });
 
         // Create persistent notification
-        await createNotification({
+        const notification = await createNotification({
           userId: participantId,
           type: "CHAT_MENTION",
+          activityCategory: "mention",
+          conversationType: conversation.type,
           title: `@all in ${conversationName}`,
           message: `${author.name} mentioned everyone: ${contentText.substring(0, 100)}`,
           conversationId: conversation._id,
           messageId: message._id,
           createdBy: author._id,
         });
+
+        // Emit real-time activity update
+        const subtitle = conversation.type === "client"
+          ? "mention in Client Chat"
+          : conversation.type === "group_dm"
+          ? "mention in Group Chat"
+          : "mention";
+
+        io.to(`user:${participantId}`).emit("activity:new", {
+          _id: notification._id,
+          type: "CHAT_MENTION",
+          activityCategory: "mention",
+          subtitle: subtitle,
+          title: `@all in ${conversationName}`,
+          messagePreview: `${author.name} mentioned everyone: ${contentText.substring(0, 100)}`,
+          actor: {
+            _id: author._id,
+            name: author.name,
+            email: author.email,
+            image: author.image,
+          },
+          conversationType: conversation.type,
+          timestamp: notification.timestamp,
+          isRead: false,
+          navigationContext: {
+            conversationId: conversation._id,
+            messageId: message._id,
+            channelId: null,
+            projectId: null,
+            taskId: null,
+            tabId: null,
+          },
+        });
+
+        // Emit updated unread counts
+        await emitUnreadCountsUpdate(participantId.toString(), io);
       }
     }
   }
@@ -819,15 +1003,76 @@ const handleMentionNotifications = async (
         });
 
         // Create persistent notification
-        await createNotification({
+        // Get channelName if this is a channel conversation
+        let channelName = null;
+        if (conversation.type === "channel" && conversation.channelId) {
+          const channel = await findChannel({ _id: conversation.channelId });
+          channelName = channel?.channelName || null;
+        }
+
+        const notification = await createNotification({
           userId: mentionedUserId,
           type: "CHAT_MENTION",
+          activityCategory: "mention",
+          conversationType: conversation.type,
+          channelName: channelName,
           title: "New mention",
           message: `${author.name} mentioned you: ${contentText.substring(0, 100)}`,
+          channelId: conversation.channelId || null,
           conversationId: conversation._id,
           messageId: message._id,
           createdBy: author._id,
         });
+
+        // Emit real-time activity update
+        let subtitle;
+        if (channelName) {
+          subtitle = `mention in ${channelName}`;
+        } else {
+          switch (conversation.type) {
+            case "dm":
+              subtitle = "mention in Direct Message";
+              break;
+            case "group_dm":
+              subtitle = "mention in Group Chat";
+              break;
+            case "client":
+              subtitle = "mention in Client Chat";
+              break;
+            default:
+              subtitle = "mention";
+          }
+        }
+
+        io.to(`user:${mentionedUserId}`).emit("activity:new", {
+          _id: notification._id,
+          type: "CHAT_MENTION",
+          activityCategory: "mention",
+          subtitle: subtitle,
+          title: "New mention",
+          messagePreview: `${author.name} mentioned you: ${contentText.substring(0, 100)}`,
+          actor: {
+            _id: author._id,
+            name: author.name,
+            email: author.email,
+            image: author.image,
+          },
+          conversationType: conversation.type,
+          channelName: channelName,
+          timestamp: notification.timestamp,
+          isRead: false,
+          navigationContext: {
+            conversationId: conversation._id,
+            messageId: message._id,
+            channelId: conversation.channelId || null,
+            projectId: null,
+            taskId: null,
+            tabId: null,
+          },
+        });
+
+        // Emit updated unread counts
+        await emitUnreadCountsUpdate(mentionedUserId.toString(), io);
       }
     }
   }
@@ -887,6 +1132,65 @@ const notifyDMParticipants = async (
           timestamp: new Date(),
         });
       }
+
+      // Create persistent activity feed notification (ALWAYS, even if user is viewing)
+      // Will be auto-marked as read when conversation is viewed via read sync
+      const notification = await createNotification({
+        userId: participantId,
+        type: "CHAT_MESSAGE",
+        activityCategory: "chat",
+        conversationType: conversation.type,
+        title: "New message",
+        message: `${author.name}: ${contentText.substring(0, 100)}`,
+        conversationId: conversation._id,
+        messageId: message._id,
+        createdBy: author._id,
+      });
+
+      // Emit real-time activity update
+      let subtitle;
+      switch (conversation.type) {
+        case "dm":
+          subtitle = "Direct Message";
+          break;
+        case "group_dm":
+          subtitle = "Group Message";
+          break;
+        case "client":
+          subtitle = "Client Message";
+          break;
+        default:
+          subtitle = "New message";
+      }
+
+      io.to(`user:${participantId}`).emit("activity:new", {
+        _id: notification._id,
+        type: "CHAT_MESSAGE",
+        activityCategory: "chat",
+        subtitle: subtitle,
+        title: "New message",
+        messagePreview: `${author.name}: ${contentText.substring(0, 100)}`,
+        actor: {
+          _id: author._id,
+          name: author.name,
+          email: author.email,
+          image: author.image,
+        },
+        conversationType: conversation.type,
+        timestamp: notification.timestamp,
+        isRead: false,
+        navigationContext: {
+          conversationId: conversation._id,
+          messageId: message._id,
+          channelId: null,
+          projectId: null,
+          taskId: null,
+          tabId: null,
+        },
+      });
+
+      // Emit updated unread counts
+      await emitUnreadCountsUpdate(participantId.toString(), io);
     }
   }
 };
@@ -955,6 +1259,53 @@ const notifyChannelMembers = async (
           timestamp: new Date(),
         });
       }
+
+      // Create persistent activity feed notification (ALWAYS, even if user is viewing)
+      // Will be auto-marked as read when conversation is viewed via read sync
+      const notification = await createNotification({
+        userId: memberId,
+        type: "CHAT_MESSAGE",
+        activityCategory: "chat",
+        conversationType: conversation.type,
+        channelName: channel.channelName,
+        title: "New message",
+        message: `${author.name} in ${channel.channelName}: ${contentText.substring(0, 100)}`,
+        conversationId: conversation._id,
+        messageId: message._id,
+        channelId: channel._id,
+        createdBy: author._id,
+      });
+
+      // Emit real-time activity update
+      io.to(`user:${memberId}`).emit("activity:new", {
+        _id: notification._id,
+        type: "CHAT_MESSAGE",
+        activityCategory: "chat",
+        subtitle: `message in ${channel.channelName}`,
+        title: "New message",
+        messagePreview: `${author.name} in ${channel.channelName}: ${contentText.substring(0, 100)}`,
+        actor: {
+          _id: author._id,
+          name: author.name,
+          email: author.email,
+          image: author.image,
+        },
+        conversationType: conversation.type,
+        channelName: channel.channelName,
+        timestamp: notification.timestamp,
+        isRead: false,
+        navigationContext: {
+          conversationId: conversation._id,
+          messageId: message._id,
+          channelId: channel._id,
+          projectId: null,
+          taskId: null,
+          tabId: null,
+        },
+      });
+
+      // Emit updated unread counts
+      await emitUnreadCountsUpdate(memberId.toString(), io);
     }
   }
 };
@@ -1031,15 +1382,76 @@ const notifyThreadParticipants = async (
       });
 
       // Create persistent notification
-      await createNotification({
+      // Get channelName if this is a channel conversation
+      let channelName = null;
+      if (conversation.type === "channel" && conversation.channelId) {
+        const channel = await findChannel({ _id: conversation.channelId });
+        channelName = channel?.channelName || null;
+      }
+
+      const notification = await createNotification({
         userId: userId,
         type: "CHAT_THREAD_REPLY",
+        activityCategory: "chat",
+        conversationType: conversation.type,
+        channelName: channelName,
         title: "New thread reply",
         message: `${author.name} replied: ${contentText.substring(0, 100)}`,
+        channelId: conversation.channelId || null,
         conversationId: conversation._id,
         messageId: message._id,
         createdBy: author._id,
       });
+
+      // Emit real-time activity update
+      let subtitle;
+      if (channelName) {
+        subtitle = `reply in ${channelName}`;
+      } else {
+        switch (conversation.type) {
+          case "dm":
+            subtitle = "reply in Direct Message";
+            break;
+          case "group_dm":
+            subtitle = "reply in Group Chat";
+            break;
+          case "client":
+            subtitle = "reply in Client Chat";
+            break;
+          default:
+            subtitle = "thread reply";
+        }
+      }
+
+      io.to(`user:${userId}`).emit("activity:new", {
+        _id: notification._id,
+        type: "CHAT_THREAD_REPLY",
+        activityCategory: "chat",
+        subtitle: subtitle,
+        title: "New thread reply",
+        messagePreview: `${author.name} replied: ${contentText.substring(0, 100)}`,
+        actor: {
+          _id: author._id,
+          name: author.name,
+          email: author.email,
+          image: author.image,
+        },
+        conversationType: conversation.type,
+        channelName: channelName,
+        timestamp: notification.timestamp,
+        isRead: false,
+        navigationContext: {
+          conversationId: conversation._id,
+          messageId: message._id,
+          channelId: conversation.channelId || null,
+          projectId: null,
+          taskId: null,
+          tabId: null,
+        },
+      });
+
+      // Emit updated unread counts
+      await emitUnreadCountsUpdate(userId.toString(), io);
     }
   }
 };

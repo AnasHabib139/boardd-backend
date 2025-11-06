@@ -1578,6 +1578,26 @@ exports.getIO = () => {
   return io;
 };
 
+/**
+ * Emit updated unread counts to user
+ * @param {String} userId - User ID to emit to
+ * @param {Object} io - Socket.io instance (optional, will use getIO if not provided)
+ */
+exports.emitUnreadCountsUpdate = async (userId, ioInstance = null) => {
+  try {
+    const socketIo = ioInstance || exports.getIO();
+    const { model } = require("mongoose");
+    const { calculateUnreadCounts } = require("../controller/helpers/activities/activity.helper");
+
+    const NotificationModel = model("Notification");
+    const unreadCounts = await calculateUnreadCounts(NotificationModel, userId);
+
+    socketIo.to(`user:${userId}`).emit("activity:unread:updated", unreadCounts);
+  } catch (error) {
+    console.error("Error emitting unread counts update:", error);
+  }
+};
+
 // Generate notification message for tab activity
 const generateTabNotificationMessage = (type, payload) => {
   const { updatedBy, task, project, field, newValue, activities } = payload;
