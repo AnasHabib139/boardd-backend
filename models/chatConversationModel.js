@@ -187,10 +187,15 @@ exports.resolveConversation = async (params, createIfMissing = false) => {
       throw new Error("participantIds are required for DM conversations");
     }
 
+    // Ensure createdBy is included in participantIds (for query matching)
+    const createdByStr = createdBy.toString();
+    const participantIdStrs = participantIds.map((id) => id.toString());
+    const allParticipantIds = participantIdStrs.includes(createdByStr)
+      ? participantIdStrs
+      : [...participantIdStrs, createdByStr];
+
     // Sort participantIds for stable lookup
-    const sortedParticipantIds = [...participantIds]
-      .map((id) => id.toString())
-      .sort();
+    const sortedParticipantIds = [...allParticipantIds].sort();
 
     query.participantIds = {
       $all: sortedParticipantIds,
@@ -217,9 +222,15 @@ exports.resolveConversation = async (params, createIfMissing = false) => {
       conversationData.channelId = channelId;
 
       if (participantIds && participantIds.length > 0) {
+        // Ensure createdBy is included in participantIds
+        const createdByStr = createdBy.toString();
+        const participantIdStrs = participantIds.map((id) => id.toString());
+        const allParticipantIds = participantIdStrs.includes(createdByStr)
+          ? participantIdStrs
+          : [...participantIdStrs, createdByStr];
+
         // Sort and store participantIds (team members + client guest)
-        conversationData.participantIds = [...participantIds]
-          .map((id) => id.toString())
+        conversationData.participantIds = [...allParticipantIds]
           .sort()
           .map((id) => new Types.ObjectId(id));
       }
@@ -230,8 +241,14 @@ exports.resolveConversation = async (params, createIfMissing = false) => {
       }
     } else {
       // Sort and store participantIds for dm/group_dm
-      conversationData.participantIds = [...participantIds]
-        .map((id) => id.toString())
+      // Ensure createdBy is included in participantIds
+      const createdByStr = createdBy.toString();
+      const participantIdStrs = participantIds.map((id) => id.toString());
+      const allParticipantIds = participantIdStrs.includes(createdByStr)
+        ? participantIdStrs
+        : [...participantIdStrs, createdByStr];
+
+      conversationData.participantIds = [...allParticipantIds]
         .sort()
         .map((id) => new Types.ObjectId(id));
     }
