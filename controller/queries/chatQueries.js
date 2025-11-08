@@ -416,6 +416,7 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
         conversationType: 1,
         messagingChannels: 1,
         clientContactInfo: 1,
+        DEBUG_clientDetails: 1,
       },
     },
 
