@@ -286,10 +286,11 @@ exports.getActivities = async (req, res, next) => {
       formatActivityItem(notification)
     );
 
-    // Calculate unread count
+    // Calculate unread count (only chat notifications, same as activities filter)
     const unreadCount = await NotificationModel.countDocuments({
       userId: new Types.ObjectId(userId),
       isRead: false,
+      type: { $in: CHAT_NOTIFICATION_TYPES },
     });
 
     return generateResponse(
