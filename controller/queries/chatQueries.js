@@ -113,7 +113,7 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
                 $and: [
                   { $eq: ["$channelId", "$$channelId"] },
                   "$$isClientConvo",
-                  { $eq: ["$name", "client management"] }
+                  { $eq: ["$tabName", "client management"] }
                 ]
               }
             }
