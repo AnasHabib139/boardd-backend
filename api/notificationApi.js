@@ -6,6 +6,12 @@ const {
   unmuteNotifications,
   getMuteStatus,
 } = require("../controller/notificationController");
+const {
+  getActivities,
+  getUnreadCounts,
+  markActivityAsRead,
+  markAllAsRead,
+} = require("../controller/activity.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
 const {
@@ -48,6 +54,36 @@ class NotificationApi {
       "/mute-status",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       getMuteStatus
+    );
+
+    // ========== Activity Feed Endpoints ==========
+
+    // Get activity feed with filtering and pagination
+    router.get(
+      "/feed",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getActivities
+    );
+
+    // Get unread counts by category
+    router.get(
+      "/feed/unread-counts",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getUnreadCounts
+    );
+
+    // Mark single activity as read
+    router.post(
+      "/feed/:activityId/mark-read",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      markActivityAsRead
+    );
+
+    // Mark all activities (or by type) as read
+    router.post(
+      "/feed/mark-all-read",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      markAllAsRead
     );
   }
 
