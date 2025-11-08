@@ -316,7 +316,7 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
         },
 
         // Client contact information (only for client conversations)
-        // Only includes data from client model (all personalDetails entries)
+        // Merges data from both client model and conversation.clientContact
         clientContactInfo: {
           $cond: {
             if: { $eq: ["$conversationDetails.type", "client"] },
@@ -330,54 +330,127 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
                       },
                       in: { $ifNull: ["$$firstClient.personalDetails", []] }
                     }
-                  }
+                  },
+                  conversationContact: { $ifNull: ["$conversationDetails.clientContact", {}] }
                 },
                 in: {
-                  // SMS numbers from client model only (all personalDetails entries)
+                  // SMS numbers - merge from client model and conversation.clientContact.phoneE164
                   smsNumbers: {
-                    $map: {
+                    $reduce: {
                       input: {
-                        $filter: {
-                          input: "$$clientPersonalDetails",
-                          as: "detail",
-                          cond: {
-                            $and: [
-                              { $ne: ["$$detail.phone", null] },
-                              { $ne: ["$$detail.phone.number", null] }
-                            ]
+                        $concatArrays: [
+                          // From client model
+                          {
+                            $map: {
+                              input: {
+                                $filter: {
+                                  input: "$$clientPersonalDetails",
+                                  as: "detail",
+                                  cond: {
+                                    $and: [
+                                      { $ne: ["$$detail.phone", null] },
+                                      { $ne: ["$$detail.phone.number", null] }
+                                    ]
+                                  }
+                                }
+                              },
+                              as: "detail",
+                              in: {
+                                number: {
+                                  $concat: [
+                                    { $toString: { $ifNull: ["$$detail.phone.countryCode", ""] } },
+                                    { $toString: { $ifNull: ["$$detail.phone.number", ""] } }
+                                  ]
+                                },
+                                name: { $ifNull: ["$$detail.name", ""] },
+                                source: "clientModel"
+                              }
+                            }
+                          },
+                          // From conversation.clientContact
+                          {
+                            $cond: {
+                              if: { $ne: ["$$conversationContact.phoneE164", null] },
+                              then: [{
+                                number: "$$conversationContact.phoneE164",
+                                name: { $ifNull: ["$$conversationContact.name", ""] },
+                                source: "conversationContact"
+                              }],
+                              else: []
+                            }
                           }
-                        }
+                        ]
                       },
-                      as: "detail",
+                      initialValue: [],
                       in: {
-                        number: {
-                          $concat: [
-                            { $toString: { $ifNull: ["$$detail.phone.countryCode", ""] } },
-                            { $toString: { $ifNull: ["$$detail.phone.number", ""] } }
-                          ]
-                        },
-                        name: { $ifNull: ["$$detail.name", ""] },
-                        source: "clientModel"
+                        $cond: {
+                          if: {
+                            $in: ["$$this.number", "$$value.number"]
+                          },
+                          then: "$$value",
+                          else: { $concatArrays: ["$$value", ["$$this"]] }
+                        }
                       }
                     }
                   },
-                  // WhatsApp numbers - not in client model, return empty array
-                  whatsappNumbers: [],
-                  // Emails from client model only (all personalDetails entries)
+                  // WhatsApp numbers - from conversation.clientContact.whatsappE164
+                  whatsappNumbers: {
+                    $cond: {
+                      if: { $ne: ["$$conversationContact.whatsappE164", null] },
+                      then: [{
+                        number: "$$conversationContact.whatsappE164",
+                        name: { $ifNull: ["$$conversationContact.name", ""] },
+                        source: "conversationContact"
+                      }],
+                      else: []
+                    }
+                  },
+                  // Emails - merge from client model and conversation.clientContact.email
                   emails: {
-                    $map: {
+                    $reduce: {
                       input: {
-                        $filter: {
-                          input: "$$clientPersonalDetails",
-                          as: "detail",
-                          cond: { $ne: ["$$detail.email", null] }
-                        }
+                        $concatArrays: [
+                          // From client model
+                          {
+                            $map: {
+                              input: {
+                                $filter: {
+                                  input: "$$clientPersonalDetails",
+                                  as: "detail",
+                                  cond: { $ne: ["$$detail.email", null] }
+                                }
+                              },
+                              as: "detail",
+                              in: {
+                                email: { $ifNull: ["$$detail.email", ""] },
+                                name: { $ifNull: ["$$detail.name", ""] },
+                                source: "clientModel"
+                              }
+                            }
+                          },
+                          // From conversation.clientContact
+                          {
+                            $cond: {
+                              if: { $ne: ["$$conversationContact.email", null] },
+                              then: [{
+                                email: { $toLower: "$$conversationContact.email" },
+                                name: { $ifNull: ["$$conversationContact.name", ""] },
+                                source: "conversationContact"
+                              }],
+                              else: []
+                            }
+                          }
+                        ]
                       },
-                      as: "detail",
+                      initialValue: [],
                       in: {
-                        email: { $ifNull: ["$$detail.email", ""] },
-                        name: { $ifNull: ["$$detail.name", ""] },
-                        source: "clientModel"
+                        $cond: {
+                          if: {
+                            $in: [{ $toLower: "$$this.email" }, { $map: { input: "$$value", as: "v", in: { $toLower: "$$v.email" } } }]
+                          },
+                          then: "$$value",
+                          else: { $concatArrays: ["$$value", ["$$this"]] }
+                        }
                       }
                     }
                   }
@@ -717,18 +790,40 @@ exports.getConversationWithChatName = (conversationId, userId) => {
 
 /**
  * Get client contact info for a client conversation when no messages exist
- * Fetches client details from "client management" tab and company messaging channels
+ * Fetches client details from "client management" tab, company messaging channels, and conversation.clientContact
  * @param {string} channelId - Channel ID
  * @param {string} companyId - Company ID
+ * @param {string} conversationId - Conversation ID
  * @returns {Array} Aggregation pipeline
  */
-exports.getClientContactInfoQuery = (channelId, companyId) => {
+exports.getClientContactInfoQuery = (channelId, companyId, conversationId) => {
   return [
     // Match the specific channel's "client management" tab
     {
       $match: {
         channelId: Types.ObjectId.createFromHexString(channelId),
         tabName: "client management"
+      }
+    },
+
+    // Lookup conversation for clientContact
+    {
+      $lookup: {
+        from: "chatconversations",
+        let: { conversationId: Types.ObjectId.createFromHexString(conversationId) },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$_id", "$$conversationId"] }
+            }
+          },
+          {
+            $project: {
+              clientContact: 1
+            }
+          }
+        ],
+        as: "conversationDetails"
       }
     },
 
@@ -780,7 +875,7 @@ exports.getClientContactInfoQuery = (channelId, companyId) => {
       }
     },
 
-    // Transform personalDetails and company config to response format
+    // Transform personalDetails, conversation contact, and company config to response format
     {
       $project: {
         messagingChannels: {
@@ -820,48 +915,138 @@ exports.getClientContactInfoQuery = (channelId, companyId) => {
           }
         },
         clientContactInfo: {
-          smsNumbers: {
-            $map: {
-              input: {
-                $filter: {
-                  input: { $ifNull: ["$clientData.personalDetails", []] },
-                  as: "detail",
-                  cond: {
-                    $and: [
-                      { $ne: ["$$detail.phone", null] },
-                      { $ne: ["$$detail.phone.number", null] }
+          $let: {
+            vars: {
+              clientPersonalDetails: { $ifNull: ["$clientData.personalDetails", []] },
+              conversationContact: {
+                $let: {
+                  vars: {
+                    firstConvo: { $arrayElemAt: ["$conversationDetails", 0] }
+                  },
+                  in: { $ifNull: ["$$firstConvo.clientContact", {}] }
+                }
+              }
+            },
+            in: {
+              // SMS numbers - merge from client model and conversation.clientContact.phoneE164
+              smsNumbers: {
+                $reduce: {
+                  input: {
+                    $concatArrays: [
+                      // From client model
+                      {
+                        $map: {
+                          input: {
+                            $filter: {
+                              input: "$$clientPersonalDetails",
+                              as: "detail",
+                              cond: {
+                                $and: [
+                                  { $ne: ["$$detail.phone", null] },
+                                  { $ne: ["$$detail.phone.number", null] }
+                                ]
+                              }
+                            }
+                          },
+                          as: "detail",
+                          in: {
+                            number: {
+                              $concat: [
+                                { $toString: { $ifNull: ["$$detail.phone.countryCode", ""] } },
+                                { $toString: { $ifNull: ["$$detail.phone.number", ""] } }
+                              ]
+                            },
+                            name: { $ifNull: ["$$detail.name", ""] },
+                            source: "clientModel"
+                          }
+                        }
+                      },
+                      // From conversation.clientContact
+                      {
+                        $cond: {
+                          if: { $ne: ["$$conversationContact.phoneE164", null] },
+                          then: [{
+                            number: "$$conversationContact.phoneE164",
+                            name: { $ifNull: ["$$conversationContact.name", ""] },
+                            source: "conversationContact"
+                          }],
+                          else: []
+                        }
+                      }
                     ]
+                  },
+                  initialValue: [],
+                  in: {
+                    $cond: {
+                      if: {
+                        $in: ["$$this.number", "$$value.number"]
+                      },
+                      then: "$$value",
+                      else: { $concatArrays: ["$$value", ["$$this"]] }
+                    }
                   }
                 }
               },
-              as: "detail",
-              in: {
-                number: {
-                  $concat: [
-                    { $toString: { $ifNull: ["$$detail.phone.countryCode", ""] } },
-                    { $toString: { $ifNull: ["$$detail.phone.number", ""] } }
-                  ]
-                },
-                name: { $ifNull: ["$$detail.name", ""] },
-                source: "clientModel"
-              }
-            }
-          },
-          whatsappNumbers: [],
-          emails: {
-            $map: {
-              input: {
-                $filter: {
-                  input: { $ifNull: ["$clientData.personalDetails", []] },
-                  as: "detail",
-                  cond: { $ne: ["$$detail.email", null] }
+              // WhatsApp numbers - from conversation.clientContact.whatsappE164
+              whatsappNumbers: {
+                $cond: {
+                  if: { $ne: ["$$conversationContact.whatsappE164", null] },
+                  then: [{
+                    number: "$$conversationContact.whatsappE164",
+                    name: { $ifNull: ["$$conversationContact.name", ""] },
+                    source: "conversationContact"
+                  }],
+                  else: []
                 }
               },
-              as: "detail",
-              in: {
-                email: { $ifNull: ["$$detail.email", ""] },
-                name: { $ifNull: ["$$detail.name", ""] },
-                source: "clientModel"
+              // Emails - merge from client model and conversation.clientContact.email
+              emails: {
+                $reduce: {
+                  input: {
+                    $concatArrays: [
+                      // From client model
+                      {
+                        $map: {
+                          input: {
+                            $filter: {
+                              input: "$$clientPersonalDetails",
+                              as: "detail",
+                              cond: { $ne: ["$$detail.email", null] }
+                            }
+                          },
+                          as: "detail",
+                          in: {
+                            email: { $ifNull: ["$$detail.email", ""] },
+                            name: { $ifNull: ["$$detail.name", ""] },
+                            source: "clientModel"
+                          }
+                        }
+                      },
+                      // From conversation.clientContact
+                      {
+                        $cond: {
+                          if: { $ne: ["$$conversationContact.email", null] },
+                          then: [{
+                            email: { $toLower: "$$conversationContact.email" },
+                            name: { $ifNull: ["$$conversationContact.name", ""] },
+                            source: "conversationContact"
+                          }],
+                          else: []
+                        }
+                      }
+                    ]
+                  },
+                  initialValue: [],
+                  in: {
+                    $cond: {
+                      if: {
+                        $in: [{ $toLower: "$$this.email" }, { $map: { input: "$$value", as: "v", in: { $toLower: "$$v.email" } } }]
+                      },
+                      then: "$$value",
+                      else: { $concatArrays: ["$$value", ["$$this"]] }
+                    }
+                  }
+                }
               }
             }
           }

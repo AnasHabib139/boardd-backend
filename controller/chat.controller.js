@@ -80,7 +80,8 @@ exports.getConversationMessages = async (req, res, next) => {
       // No messages yet, but conversation is client type - fetch client details separately
       const clientInfoQuery = getClientContactInfoQuery(
         conversation.channelId.toString(),
-        conversation.companyId.toString()
+        conversation.companyId.toString(),
+        conversationId
       );
       const clientInfoResult = await aggregateChannelTabs(clientInfoQuery);
 
