@@ -78,11 +78,15 @@ exports.getConversationMessages = async (req, res, next) => {
       }
     } else if (conversation.type === "client") {
       // No messages yet, but conversation is client type - fetch client details separately
-      const clientInfoQuery = getClientContactInfoQuery(conversation.channelId.toString());
+      const clientInfoQuery = getClientContactInfoQuery(
+        conversation.channelId.toString(),
+        conversation.companyId.toString()
+      );
       const clientInfoResult = await aggregateChannelTabs(clientInfoQuery);
 
       if (clientInfoResult && clientInfoResult.length > 0) {
         responseData.conversationType = "client";
+        responseData.messagingChannels = clientInfoResult[0].messagingChannels;
         responseData.clientContactInfo = clientInfoResult[0].clientContactInfo;
       }
     }

@@ -717,17 +717,41 @@ exports.getConversationWithChatName = (conversationId, userId) => {
 
 /**
  * Get client contact info for a client conversation when no messages exist
- * Fetches client details from "client management" tab
+ * Fetches client details from "client management" tab and company messaging channels
  * @param {string} channelId - Channel ID
+ * @param {string} companyId - Company ID
  * @returns {Array} Aggregation pipeline
  */
-exports.getClientContactInfoQuery = (channelId) => {
+exports.getClientContactInfoQuery = (channelId, companyId) => {
   return [
     // Match the specific channel's "client management" tab
     {
       $match: {
         channelId: Types.ObjectId.createFromHexString(channelId),
         tabName: "client management"
+      }
+    },
+
+    // Lookup company details for messaging channels
+    {
+      $lookup: {
+        from: "companies",
+        let: { companyId: Types.ObjectId.createFromHexString(companyId) },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$_id", "$$companyId"] }
+            }
+          },
+          {
+            $project: {
+              "twilioConfig.fromNumbers": 1,
+              "twilioConfig.whatsappSenders": 1,
+              "emailConfig.sendgrid.senders": 1
+            }
+          }
+        ],
+        as: "companyDetails"
       }
     },
 
@@ -756,9 +780,45 @@ exports.getClientContactInfoQuery = (channelId) => {
       }
     },
 
-    // Transform personalDetails to clientContactInfo format
+    // Transform personalDetails and company config to response format
     {
       $project: {
+        messagingChannels: {
+          $let: {
+            vars: {
+              company: { $arrayElemAt: ["$companyDetails", 0] }
+            },
+            in: {
+              sms: { $ifNull: ["$$company.twilioConfig.fromNumbers", []] },
+              whatsapp: {
+                $map: {
+                  input: {
+                    $filter: {
+                      input: { $ifNull: ["$$company.twilioConfig.whatsappSenders", []] },
+                      as: "sender",
+                      cond: { $eq: ["$$sender.status", "active"] }
+                    }
+                  },
+                  as: "sender",
+                  in: "$$sender.number"
+                }
+              },
+              email: {
+                $map: {
+                  input: {
+                    $filter: {
+                      input: { $ifNull: ["$$company.emailConfig.sendgrid.senders", []] },
+                      as: "sender",
+                      cond: { $eq: ["$$sender.domainVerified", true] }
+                    }
+                  },
+                  as: "sender",
+                  in: "$$sender.email"
+                }
+              }
+            }
+          }
+        },
         clientContactInfo: {
           smsNumbers: {
             $map: {
