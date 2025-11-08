@@ -4,7 +4,8 @@ const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { findChatConversation, aggregateChatConversations } = require("../models/chatConversationModel");
 const { getAllChatMessages } = require("../models/chatMessageModel");
-const { getConversationMessagesQuery, getUserConversationsQuery, getConversationWithChatName } = require("./queries/chatQueries");
+const { getConversationMessagesQuery, getUserConversationsQuery, getConversationWithChatName, getClientContactInfoQuery } = require("./queries/chatQueries");
+const { aggregateChannelTabs } = require("../models/channelTabsModel");
 
 /**
  * Get chat messages for a conversation
@@ -74,6 +75,15 @@ exports.getConversationMessages = async (req, res, next) => {
           const { conversationType, messagingChannels, clientContactInfo, ...messageData } = msg;
           return messageData;
         });
+      }
+    } else if (conversation.type === "client") {
+      // No messages yet, but conversation is client type - fetch client details separately
+      const clientInfoQuery = getClientContactInfoQuery(conversation.channelId.toString());
+      const clientInfoResult = await aggregateChannelTabs(clientInfoQuery);
+
+      if (clientInfoResult && clientInfoResult.length > 0) {
+        responseData.conversationType = "client";
+        responseData.clientContactInfo = clientInfoResult[0].clientContactInfo;
       }
     }
 

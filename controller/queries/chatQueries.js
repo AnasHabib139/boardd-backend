@@ -715,3 +715,104 @@ exports.getConversationWithChatName = (conversationId, userId) => {
   ];
 };
 
+/**
+ * Get client contact info for a client conversation when no messages exist
+ * Fetches client details from "client management" tab
+ * @param {string} channelId - Channel ID
+ * @returns {Array} Aggregation pipeline
+ */
+exports.getClientContactInfoQuery = (channelId) => {
+  return [
+    // Match the specific channel's "client management" tab
+    {
+      $match: {
+        channelId: Types.ObjectId.createFromHexString(channelId),
+        tabName: "client management"
+      }
+    },
+
+    // Lookup client data
+    {
+      $lookup: {
+        from: "clients",
+        localField: "_id",
+        foreignField: "tabId",
+        as: "clientData",
+        pipeline: [
+          {
+            $project: {
+              personalDetails: 1
+            }
+          }
+        ]
+      }
+    },
+
+    // Unwind client data
+    {
+      $unwind: {
+        path: "$clientData",
+        preserveNullAndEmptyArrays: true
+      }
+    },
+
+    // Transform personalDetails to clientContactInfo format
+    {
+      $project: {
+        clientContactInfo: {
+          smsNumbers: {
+            $map: {
+              input: {
+                $filter: {
+                  input: { $ifNull: ["$clientData.personalDetails", []] },
+                  as: "detail",
+                  cond: {
+                    $and: [
+                      { $ne: ["$$detail.phone", null] },
+                      { $ne: ["$$detail.phone.number", null] }
+                    ]
+                  }
+                }
+              },
+              as: "detail",
+              in: {
+                number: {
+                  $concat: [
+                    { $toString: { $ifNull: ["$$detail.phone.countryCode", ""] } },
+                    { $toString: { $ifNull: ["$$detail.phone.number", ""] } }
+                  ]
+                },
+                name: { $ifNull: ["$$detail.name", ""] },
+                source: "clientModel"
+              }
+            }
+          },
+          whatsappNumbers: [],
+          emails: {
+            $map: {
+              input: {
+                $filter: {
+                  input: { $ifNull: ["$clientData.personalDetails", []] },
+                  as: "detail",
+                  cond: { $ne: ["$$detail.email", null] }
+                }
+              },
+              as: "detail",
+              in: {
+                email: { $ifNull: ["$$detail.email", ""] },
+                name: { $ifNull: ["$$detail.name", ""] },
+                source: "clientModel"
+              }
+            }
+          }
+        }
+      }
+    },
+
+    // Limit to 1 result
+    {
+      $limit: 1
+    }
+  ];
+};
+
