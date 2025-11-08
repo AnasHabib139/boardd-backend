@@ -63,6 +63,20 @@ exports.getConversationMessages = async (req, res, next) => {
     if (result.messages && result.messages.length > 0) {
       const firstMessage = result.messages[0];
 
+      // DEBUG: Log aggregation results for client conversations
+      if (conversation.type === "client") {
+        console.log("=== CLIENT AGGREGATION DEBUG ===");
+        console.log("Conversation ID:", conversationId);
+        console.log("Channel ID:", conversation.channelId);
+        console.log("First Message Keys:", Object.keys(firstMessage));
+        if (firstMessage.clientContactInfo) {
+          console.log("clientContactInfo:", JSON.stringify(firstMessage.clientContactInfo, null, 2));
+        } else {
+          console.log("clientContactInfo: NOT PRESENT IN MESSAGE");
+        }
+        console.log("================================");
+      }
+
       // Add messaging channels and client contact info to response root (only if present)
       if (firstMessage.conversationType === "client") {
         responseData.conversationType = firstMessage.conversationType;
