@@ -69,6 +69,11 @@ exports.getConversationMessages = async (req, res, next) => {
         console.log("Conversation ID:", conversationId);
         console.log("Channel ID:", conversation.channelId);
         console.log("First Message Keys:", Object.keys(firstMessage));
+        if (firstMessage.DEBUG_clientDetails) {
+          console.log("DEBUG_clientDetails:", JSON.stringify(firstMessage.DEBUG_clientDetails, null, 2));
+        } else {
+          console.log("DEBUG_clientDetails: NOT PRESENT");
+        }
         if (firstMessage.clientContactInfo) {
           console.log("clientContactInfo:", JSON.stringify(firstMessage.clientContactInfo, null, 2));
         } else {
