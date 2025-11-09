@@ -27,7 +27,7 @@ const {
 const { findChannel } = require("../models/channelModel");
 const { findUser } = require("../models/userModel");
 const { createNotification } = require("../models/notificationModel");
-const { emitUnreadCountsUpdate } = require("./socket");
+const { emitUnreadCountsUpdate } = require("./activityNotifications");
 const {
   validateAndSanitize,
   extractMentions,

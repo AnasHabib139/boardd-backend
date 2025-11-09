@@ -3,6 +3,7 @@ const socketIO = require("socket.io");
 const { Types } = require("mongoose");
 const { createActivity } = require("../models/activityModel");
 const { initChatSocket } = require("./chatSocket");
+const { emitUnreadCountsUpdate } = require("./activityNotifications");
 const {
   updateTask,
   findTask,
@@ -1579,23 +1580,12 @@ exports.getIO = () => {
 };
 
 /**
- * Emit updated unread counts to user
- * @param {String} userId - User ID to emit to
- * @param {Object} io - Socket.io instance (optional, will use getIO if not provided)
+ * Re-export emitUnreadCountsUpdate for backward compatibility
+ * Actual implementation is in activityNotifications.js to avoid circular dependencies
  */
 exports.emitUnreadCountsUpdate = async (userId, ioInstance = null) => {
-  try {
-    const socketIo = ioInstance || exports.getIO();
-    const { model } = require("mongoose");
-    const { calculateUnreadCounts } = require("../controller/helpers/activities/activity.helper");
-
-    const NotificationModel = model("Notification");
-    const unreadCounts = await calculateUnreadCounts(NotificationModel, userId);
-
-    socketIo.to(`user:${userId}`).emit("activity:unread:updated", unreadCounts);
-  } catch (error) {
-    console.error("Error emitting unread counts update:", error);
-  }
+  const socketIo = ioInstance || exports.getIO();
+  return emitUnreadCountsUpdate(userId, socketIo);
 };
 
 // Generate notification message for tab activity
