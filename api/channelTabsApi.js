@@ -12,6 +12,7 @@ const {
   getDefaultChannelTabsWithPresence,
 } = require("../controller/channelTabsController");
 const Auth = require("../middlewares/Auth");
+const { checkPermission } = require("../middlewares/checkPermission");
 const { ROLES } = require("../utils/constants");
 const {
   validateCreateChannelTab,
@@ -53,6 +54,7 @@ class ChannelTabsApi {
     router.post(
       "/add-members",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("addRemoveChannelMembers"),
       validateAddMembersToChannelTab,
       addMembersToChannelTab
     );
@@ -61,6 +63,7 @@ class ChannelTabsApi {
     router.post(
       "/remove-members",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("addRemoveChannelMembers"),
       validateRemoveMembersFromChannelTab,
       removeMembersFromChannelTab
     );
@@ -86,6 +89,7 @@ class ChannelTabsApi {
     router.put(
       "/toggle",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("deleteDashboardTabs"),
       validateToggleChannelTab,
       toggleChannelTab
     );

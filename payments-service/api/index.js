@@ -4,6 +4,7 @@ const { Router } = require("express");
 const express = require("express");
 const multer = require("multer");
 const Auth = require("../../middlewares/Auth");
+const { checkPermission } = require("../../middlewares/checkPermission");
 const { ROLES } = require("../../utils/constants");
 
 const {
@@ -102,6 +103,7 @@ class PaymentsAPI {
     router.post(
       "/connect/accounts",
       Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
       validateCreateAccount,
       createAccount
     );
@@ -115,6 +117,7 @@ class PaymentsAPI {
     router.put(
       "/connect/accounts/:companyId",
       Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
       validateUpdateAccount,
       updateAccount
     );
@@ -153,6 +156,7 @@ class PaymentsAPI {
     router.post(
       "/connect/accounts/:companyId/persons",
       Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
       validateAddPerson,
       addPerson
     );
@@ -166,6 +170,7 @@ class PaymentsAPI {
     router.put(
       "/connect/accounts/:companyId/persons/:personId",
       Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
       validateUpdatePerson,
       updatePerson
     );
@@ -179,6 +184,7 @@ class PaymentsAPI {
     router.post(
       "/connect/accounts/:companyId/persons/:personId/documents",
       Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
       upload.single("document"),
       uploadPersonDocument
     );
@@ -192,6 +198,7 @@ class PaymentsAPI {
     router.post(
       "/connect/accounts/:companyId/persons-provided",
       Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
       validateSetPersonsProvided,
       setPersonsProvided
     );
@@ -207,6 +214,7 @@ class PaymentsAPI {
     router.post(
       "/connect/accounts/:companyId/external-account",
       Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
       validateAddExternalAccount,
       addExternalAccount
     );
@@ -222,6 +230,7 @@ class PaymentsAPI {
     router.post(
       "/connect/accounts/:companyId/branding/upload",
       Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
       upload.single("file"),
       validateBrandingFileUpload,
       uploadBrandingFile
@@ -236,6 +245,7 @@ class PaymentsAPI {
     router.put(
       "/connect/accounts/:companyId/branding",
       Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
       validateUpdateBranding,
       updateBranding
     );
@@ -260,6 +270,7 @@ class PaymentsAPI {
     router.delete(
       "/connect/accounts/:companyId/branding/:type",
       Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
       removeBrandingAsset
     );
 
@@ -275,6 +286,7 @@ class PaymentsAPI {
     router.post(
       "/clients/:tabId/payment/setup-intent",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("accessClientPayments"),
       createClientSetupIntent
     );
 
@@ -288,6 +300,7 @@ class PaymentsAPI {
     router.post(
       "/clients/:tabId/payment/methods",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("accessClientPayments"),
       savePaymentMethod
     );
 
@@ -300,6 +313,7 @@ class PaymentsAPI {
     router.get(
       "/clients/:tabId/payment/methods",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("accessClientPayments"),
       listClientPaymentMethods
     );
 
@@ -312,6 +326,7 @@ class PaymentsAPI {
     router.delete(
       "/clients/:tabId/payment/methods/:paymentMethodId",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("accessClientPayments"),
       removePaymentMethod
     );
 
@@ -324,6 +339,7 @@ class PaymentsAPI {
     router.post(
       "/clients/:tabId/payment/methods/:paymentMethodId/set-default",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("accessClientPayments"),
       setDefaultPaymentMethod
     );
 

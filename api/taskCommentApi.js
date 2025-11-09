@@ -3,6 +3,7 @@
 const { Router } = require("express");
 const { createTaskComment, getTaskComments } = require("../controller/taskComment.controller");
 const Auth = require("../middlewares/Auth");
+const { checkPermission } = require("../middlewares/checkPermission");
 const { ROLES } = require("../utils/constants");
 const {
   validateCreateTaskComment,
@@ -32,6 +33,7 @@ class TaskCommentApi {
     router.post(
       "/:taskId/comments",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("makeComments"),
       validateTaskIdParam,
       validateCreateTaskComment,
       createTaskComment

@@ -12,6 +12,7 @@ const {
 } = require("../controller/admin.controller");
 const { ROLES } = require("../utils/constants");
 const Auth = require("../middlewares/Auth");
+const { checkPermission } = require("../middlewares/checkPermission");
 const {
   validateToggleUserSeat,
   validateInitiateOwnershipTransfer,
@@ -28,18 +29,34 @@ class AdminAPI {
     let router = this.router;
 
     // Get all company users for admin management
-    router.get("/users", Auth([ROLES.ADMIN]), getCompanyUsersAdmin);
+    router.get(
+      "/users",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessUserManagement"),
+      getCompanyUsersAdmin
+    );
 
     // Get invited users from reserved invite slots
-    router.get("/invited-users", Auth([ROLES.ADMIN]), getInvitedUsers);
+    router.get(
+      "/invited-users",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessUserManagement"),
+      getInvitedUsers
+    );
 
     // Cancel an invite for a specific user by slot ID
-    router.delete("/cancel-invite/:slotId", Auth([ROLES.ADMIN]), cancelInvite);
+    router.delete(
+      "/cancel-invite/:slotId",
+      Auth([ROLES.ADMIN]),
+      checkPermission("manageAllMembers"),
+      cancelInvite
+    );
 
     // Toggle user seat status (approve/disapprove)
     router.post(
       "/toggle-seat",
       Auth([ROLES.ADMIN]),
+      checkPermission("manageAllMembers"),
       validateToggleUserSeat,
       toggleUserSeat
     );
@@ -48,6 +65,7 @@ class AdminAPI {
     router.post(
       "/transfer-ownership",
       Auth([ROLES.ADMIN]),
+      checkPermission("manageAllMembers"),
       validateInitiateOwnershipTransfer,
       initiateOwnershipTransfer
     );
@@ -63,6 +81,7 @@ class AdminAPI {
     router.put(
       "/change-role",
       Auth([ROLES.ADMIN]),
+      checkPermission("manageAllMembers"),
       changeUserRole
     );
   }

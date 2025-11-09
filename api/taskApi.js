@@ -15,6 +15,7 @@ const {
 } = require("../controller/task.controller");
 const Auth = require("../middlewares/Auth");
 const OptionalAuth = require("../middlewares/OptionalAuth");
+const { checkPermission } = require("../middlewares/checkPermission");
 const { ROLES } = require("../utils/constants");
 const {
   validateCreateTask,
@@ -63,6 +64,7 @@ class TaskApi {
     router.put(
       "/:taskId/batch",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("editSelfOwnedItems"),
       validateTaskIdParam,
       validateBatchUpdateTask,
       batchUpdateTask
@@ -104,6 +106,7 @@ class TaskApi {
     router.patch(
       "/:taskId/archive",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("deleteSelfOwnedItems"),
       validateTaskIdParam,
       archiveTask
     );
@@ -112,6 +115,7 @@ class TaskApi {
     router.delete(
       "/:taskId",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("deleteSelfOwnedItems"),
       validateTaskIdParam,
       deleteTaskPermanently
     );

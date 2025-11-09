@@ -15,6 +15,7 @@ const {
 } = require("../controller/formController");
 const Auth = require("../middlewares/Auth");
 const OptionalAuth = require("../middlewares/OptionalAuth");
+const { checkPermission } = require("../middlewares/checkPermission");
 const { ROLES } = require("../utils/constants");
 const {
   validateCreateForm,
@@ -39,6 +40,7 @@ class FormApi {
     router.post(
       "/",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("createForms"),
       validateCreateForm,
       createForm
     );
@@ -105,6 +107,7 @@ class FormApi {
     router.put(
       "/:formId",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("editSelfOwnedItems"),
       validateFormId,
       validateUpdateForm,
       updateForm
@@ -122,6 +125,7 @@ class FormApi {
     router.delete(
       "/:formId",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("deleteSelfForms"),
       validateFormId,
       deleteForm
     );

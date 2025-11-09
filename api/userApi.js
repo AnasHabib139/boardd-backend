@@ -11,6 +11,7 @@ const {
 } = require("../controller/user.controller");
 const { ROLES } = require("../utils/constants");
 const Auth = require("../middlewares/Auth");
+const { checkPermission } = require("../middlewares/checkPermission");
 const {
   validateSignup,
   validateLogin,
@@ -33,7 +34,12 @@ class UserAPI {
     router.post("/login", validateLogin, login);
 
     // Get users with query validation
-    router.get("/", Auth([ROLES.ADMIN]), getUsersOfCompany);
+    router.get(
+      "/",
+      Auth([ROLES.ADMIN]),
+      checkPermission("viewTeamManagement"),
+      getUsersOfCompany
+    );
 
     // Get user profile
     router.get(

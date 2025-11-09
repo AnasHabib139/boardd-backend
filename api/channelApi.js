@@ -18,6 +18,7 @@ const {
   deleteChannelFile,
 } = require("../controller/channelController");
 const Auth = require("../middlewares/Auth");
+const { checkPermission, checkAnyPermission } = require("../middlewares/checkPermission");
 const { ROLES } = require("../utils/constants");
 const {
   validateCreateChannel,
@@ -48,6 +49,7 @@ class ChannelApi {
     router.post(
       "/",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("createChannels"),
       validateCreateChannel,
       createChannel
     );
@@ -56,6 +58,7 @@ class ChannelApi {
     router.put(
       "/add-member",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("addRemoveChannelMembers"),
       validateAddUserToChannel,
       addUserToChannel
     );
@@ -104,6 +107,7 @@ class ChannelApi {
     router.put(
       "/:channelId",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("editTeamNameImage"),
       validateEditChannel,
       editChannel
     );
@@ -112,6 +116,7 @@ class ChannelApi {
     router.post(
       "/:channelId/archive",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkAnyPermission(["deleteSelfOwnedChannels", "deleteOthersChannels"]),
       validateToggleChannelArchive,
       toggleChannelArchive
     );
@@ -136,6 +141,7 @@ class ChannelApi {
     router.post(
       "/:channelId/files",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("uploadFiles"),
       uploadFilesToChannel
     );
 
@@ -151,6 +157,7 @@ class ChannelApi {
     router.delete(
       "/:channelId/files/:fileId",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("deleteFiles"),
       validateDeleteChannelFile,
       deleteChannelFile
     );

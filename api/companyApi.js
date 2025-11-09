@@ -6,6 +6,7 @@ const {
   updateCompany,
 } = require("../controller/company.controller");
 const Auth = require("../middlewares/Auth");
+const { checkPermission } = require("../middlewares/checkPermission");
 const { ROLES } = require("../utils/constants");
 const {
   validateCreateCompany,
@@ -37,6 +38,7 @@ class CompanyApi {
     router.put(
       "/",
       Auth([ROLES.ADMIN]),
+      checkPermission("editTeamNameImage"),
       validateUpdateCompanyQuery,
       validateUpdateCompany,
       updateCompany
