@@ -32,6 +32,7 @@ const WebhookApi = require("./webhookApi");
 const MessagingConfigApi = require("./messagingConfigApi");
 const CloudIntegrationApi = require("./cloudIntegrationApi");
 const PaymentsAPI = require("../payments-service/api");
+const PermissionApi = require("./permissionApi");
 // FileServeApi is now mounted directly in server.js at /uploadFiles
 // const FileServeApi = require("./fileServeApi");
 // all API routing files import here like above
@@ -74,6 +75,7 @@ class API {
     this.routeGroups.push(new MessagingConfigApi());
     this.routeGroups.push(new CloudIntegrationApi());
     this.routeGroups.push(new PaymentsAPI());
+    this.routeGroups.push(new PermissionApi());
     // FileServeApi is now mounted directly in server.js
     // this.routeGroups.push(new FileServeApi());
     // all routes register here like above
