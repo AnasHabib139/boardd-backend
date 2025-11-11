@@ -54,6 +54,11 @@ module.exports = {
     }
 
     console.log(`Migration completed: ${updatedCount} clients updated, ${errorCount} errors`);
+
+    return {
+      success: true,
+      message: `Updated ${updatedCount} clients with invoice fields`
+    };
   },
 
   async down() {

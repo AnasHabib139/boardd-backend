@@ -109,6 +109,13 @@ const invoiceSchema = new Schema({
     pausedAt: { type: Date }
   },
 
+  // Billing cycle number for this specific invoice (1, 2, 3, etc.)
+  // Only set for recurring invoices - indicates which billing cycle this invoice represents
+  billingCycleNumber: {
+    type: Number,
+    index: true
+  },
+
   // ==================== User Tracking ====================
 
   createdBy: {
@@ -381,6 +388,29 @@ exports.getInvoiceStats = async (tabId) => {
   ]);
 
   return stats;
+};
+
+/**
+ * Get all invoices for a subscription
+ * Returns all billing cycle invoices sorted by cycle number
+ */
+exports.getSubscriptionInvoices = async (stripeSubscriptionId) => {
+  return InvoiceModel.find({
+    stripeSubscriptionId,
+    invoiceType: 'recurring'
+  })
+    .sort({ billingCycleNumber: 1 })
+    .exec();
+};
+
+/**
+ * Find invoice by subscription and cycle number
+ */
+exports.findInvoiceBySubscriptionCycle = async (stripeSubscriptionId, billingCycleNumber) => {
+  return InvoiceModel.findOne({
+    stripeSubscriptionId,
+    billingCycleNumber
+  });
 };
 
 // Export the model

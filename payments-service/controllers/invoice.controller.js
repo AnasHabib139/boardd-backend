@@ -125,10 +125,11 @@ exports.createInvoice = async (req, res, next) => {
       customerAddress,
       billTo,
       paymentMethods,
-      platformFee
+      platformFee,
+      recurring // NEW: Check if this is a recurring invoice
     } = req.body;
 
-    console.log(`Creating invoice for tab: ${tabId}`);
+    console.log(`Creating ${recurring ? 'recurring' : 'one-time'} invoice for tab: ${tabId}`);
 
     // Validate tab access
     const tab = await validateTabAccess(tabId, userId);
@@ -158,55 +159,126 @@ exports.createInvoice = async (req, res, next) => {
     let defaultPaymentMethod = null;
     if (collectionMethod === 'charge_automatically') {
       defaultPaymentMethod = client.stripe.defaultPaymentMethod;
+
+      // Validate payment method for automatic charging
+      if (!defaultPaymentMethod) {
+        throw new Error("NO_DEFAULT_PAYMENT_METHOD");
+      }
     }
 
-    // Create draft invoice in Stripe
-    const invoiceResult = await stripeService.createInvoice({
-      customerId,
-      connectedAccountId,
-      collectionMethod,
-      dueDate,
-      daysUntilDue,
-      description,
-      footer,
-      currency,
-      enableAutomaticTax,
-      defaultPaymentMethod,
-      paymentMethods,
-      platformFee
-    });
-
-    const stripeInvoiceId = invoiceResult.invoice.id;
-
-    // Add line items
-    const lineItemsResult = await stripeService.addInvoiceLineItems({
-      invoiceId: stripeInvoiceId,
-      connectedAccountId,
-      lineItems
-    });
-
-    // Calculate totals
-    let amountDue = lineItemsResult.invoice.amountDue;
-    const lineItemsCount = lineItemsResult.invoice.lineItemsCount;
-
-    // Apply platform fee if provided
+    let stripeInvoiceId;
+    let stripeSubscriptionId = null;
+    let amountDue;
+    let lineItemsCount;
     let platformFeeData = null;
-    if (platformFee) {
-      const platformFeeResult = await stripeService.applyPlatformFee({
-        invoiceId: stripeInvoiceId,
+
+    // BRANCH: Handle recurring vs one-time invoices
+    if (recurring) {
+      // ===== RECURRING INVOICE (SUBSCRIPTION) FLOW =====
+      console.log(`Creating subscription with recurring settings: ${recurring.interval}/${recurring.intervalCount}`);
+
+      // Create subscription with line items
+      const subscriptionResult = await stripeService.createSubscriptionWithLineItems({
+        customerId,
         connectedAccountId,
-        platformFee,
-        invoiceAmount: amountDue
+        lineItems,
+        currency,
+        interval: recurring.interval,
+        intervalCount: recurring.intervalCount,
+        collectionMethod,
+        daysUntilDue,
+        endDate: recurring.endDate,
+        endAfterCycles: recurring.endAfterCycles,
+        description,
+        defaultPaymentMethod,
+        paymentMethods,
+        platformFee
       });
 
-      platformFeeData = {
-        type: platformFee.type,
-        value: platformFee.value,
-        amount: platformFeeResult.feeAmount
-      };
+      stripeSubscriptionId = subscriptionResult.subscription.id;
 
-      // Update amount due after fee application
-      amountDue = platformFeeResult.invoice.amountDue;
+      // Get the first invoice from the subscription
+      const latestInvoice = subscriptionResult.subscription.latestInvoice;
+      stripeInvoiceId = typeof latestInvoice === 'string' ? latestInvoice : latestInvoice?.id;
+
+      if (!stripeInvoiceId) {
+        throw new Error("Failed to retrieve first invoice from subscription");
+      }
+
+      // Fetch full invoice details from Stripe
+      const invoiceDetails = await stripeService.getInvoice({
+        invoiceId: stripeInvoiceId,
+        connectedAccountId
+      });
+      amountDue = invoiceDetails.invoice.amountDue;
+      lineItemsCount = invoiceDetails.invoice.lines?.data?.length || lineItems.length;
+
+      // Calculate platform fee if provided
+      if (platformFee) {
+        if (platformFee.type === 'percentage') {
+          const feeAmount = Math.round(amountDue * (platformFee.value / 100));
+          platformFeeData = {
+            type: platformFee.type,
+            value: platformFee.value,
+            amount: feeAmount
+          };
+        } else if (platformFee.type === 'fixed') {
+          platformFeeData = {
+            type: platformFee.type,
+            value: platformFee.value,
+            amount: platformFee.value
+          };
+        }
+      }
+    } else {
+      // ===== ONE-TIME INVOICE FLOW (EXISTING) =====
+      // Create draft invoice in Stripe
+      const invoiceResult = await stripeService.createInvoice({
+        customerId,
+        connectedAccountId,
+        collectionMethod,
+        dueDate,
+        daysUntilDue,
+        description,
+        footer,
+        currency,
+        enableAutomaticTax,
+        defaultPaymentMethod,
+        paymentMethods,
+        platformFee
+      });
+
+      stripeInvoiceId = invoiceResult.invoice.id;
+
+      // Add line items
+      const lineItemsResult = await stripeService.addInvoiceLineItems({
+        invoiceId: stripeInvoiceId,
+        connectedAccountId,
+        lineItems
+      });
+
+      // Calculate totals
+      amountDue = lineItemsResult.invoice.amountDue;
+      lineItemsCount = lineItemsResult.invoice.lineItemsCount;
+
+      // Apply platform fee if provided
+      if (platformFee) {
+        const platformFeeResult = await stripeService.applyPlatformFee({
+          invoiceId: stripeInvoiceId,
+          connectedAccountId,
+          platformFee,
+          invoiceAmount: amountDue
+        });
+
+        platformFeeData = {
+          type: platformFee.type,
+          value: platformFee.value,
+          amount: platformFeeResult.feeAmount
+        };
+
+        // Update amount due after fee application
+        amountDue = platformFeeResult.invoice.amountDue;
+      }
     }
 
     // Save invoice metadata to MongoDB
@@ -215,18 +287,32 @@ exports.createInvoice = async (req, res, next) => {
       clientId: client._id,
       tabId,
       companyId,
-      status: 'draft',
+      status: recurring ? 'open' : 'draft', // Subscriptions create open invoices immediately
       currency: currency || 'usd',
       amountDue,
       amountRemaining: amountDue,
       dueDate: dueDate ? new Date(dueDate) : null,
       collectionMethod,
-      invoiceType: 'one_time',
+      invoiceType: recurring ? 'recurring' : 'one_time',
       description,
       footer,
       lineItemsCount,
       createdBy: userId
     };
+
+    // Add subscription ID and recurring settings if this is a recurring invoice
+    if (recurring) {
+      invoiceData.stripeSubscriptionId = stripeSubscriptionId;
+      invoiceData.billingCycleNumber = 1; // This is the first invoice
+      invoiceData.recurring = {
+        interval: recurring.interval,
+        intervalCount: recurring.intervalCount || 1,
+        endDate: recurring.endDate || null,
+        endAfterCycles: recurring.endAfterCycles || null,
+        currentCycle: 1,
+        status: 'active'
+      };
+    }
 
     // Add billing contact if provided
     if (billTo) {
@@ -246,15 +332,38 @@ exports.createInvoice = async (req, res, next) => {
 
     const invoiceRecord = await createInvoice(invoiceData);
 
-    // Add invoice reference to client
-    await updateClient(
-      { _id: client._id },
-      { $push: { "stripe.invoices": invoiceRecord._id } }
-    );
+    // Add invoice reference to client and subscription reference if recurring
+    const clientUpdate = { $push: { "stripe.invoices": invoiceRecord._id } };
+    if (recurring && stripeSubscriptionId) {
+      clientUpdate.$push["stripe.subscriptions"] = {
+        subscriptionId: stripeSubscriptionId,
+        invoiceId: invoiceRecord._id,
+        status: 'active'
+      };
+    }
+    await updateClient({ _id: client._id }, clientUpdate);
 
-    // If autoSend is true, finalize and send
-    let finalResult = invoiceResult.invoice;
-    if (autoSend) {
+    // Initialize finalResult based on invoice type
+    let finalResult = null;
+    if (recurring) {
+      // For recurring invoices, fetch the invoice details from Stripe
+      const invoiceDetails = await stripeService.getInvoice({
+        invoiceId: stripeInvoiceId,
+        connectedAccountId
+      });
+      finalResult = invoiceDetails.invoice;
+    } else {
+      // For one-time invoices, use the result from creation
+      const invoiceResult = await stripeService.getInvoice({
+        invoiceId: stripeInvoiceId,
+        connectedAccountId
+      });
+      finalResult = invoiceResult.invoice;
+    }
+
+    // If autoSend is true, finalize and send (only for one-time invoices)
+    // Recurring invoices are automatically finalized by Stripe
+    if (autoSend && !recurring) {
       // Finalize invoice (updates customer email if billTo provided)
       const finalizeResult = await stripeService.finalizeInvoice({
         invoiceId: stripeInvoiceId,
@@ -294,6 +403,15 @@ exports.createInvoice = async (req, res, next) => {
       });
     }
 
+    // For recurring invoices, update the invoice number and URLs from Stripe
+    if (recurring) {
+      await updateInvoiceById(invoiceRecord._id, {
+        invoiceNumber: finalResult.number,
+        hostedInvoiceUrl: finalResult.hostedInvoiceUrl,
+        invoicePdf: finalResult.invoicePdf
+      });
+    }
+
     // Create activity for invoice creation
     await createInvoiceActivity({
       type: ACTION_TYPE.CREATE_INVOICE,
@@ -310,22 +428,45 @@ exports.createInvoice = async (req, res, next) => {
 
     console.log(`Invoice created successfully: ${invoiceRecord._id}`);
 
+    // Build response
+    const response = {
+      invoice: {
+        id: invoiceRecord._id,
+        stripeInvoiceId,
+        invoiceType: recurring ? 'recurring' : 'one_time',
+        status: recurring ? 'open' : (autoSend ? 'open' : 'draft'),
+        amountDue,
+        currency: currency || 'usd',
+        dueDate: invoiceRecord.dueDate,
+        lineItemsCount,
+        hostedInvoiceUrl: finalResult?.hostedInvoiceUrl,
+        invoicePdf: finalResult?.invoicePdf,
+        invoiceNumber: finalResult?.number
+      }
+    };
+
+    // Add subscription info for recurring invoices
+    if (recurring) {
+      response.invoice.stripeSubscriptionId = stripeSubscriptionId;
+      response.invoice.billingCycleNumber = 1;
+      response.invoice.recurring = {
+        interval: recurring.interval,
+        intervalCount: recurring.intervalCount || 1,
+        endDate: recurring.endDate || null,
+        endAfterCycles: recurring.endAfterCycles || null,
+        status: 'active'
+      };
+    }
+
+    const successMessage = recurring
+      ? "Recurring invoice created successfully (subscription active)"
+      : autoSend
+      ? "Invoice created and sent successfully"
+      : "Invoice created as draft";
+
     return generateResponse(
-      {
-        invoice: {
-          id: invoiceRecord._id,
-          stripeInvoiceId,
-          status: autoSend ? 'open' : 'draft',
-          amountDue,
-          currency: currency || 'usd',
-          dueDate: invoiceRecord.dueDate,
-          lineItemsCount,
-          hostedInvoiceUrl: finalResult.hostedInvoiceUrl,
-          invoicePdf: finalResult.invoicePdf,
-          invoiceNumber: finalResult.number
-        }
-      },
-      autoSend ? "Invoice created and sent successfully" : "Invoice created as draft",
+      response,
+      successMessage,
       res,
       STATUS_CODES.CREATED
     );
@@ -340,7 +481,8 @@ exports.createInvoice = async (req, res, next) => {
       "STRIPE_ACCOUNT_NOT_FOUND": "Stripe account not found for this company",
       "ONBOARDING_INCOMPLETE": "Stripe account onboarding is not complete",
       "CHARGES_NOT_ENABLED": "Stripe account cannot accept payments yet",
-      "CLIENT_NO_STRIPE_CUSTOMER": "Client does not have a Stripe customer account. Please collect payment method first."
+      "CLIENT_NO_STRIPE_CUSTOMER": "Client does not have a Stripe customer account. Please collect payment method first.",
+      "NO_DEFAULT_PAYMENT_METHOD": "Cannot charge automatically without a saved payment method. Please add a payment method for this client first."
     };
 
     const message = errorMessages[error.message] || error.message || "Failed to create invoice";

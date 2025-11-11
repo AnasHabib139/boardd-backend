@@ -2406,6 +2406,7 @@ exports.listInvoices = async (params) => {
  * @param {number} params.endAfterCycles - End after X billing cycles
  * @param {string} params.description - Subscription description
  * @param {string} params.defaultPaymentMethod - Payment method ID
+ * @param {number} params.daysUntilDue - Days until invoice payment is due (only for send_invoice)
  * @returns {object} Created subscription
  */
 exports.createSubscription = async (params) => {
@@ -2423,7 +2424,8 @@ exports.createSubscription = async (params) => {
       description,
       defaultPaymentMethod,
       paymentMethods = ['card'],
-      platformFee
+      platformFee,
+      daysUntilDue
     } = params;
 
     console.log(`Creating subscription for customer: ${customerId}`);
@@ -2491,11 +2493,36 @@ exports.createSubscription = async (params) => {
       subscriptionData.description = description;
     }
 
+    // Add days_until_due for send_invoice (payment terms like Net 30)
+    if (collectionMethod === 'send_invoice' && daysUntilDue) {
+      subscriptionData.days_until_due = daysUntilDue;
+    }
+
     // Add end conditions
     if (endDate) {
       subscriptionData.cancel_at = Math.floor(new Date(endDate).getTime() / 1000);
     } else if (endAfterCycles) {
-      subscriptionData.cancel_after = endAfterCycles;
+      // Calculate cancellation timestamp based on billing cycles
+      const now = Math.floor(Date.now() / 1000); // Current Unix timestamp
+      const secondsPerDay = 86400;
+
+      let daysToAdd = 0;
+      switch (interval) {
+        case 'day':
+          daysToAdd = intervalCount * endAfterCycles;
+          break;
+        case 'week':
+          daysToAdd = 7 * intervalCount * endAfterCycles;
+          break;
+        case 'month':
+          daysToAdd = 30 * intervalCount * endAfterCycles; // Approximate
+          break;
+        case 'year':
+          daysToAdd = 365 * intervalCount * endAfterCycles; // Approximate
+          break;
+      }
+
+      subscriptionData.cancel_at = now + (daysToAdd * secondsPerDay);
     }
 
     // Create subscription
@@ -2523,6 +2550,182 @@ exports.createSubscription = async (params) => {
   } catch (error) {
     console.error("Error creating subscription:", error);
     throw new Error(`Failed to create subscription: ${error.message}`);
+  }
+};
+
+/**
+ * Create subscription with line items (for recurring invoices)
+ * @param {object} params - Subscription parameters
+ * @param {string} params.customerId - Stripe customer ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @param {Array} params.lineItems - Array of line items [{description, quantity, unitAmount, currency}]
+ * @param {string} params.currency - Currency code
+ * @param {string} params.interval - 'day', 'week', 'month', or 'year'
+ * @param {number} params.intervalCount - Billing every X intervals
+ * @param {string} params.collectionMethod - Payment collection method
+ * @param {Date} params.endDate - Subscription end date
+ * @param {number} params.endAfterCycles - End after X billing cycles
+ * @param {string} params.description - Subscription description
+ * @param {string} params.defaultPaymentMethod - Payment method ID
+ * @param {Array} params.paymentMethods - Allowed payment methods
+ * @param {object} params.platformFee - Platform fee configuration
+ * @param {number} params.daysUntilDue - Days until invoice payment is due (only for send_invoice)
+ * @returns {object} Created subscription with first invoice
+ */
+exports.createSubscriptionWithLineItems = async (params) => {
+  try {
+    const {
+      customerId,
+      connectedAccountId,
+      lineItems,
+      currency = 'usd',
+      interval,
+      intervalCount = 1,
+      collectionMethod = 'charge_automatically',
+      endDate,
+      endAfterCycles,
+      description,
+      defaultPaymentMethod,
+      paymentMethods = ['card'],
+      platformFee,
+      daysUntilDue
+    } = params;
+
+    console.log(`Creating subscription with line items for customer: ${customerId}`);
+
+    // Create a Price for each line item
+    const subscriptionItems = [];
+    let totalAmount = 0;
+
+    for (const item of lineItems) {
+      const itemAmount = item.unitAmount * item.quantity;
+      totalAmount += itemAmount;
+
+      const price = await stripe.prices.create(
+        {
+          currency: item.currency || currency,
+          unit_amount: item.unitAmount,
+          recurring: {
+            interval,
+            interval_count: intervalCount
+          },
+          product_data: {
+            name: item.description
+          }
+        },
+        {
+          stripeAccount: connectedAccountId
+        }
+      );
+
+      subscriptionItems.push({
+        price: price.id,
+        quantity: item.quantity
+      });
+    }
+
+    // Build subscription request
+    const subscriptionData = {
+      customer: customerId,
+      items: subscriptionItems,
+      collection_method: collectionMethod,
+      expand: ['latest_invoice.payment_intent']
+    };
+
+    // Configure payment methods
+    if (paymentMethods && paymentMethods.length > 0) {
+      subscriptionData.payment_settings = {
+        payment_method_types: paymentMethods,
+        payment_method_options: {}
+      };
+
+      // Add ACH Direct Debit configuration if included
+      if (paymentMethods.includes('us_bank_account')) {
+        subscriptionData.payment_settings.payment_method_options.us_bank_account = {
+          financial_connections: {
+            permissions: ['payment_method', 'balances']
+          },
+          verification_method: 'instant'
+        };
+      }
+    }
+
+    // Add platform fee (application fee percentage for subscriptions)
+    if (platformFee) {
+      if (platformFee.type === 'percentage') {
+        subscriptionData.application_fee_percent = platformFee.value;
+      } else if (platformFee.type === 'fixed') {
+        // For fixed fees on subscriptions, calculate percentage based on total
+        const feePercentage = (platformFee.value / totalAmount) * 100;
+        subscriptionData.application_fee_percent = feePercentage;
+      }
+    }
+
+    if (defaultPaymentMethod) {
+      subscriptionData.default_payment_method = defaultPaymentMethod;
+    }
+
+    if (description) {
+      subscriptionData.description = description;
+    }
+
+    // Add days_until_due for send_invoice (payment terms like Net 30)
+    if (collectionMethod === 'send_invoice' && daysUntilDue) {
+      subscriptionData.days_until_due = daysUntilDue;
+    }
+
+    // Add end conditions
+    if (endDate) {
+      subscriptionData.cancel_at = Math.floor(new Date(endDate).getTime() / 1000);
+    } else if (endAfterCycles) {
+      // Calculate cancellation timestamp based on billing cycles
+      const now = Math.floor(Date.now() / 1000); // Current Unix timestamp
+      const secondsPerDay = 86400;
+
+      let daysToAdd = 0;
+      switch (interval) {
+        case 'day':
+          daysToAdd = intervalCount * endAfterCycles;
+          break;
+        case 'week':
+          daysToAdd = 7 * intervalCount * endAfterCycles;
+          break;
+        case 'month':
+          daysToAdd = 30 * intervalCount * endAfterCycles; // Approximate
+          break;
+        case 'year':
+          daysToAdd = 365 * intervalCount * endAfterCycles; // Approximate
+          break;
+      }
+
+      subscriptionData.cancel_at = now + (daysToAdd * secondsPerDay);
+    }
+
+    // Create subscription
+    const subscription = await stripe.subscriptions.create(
+      subscriptionData,
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    console.log(`Subscription created with line items: ${subscription.id}`);
+
+    return {
+      success: true,
+      subscription: {
+        id: subscription.id,
+        status: subscription.status,
+        currentPeriodStart: subscription.current_period_start,
+        currentPeriodEnd: subscription.current_period_end,
+        cancelAt: subscription.cancel_at,
+        latestInvoiceId: subscription.latest_invoice?.id || subscription.latest_invoice,
+        latestInvoice: subscription.latest_invoice
+      }
+    };
+  } catch (error) {
+    console.error("Error creating subscription with line items:", error);
+    throw new Error(`Failed to create subscription with line items: ${error.message}`);
   }
 };
 

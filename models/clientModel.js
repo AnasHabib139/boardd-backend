@@ -129,12 +129,21 @@ exports.addProject = async (clientId, projectData) => {
 
 // Payment method utility functions
 exports.addPaymentMethod = async (clientId, paymentMethodData) => {
+  const updateOperation = {
+    $push: { "stripe.paymentMethods": paymentMethodData },
+    updatedAt: new Date(),
+  };
+
+  // If this payment method is being set as default, also update the defaultPaymentMethod field
+  if (paymentMethodData.isDefault) {
+    updateOperation.$set = {
+      "stripe.defaultPaymentMethod": paymentMethodData.paymentMethodId
+    };
+  }
+
   return ClientModel.findByIdAndUpdate(
     clientId,
-    {
-      $push: { "stripe.paymentMethods": paymentMethodData },
-      updatedAt: new Date(),
-    },
+    updateOperation,
     { new: true }
   );
 };

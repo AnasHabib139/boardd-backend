@@ -90,6 +90,45 @@ const platformFeeSchema = Joi.object({
 });
 
 /**
+ * Validate recurring invoice structure
+ */
+const recurringSchema = Joi.object({
+  interval: Joi.string()
+    .valid('day', 'week', 'month', 'year')
+    .required()
+    .messages({
+      "any.only": "Interval must be 'day', 'week', 'month', or 'year'",
+      "any.required": "Billing interval is required for recurring invoices"
+    }),
+
+  intervalCount: Joi.number().integer().min(1).max(365).optional().default(1).messages({
+    "number.base": "Interval count must be a number",
+    "number.min": "Interval count must be at least 1",
+    "number.max": "Interval count cannot exceed 365"
+  }),
+
+  endDate: Joi.date().iso().greater('now').optional().allow(null).messages({
+    "date.base": "End date must be a valid date",
+    "date.greater": "End date must be in the future"
+  }),
+
+  endAfterCycles: Joi.number().integer().min(1).max(999).optional().allow(null).messages({
+    "number.base": "End after cycles must be a number",
+    "number.min": "End after cycles must be at least 1",
+    "number.max": "End after cycles cannot exceed 999"
+  })
+}).custom((value, helpers) => {
+  // Custom validation: endDate and endAfterCycles are mutually exclusive
+  if (value.endDate && value.endAfterCycles) {
+    return helpers.error("custom.mutuallyExclusive");
+  }
+  return value;
+}).messages({
+  "object.base": "Recurring must be an object with interval and optional end date settings",
+  "custom.mutuallyExclusive": "Cannot specify both endDate and endAfterCycles. Choose one or leave both empty for never-ending subscription."
+});
+
+/**
  * Validate create invoice request
  */
 exports.validateCreateInvoice = (req, res, next) => {
@@ -161,20 +200,45 @@ exports.validateCreateInvoice = (req, res, next) => {
 
     platformFee: platformFeeSchema.optional().messages({
       "object.base": "Platform fee must be a valid object with type and value"
+    }),
+
+    recurring: recurringSchema.optional().messages({
+      "object.base": "Recurring must be a valid object with interval and optional end date settings"
     })
   })
     .custom((value, helpers) => {
       // Custom validation: dueDate and daysUntilDue are mutually exclusive
       if (value.dueDate && value.daysUntilDue) {
-        return helpers.error("object.conflict", {
-          message: "Cannot specify both dueDate and daysUntilDue. Choose one."
-        });
+        return helpers.error("custom.dueDateConflict");
       }
       // Custom validation: if enableAutomaticTax is true, customerAddress is recommended
       if (value.enableAutomaticTax && !value.customerAddress) {
         console.warn("Warning: Automatic tax enabled but no customer address provided. Tax calculation will fail during finalization.");
       }
+      // Custom validation: recurring invoice date rules
+      if (value.recurring) {
+        // dueDate cannot be used with recurring (each invoice gets its own date based on billing cycle)
+        if (value.dueDate) {
+          return helpers.error("custom.recurringDueDateForbidden");
+        }
+        // daysUntilDue only works with send_invoice (not charge_automatically where payment is immediate)
+        if (value.daysUntilDue && value.collectionMethod === 'charge_automatically') {
+          return helpers.error("custom.daysUntilDueRequiresSendInvoice");
+        }
+      }
+      // Custom validation: customer_balance cannot be used with charge_automatically
+      if (value.collectionMethod === 'charge_automatically' &&
+          value.paymentMethods &&
+          value.paymentMethods.includes('customer_balance')) {
+        return helpers.error("custom.paymentMethodConflict");
+      }
       return value;
+    })
+    .messages({
+      "custom.dueDateConflict": "Cannot specify both dueDate and daysUntilDue. Choose one.",
+      "custom.recurringDueDateForbidden": "Recurring invoices cannot have an explicit dueDate. Each invoice in the subscription will have its own due date based on the billing cycle and daysUntilDue setting.",
+      "custom.daysUntilDueRequiresSendInvoice": "daysUntilDue can only be used with 'send_invoice' collection method. For 'charge_automatically' subscriptions, payment is charged immediately when the invoice is created.",
+      "custom.paymentMethodConflict": "Payment method 'customer_balance' cannot be used with 'charge_automatically' collection method. Use 'send_invoice' instead, or remove 'customer_balance' from payment methods."
     });
 
   const { error, value } = schema.validate(req.body, {
@@ -322,11 +386,12 @@ exports.validateCreateSubscription = (req, res, next) => {
     .custom((value, helpers) => {
       // Custom validation: endDate and endAfterCycles are mutually exclusive
       if (value.endDate && value.endAfterCycles) {
-        return helpers.error("object.conflict", {
-          message: "Cannot specify both endDate and endAfterCycles. Choose one or leave both empty for never-ending subscription."
-        });
+        return helpers.error("custom.endDateConflict");
       }
       return value;
+    })
+    .messages({
+      "custom.endDateConflict": "Cannot specify both endDate and endAfterCycles. Choose one or leave both empty for never-ending subscription."
     });
 
   const { error, value } = schema.validate(req.body, {

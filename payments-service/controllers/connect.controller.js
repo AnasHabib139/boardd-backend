@@ -521,6 +521,85 @@ exports.handleWebhook = async (req, res, next) => {
         break;
 
       // Invoice events
+      case "invoice.created":
+        {
+          const invoice = event.data.object;
+          console.log(`Invoice created by Stripe: ${invoice.id}`);
+
+          // Check if this invoice belongs to a subscription
+          if (invoice.subscription) {
+            const {
+              findInvoice,
+              createInvoice,
+              getSubscriptionInvoices
+            } = require("../../models/invoiceModel");
+
+            // Check if invoice already exists in MongoDB
+            const existingInvoice = await findInvoice({ stripeInvoiceId: invoice.id });
+
+            if (!existingInvoice) {
+              console.log(`Auto-creating invoice record for subscription: ${invoice.subscription}`);
+
+              // Find an existing invoice for this subscription to get metadata
+              const subscriptionInvoices = await getSubscriptionInvoices(invoice.subscription);
+
+              if (subscriptionInvoices.length > 0) {
+                // Use first invoice as template for metadata
+                const templateInvoice = subscriptionInvoices[0];
+
+                // Determine the billing cycle number
+                const billingCycleNumber = subscriptionInvoices.length + 1;
+
+                // Create new invoice record for this billing cycle
+                const invoiceData = {
+                  stripeInvoiceId: invoice.id,
+                  stripeSubscriptionId: invoice.subscription,
+                  clientId: templateInvoice.clientId,
+                  tabId: templateInvoice.tabId,
+                  companyId: templateInvoice.companyId,
+                  status: invoice.status || 'draft',
+                  currency: invoice.currency,
+                  amountDue: invoice.amount_due,
+                  amountPaid: invoice.amount_paid || 0,
+                  amountRemaining: invoice.amount_remaining,
+                  subtotal: invoice.subtotal,
+                  tax: invoice.tax,
+                  total: invoice.total,
+                  collectionMethod: invoice.collection_method,
+                  invoiceType: 'recurring',
+                  billingCycleNumber,
+                  recurring: templateInvoice.recurring, // Copy recurring config
+                  description: templateInvoice.description,
+                  billTo: templateInvoice.billTo,
+                  paymentMethods: templateInvoice.paymentMethods,
+                  platformFee: templateInvoice.platformFee,
+                  lineItemsCount: invoice.lines?.data?.length || 0,
+                  createdBy: templateInvoice.createdBy,
+                  hostedInvoiceUrl: invoice.hosted_invoice_url,
+                  invoicePdf: invoice.invoice_pdf
+                };
+
+                const newInvoice = await createInvoice(invoiceData);
+                console.log(`Created invoice record ${newInvoice._id} for billing cycle ${billingCycleNumber}`);
+
+                // Update client to add this invoice reference
+                const { updateClient } = require("../../models/clientModel");
+                await updateClient(
+                  { _id: templateInvoice.clientId },
+                  { $push: { "stripe.invoices": newInvoice._id } }
+                );
+              } else {
+                console.warn(`No template invoice found for subscription ${invoice.subscription}. First invoice should be created via API.`);
+              }
+            } else {
+              console.log(`Invoice ${invoice.id} already exists in MongoDB (created via API)`);
+            }
+          } else {
+            console.log(`Invoice ${invoice.id} is not part of a subscription, skipping auto-creation`);
+          }
+        }
+        break;
+
       case "invoice.paid":
         {
           const invoice = event.data.object;
@@ -625,17 +704,38 @@ exports.handleWebhook = async (req, res, next) => {
           const { findInvoice, updateInvoice } = require("../../models/invoiceModel");
           const invoiceRecord = await findInvoice({ stripeInvoiceId: invoice.id });
 
-          if (invoiceRecord && invoiceRecord.status === 'draft') {
+          if (invoiceRecord) {
+            // Update both draft invoices and subscription invoices
+            const updateData = {
+              status: 'open',
+              invoiceNumber: invoice.number,
+              hostedInvoiceUrl: invoice.hosted_invoice_url,
+              invoicePdf: invoice.invoice_pdf,
+              amountDue: invoice.amount_due,
+              amountRemaining: invoice.amount_remaining,
+              subtotal: invoice.subtotal,
+              tax: invoice.tax,
+              total: invoice.total
+            };
+
+            // Add issue date if available
+            if (invoice.effective_at) {
+              updateData.issueDate = new Date(invoice.effective_at * 1000);
+            }
+
+            // Add due date if available
+            if (invoice.due_date) {
+              updateData.dueDate = new Date(invoice.due_date * 1000);
+            }
+
             await updateInvoice(
               { stripeInvoiceId: invoice.id },
-              {
-                status: 'open',
-                invoiceNumber: invoice.number,
-                hostedInvoiceUrl: invoice.hosted_invoice_url,
-                invoicePdf: invoice.invoice_pdf,
-                amountDue: invoice.amount_due
-              }
+              updateData
             );
+
+            console.log(`Invoice ${invoice.id} finalized and updated in MongoDB`);
+          } else {
+            console.warn(`Invoice ${invoice.id} not found in MongoDB during finalize`);
           }
         }
         break;
@@ -701,12 +801,16 @@ exports.handleWebhook = async (req, res, next) => {
               'unpaid': 'paused'
             };
 
+            // Build update data, only including nextBillingDate if current_period_end is available
+            const updateData = {};
+            if (subscription.current_period_end) {
+              updateData['recurring.nextBillingDate'] = new Date(subscription.current_period_end * 1000);
+            }
+
             await updateSubscriptionStatus(
               invoiceRecord._id,
               statusMap[subscription.status] || 'active',
-              {
-                'recurring.nextBillingDate': new Date(subscription.current_period_end * 1000)
-              }
+              updateData
             );
           }
         }

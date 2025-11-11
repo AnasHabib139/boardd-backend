@@ -5,6 +5,12 @@ const DB_CONNECT = require("../config/dbConnect");
 const migrationRunner = require("../utils/migrationRunner");
 const { getExecutedMigrations } = require("../models/migrationModel");
 
+// Load all models so migrations can use them
+// This is required because migrations use model("ModelName") to access models
+require("../models/clientModel");
+require("../models/channelTabsModel");
+require("../models/invoiceModel");
+
 const commands = {
   // Run pending migrations
   up: async () => {
