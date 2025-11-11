@@ -19,6 +19,7 @@ const {
   handleWebhook,
   setPersonsProvided,
   getCountries,
+  fixAccountEmailSettings,
 } = require("../controllers/connect.controller");
 
 const {
@@ -37,6 +38,26 @@ const {
 } = require("../controllers/branding.controller");
 
 const {
+  createInvoice,
+  updateInvoice,
+  finalizeInvoice,
+  sendInvoice,
+  voidInvoice,
+  getInvoice,
+  listInvoices,
+  deleteInvoice,
+} = require("../controllers/invoice.controller");
+
+const {
+  createSubscription,
+  updateSubscription,
+  cancelSubscription,
+  pauseSubscription,
+  resumeSubscription,
+  listSubscriptions,
+} = require("../controllers/subscription.controller");
+
+const {
   validateCreateAccount,
   validateUpdateAccount,
   validateAddPerson,
@@ -50,6 +71,14 @@ const {
   validateBrandingFileUpload,
   validateUpdateBranding,
 } = require("../validation/branding.validation");
+
+const {
+  validateCreateInvoice,
+  validateUpdateInvoice,
+  validateCreateSubscription,
+  validateUpdateSubscription,
+  validateCancelSubscription,
+} = require("../validation/invoice.validation");
 
 // Configure multer for file uploads (memory storage for Stripe Files API)
 const upload = multer({
@@ -203,6 +232,19 @@ class PaymentsAPI {
       setPersonsProvided
     );
 
+    /**
+     * POST /api/payments/connect/accounts/:companyId/fix-email-settings
+     * Fix email settings for connected account (required for invoice email delivery)
+     * Auth: Admin
+     * No body required
+     */
+    router.post(
+      "/connect/accounts/:companyId/fix-email-settings",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      fixAccountEmailSettings
+    );
+
     // ==================== External Account Routes ====================
 
     /**
@@ -341,6 +383,173 @@ class PaymentsAPI {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       checkPermission("accessClientPayments"),
       setDefaultPaymentMethod
+    );
+
+    // ==================== Invoice Routes ====================
+
+    /**
+     * POST /api/payments/clients/:tabId/invoices
+     * Create one-time invoice
+     * Auth: Admin or Employee
+     * Body: { collectionMethod, dueDate, description, footer, currency, lineItems, autoSend }
+     */
+    router.post(
+      "/clients/:tabId/invoices",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateCreateInvoice,
+      createInvoice
+    );
+
+    /**
+     * PUT /api/payments/clients/:tabId/invoices/:invoiceId
+     * Update draft invoice
+     * Auth: Admin or Employee
+     */
+    router.put(
+      "/clients/:tabId/invoices/:invoiceId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateUpdateInvoice,
+      updateInvoice
+    );
+
+    /**
+     * POST /api/payments/clients/:tabId/invoices/:invoiceId/finalize
+     * Finalize invoice (draft → open)
+     * Auth: Admin or Employee
+     */
+    router.post(
+      "/clients/:tabId/invoices/:invoiceId/finalize",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      finalizeInvoice
+    );
+
+    /**
+     * POST /api/payments/clients/:tabId/invoices/:invoiceId/send
+     * Send invoice email to client
+     * Auth: Admin or Employee
+     */
+    router.post(
+      "/clients/:tabId/invoices/:invoiceId/send",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      sendInvoice
+    );
+
+    /**
+     * POST /api/payments/clients/:tabId/invoices/:invoiceId/void
+     * Void invoice
+     * Auth: Admin or Employee
+     */
+    router.post(
+      "/clients/:tabId/invoices/:invoiceId/void",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      voidInvoice
+    );
+
+    /**
+     * GET /api/payments/clients/:tabId/invoices/:invoiceId
+     * Get invoice details with line items
+     * Auth: Admin or Employee
+     */
+    router.get(
+      "/clients/:tabId/invoices/:invoiceId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getInvoice
+    );
+
+    /**
+     * GET /api/payments/clients/:tabId/invoices
+     * List all invoices for client
+     * Query: ?status=draft|open|paid|void&limit=10&page=1
+     * Auth: Admin or Employee
+     */
+    router.get(
+      "/clients/:tabId/invoices",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      listInvoices
+    );
+
+    /**
+     * DELETE /api/payments/clients/:tabId/invoices/:invoiceId
+     * Delete draft invoice
+     * Auth: Admin or Employee
+     */
+    router.delete(
+      "/clients/:tabId/invoices/:invoiceId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      deleteInvoice
+    );
+
+    // ==================== Subscription Routes ====================
+
+    /**
+     * POST /api/payments/clients/:tabId/subscriptions
+     * Create recurring subscription
+     * Auth: Admin or Employee
+     * Body: { amount, currency, interval, intervalCount, collectionMethod, endDate, endAfterCycles, description }
+     */
+    router.post(
+      "/clients/:tabId/subscriptions",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateCreateSubscription,
+      createSubscription
+    );
+
+    /**
+     * PUT /api/payments/clients/:tabId/subscriptions/:subscriptionId
+     * Update subscription
+     * Auth: Admin or Employee
+     */
+    router.put(
+      "/clients/:tabId/subscriptions/:subscriptionId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateUpdateSubscription,
+      updateSubscription
+    );
+
+    /**
+     * POST /api/payments/clients/:tabId/subscriptions/:subscriptionId/cancel
+     * Cancel subscription
+     * Auth: Admin or Employee
+     * Body: { cancelAtPeriodEnd }
+     */
+    router.post(
+      "/clients/:tabId/subscriptions/:subscriptionId/cancel",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateCancelSubscription,
+      cancelSubscription
+    );
+
+    /**
+     * POST /api/payments/clients/:tabId/subscriptions/:subscriptionId/pause
+     * Pause subscription
+     * Auth: Admin or Employee
+     */
+    router.post(
+      "/clients/:tabId/subscriptions/:subscriptionId/pause",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      pauseSubscription
+    );
+
+    /**
+     * POST /api/payments/clients/:tabId/subscriptions/:subscriptionId/resume
+     * Resume paused subscription
+     * Auth: Admin or Employee
+     */
+    router.post(
+      "/clients/:tabId/subscriptions/:subscriptionId/resume",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      resumeSubscription
+    );
+
+    /**
+     * GET /api/payments/clients/:tabId/subscriptions
+     * List all subscriptions for client
+     * Auth: Admin or Employee
+     */
+    router.get(
+      "/clients/:tabId/subscriptions",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      listSubscriptions
     );
 
     // ==================== Webhook Routes ====================

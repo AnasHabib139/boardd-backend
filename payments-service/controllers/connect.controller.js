@@ -520,6 +520,219 @@ exports.handleWebhook = async (req, res, next) => {
         // TODO: Implement person sync if needed
         break;
 
+      // Invoice events
+      case "invoice.paid":
+        {
+          const invoice = event.data.object;
+          console.log(`Invoice paid: ${invoice.id}, amount: ${invoice.amount_paid}`);
+
+          // Find invoice in MongoDB by Stripe invoice ID
+          const { findInvoice, updateInvoiceStatus } = require("../../models/invoiceModel");
+          const invoiceRecord = await findInvoice({ stripeInvoiceId: invoice.id });
+
+          if (invoiceRecord) {
+            // Update status using MongoDB _id
+            await updateInvoiceStatus(
+              invoiceRecord._id,
+              'paid',
+              {
+                amountPaid: invoice.amount_paid,
+                amountRemaining: 0,
+                paidAt: new Date(invoice.status_transitions.paid_at * 1000)
+              }
+            );
+
+            // Create activity
+            const { createInvoicePaidActivity } = require("../../controller/helpers/invoices/invoiceActivityHelpers");
+            await createInvoicePaidActivity({
+              tabId: invoiceRecord.tabId,
+              invoiceId: invoiceRecord._id,
+              invoiceNumber: invoice.number,
+              amount: invoice.amount_paid,
+              currency: invoice.currency
+            });
+          } else {
+            console.warn(`Invoice not found in MongoDB: ${invoice.id}`);
+          }
+        }
+        break;
+
+      case "invoice.payment_failed":
+        {
+          const invoice = event.data.object;
+          console.log(`Invoice payment failed: ${invoice.id}, attempt: ${invoice.attempt_count}`);
+
+          // Create activity for payment failure
+          const { findInvoice } = require("../../models/invoiceModel");
+          const invoiceRecord = await findInvoice({ stripeInvoiceId: invoice.id });
+
+          if (invoiceRecord) {
+            const { createInvoicePaymentFailedActivity } = require("../../controller/helpers/invoices/invoiceActivityHelpers");
+            await createInvoicePaymentFailedActivity({
+              tabId: invoiceRecord.tabId,
+              invoiceId: invoiceRecord._id,
+              invoiceNumber: invoice.number,
+              amount: invoice.amount_due,
+              currency: invoice.currency,
+              attemptCount: invoice.attempt_count
+            });
+          }
+        }
+        break;
+
+      case "invoice.payment_action_required":
+        {
+          const invoice = event.data.object;
+          console.log(`Invoice payment action required (3D Secure): ${invoice.id}`);
+
+          // Find invoice and create activity
+          const { findInvoice } = require("../../models/invoiceModel");
+          const invoiceRecord = await findInvoice({ stripeInvoiceId: invoice.id });
+
+          if (invoiceRecord) {
+            const { createActivity } = require("../../models/activityModel");
+            await createActivity({
+              tabId: invoiceRecord.tabId,
+              type: 'invoice_payment_action_required',
+              message: `Payment requires customer authentication for invoice ${invoice.number}`,
+              metadata: {
+                invoiceId: invoiceRecord._id,
+                invoiceNumber: invoice.number,
+                actionType: '3d_secure'
+              }
+            });
+          }
+        }
+        break;
+
+      case "payment_intent.payment_failed":
+        {
+          const paymentIntent = event.data.object;
+          console.log(`PaymentIntent failed: ${paymentIntent.id}, next retry: ${paymentIntent.next_action?.type || 'none'}`);
+
+          // Log payment failure for monitoring Smart Retries
+          // Note: This event fires before invoice.payment_failed
+          // Smart Retries will automatically schedule the next attempt
+        }
+        break;
+
+      case "invoice.finalized":
+        {
+          const invoice = event.data.object;
+          console.log(`Invoice finalized: ${invoice.id}`);
+
+          // Update invoice status in MongoDB
+          const { findInvoice, updateInvoice } = require("../../models/invoiceModel");
+          const invoiceRecord = await findInvoice({ stripeInvoiceId: invoice.id });
+
+          if (invoiceRecord && invoiceRecord.status === 'draft') {
+            await updateInvoice(
+              { stripeInvoiceId: invoice.id },
+              {
+                status: 'open',
+                invoiceNumber: invoice.number,
+                hostedInvoiceUrl: invoice.hosted_invoice_url,
+                invoicePdf: invoice.invoice_pdf,
+                amountDue: invoice.amount_due
+              }
+            );
+          }
+        }
+        break;
+
+      case "invoice.sent":
+        console.log(`Invoice sent: ${event.data.object.id}`);
+        break;
+
+      case "invoice.voided":
+        {
+          const invoice = event.data.object;
+          console.log(`Invoice voided: ${invoice.id}`);
+
+          // Find invoice in MongoDB by Stripe invoice ID
+          const { findInvoice, updateInvoiceStatus } = require("../../models/invoiceModel");
+          const invoiceRecord = await findInvoice({ stripeInvoiceId: invoice.id });
+
+          if (invoiceRecord) {
+            // Update status using MongoDB _id
+            await updateInvoiceStatus(invoiceRecord._id, 'void', {
+              voidedAt: new Date()
+            });
+          } else {
+            console.warn(`Invoice not found in MongoDB: ${invoice.id}`);
+          }
+        }
+        break;
+
+      case "invoice.marked_uncollectible":
+        {
+          const invoice = event.data.object;
+          console.log(`Invoice marked uncollectible: ${invoice.id}`);
+
+          // Find invoice in MongoDB by Stripe invoice ID
+          const { findInvoice, updateInvoiceStatus } = require("../../models/invoiceModel");
+          const invoiceRecord = await findInvoice({ stripeInvoiceId: invoice.id });
+
+          if (invoiceRecord) {
+            // Update status using MongoDB _id
+            await updateInvoiceStatus(invoiceRecord._id, 'uncollectible');
+          } else {
+            console.warn(`Invoice not found in MongoDB: ${invoice.id}`);
+          }
+        }
+        break;
+
+      // Subscription events
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+        {
+          const subscription = event.data.object;
+          console.log(`Subscription ${event.type}: ${subscription.id}, status: ${subscription.status}`);
+
+          // Update subscription status in MongoDB
+          const { findInvoice, updateSubscriptionStatus } = require("../../models/invoiceModel");
+          const invoiceRecord = await findInvoice({ stripeSubscriptionId: subscription.id });
+
+          if (invoiceRecord) {
+            const statusMap = {
+              'active': 'active',
+              'past_due': 'active',
+              'canceled': 'canceled',
+              'unpaid': 'paused'
+            };
+
+            await updateSubscriptionStatus(
+              invoiceRecord._id,
+              statusMap[subscription.status] || 'active',
+              {
+                'recurring.nextBillingDate': new Date(subscription.current_period_end * 1000)
+              }
+            );
+          }
+        }
+        break;
+
+      case "customer.subscription.deleted":
+        {
+          const subscription = event.data.object;
+          console.log(`Subscription deleted: ${subscription.id}`);
+
+          // Update subscription status in MongoDB
+          const { findInvoice, updateSubscriptionStatus } = require("../../models/invoiceModel");
+          const invoiceRecord = await findInvoice({ stripeSubscriptionId: subscription.id });
+
+          if (invoiceRecord) {
+            await updateSubscriptionStatus(
+              invoiceRecord._id,
+              'canceled',
+              {
+                'recurring.canceledAt': new Date()
+              }
+            );
+          }
+        }
+        break;
+
       default:
         console.log(`Unhandled webhook event type: ${event.type}`);
     }
@@ -660,6 +873,45 @@ exports.setPersonsProvided = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message || "Failed to set persons provided attestation",
+    });
+  }
+};
+
+/**
+ * Fix email settings for connected account
+ * POST /api/payments/connect/accounts/:companyId/fix-email-settings
+ * Required for invoice email delivery
+ */
+exports.fixAccountEmailSettings = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+
+    console.log(`Fixing email settings for company: ${companyId}`);
+
+    const result = await stripeService.fixAccountEmailSettings(companyId);
+
+    return generateResponse(
+      {
+        displayName: result.displayName,
+        businessName: result.businessName,
+      },
+      result.message,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in fixAccountEmailSettings controller:", error);
+
+    if (error.message.includes("not found")) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Stripe account not found for this company",
+      });
+    }
+
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to fix email settings",
     });
   }
 };

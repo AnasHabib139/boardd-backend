@@ -58,6 +58,18 @@ const clientSchema = new Schema({
       },
     ],
     defaultPaymentMethod: String, // pm_xxx ID of default card
+
+    // Invoice references
+    invoices: [{ type: Types.ObjectId, ref: "Invoice" }],
+
+    // Subscription references
+    subscriptions: [
+      {
+        subscriptionId: { type: String }, // Stripe subscription ID
+        invoiceId: { type: Types.ObjectId, ref: "Invoice" }, // Reference to recurring invoice record
+        status: { type: String } // Subscription status
+      }
+    ]
   },
   companyId: { type: Types.ObjectId, ref: "Company" }, // Link to company for Stripe account lookup
 

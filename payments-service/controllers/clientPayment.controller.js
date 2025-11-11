@@ -76,7 +76,7 @@ exports.createClientSetupIntent = async (req, res, next) => {
   try {
     const { tabId } = req.params;
     const userId = req.user.id;
-    const { name, email, phone } = parseBody(req.body);
+    const { name, email, phone, paymentMethodTypes } = parseBody(req.body);
 
     // Validate tab access
     await validateTabAccess(tabId, userId);
@@ -126,7 +126,8 @@ exports.createClientSetupIntent = async (req, res, next) => {
     // Create SetupIntent
     const result = await stripeService.createClientSetupIntent(
       companyId,
-      customerId
+      customerId,
+      paymentMethodTypes || ['card', 'us_bank_account'] // Default to both card and ACH
     );
 
     // Get connected account ID for frontend use

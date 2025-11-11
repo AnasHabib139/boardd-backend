@@ -39,6 +39,13 @@ exports.createConnectAccount = async (companyId, accountData, tosData) => {
       capabilities[capKey] = { requested: true };
     });
 
+    // Extract business name for email settings
+    const businessName = accountData.business_profile?.name ||
+                        accountData.company?.name ||
+                        accountData.individual?.first_name
+                          ? `${accountData.individual.first_name} ${accountData.individual.last_name || ''}`.trim()
+                          : null;
+
     // Build account creation request (Stripe format - pass through directly)
     const createAccountRequest = {
       type: config.connect.accountType,
@@ -47,13 +54,19 @@ exports.createConnectAccount = async (companyId, accountData, tosData) => {
       business_type: accountData.business_type,
       capabilities,
 
-      // Settings (always set for platform control)
-      settings: accountData.settings || {
+      // Settings (always set for platform control + email delivery)
+      settings: {
+        ...(accountData.settings || {}),
         payouts: {
           schedule: {
             interval: "manual", // Platform controls payouts
           },
         },
+        // Required for invoice email delivery
+        dashboard: {
+          display_name: businessName || accountData.email || 'Business',
+          ...(accountData.settings?.dashboard || {})
+        }
       },
     };
 
@@ -192,6 +205,69 @@ exports.updateConnectAccount = async (companyId, updates) => {
   } catch (error) {
     console.error("Error updating Stripe Connect account:", error);
     throw new Error(`Failed to update Stripe Connect account: ${error.message}`);
+  }
+};
+
+/**
+ * Fix email settings for existing connected account
+ * Adds dashboard display_name if missing (required for invoice email delivery)
+ * @param {string} companyId - MongoDB company ID
+ * @returns {object} Update result
+ */
+exports.fixAccountEmailSettings = async (companyId) => {
+  try {
+    console.log(`Fixing email settings for company: ${companyId}`);
+
+    // Find existing account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // Get current account info
+    const account = await stripe.accounts.retrieve(accountRecord.stripeAccountId);
+
+    // Check if email settings already configured
+    if (account.settings?.dashboard?.display_name || account.business_profile?.name) {
+      console.log('Email settings already configured');
+      return {
+        success: true,
+        message: 'Email settings already configured',
+        displayName: account.settings?.dashboard?.display_name,
+        businessName: account.business_profile?.name
+      };
+    }
+
+    // Extract business name
+    const businessName = account.business_profile?.name ||
+                        account.company?.name ||
+                        account.individual?.first_name
+                          ? `${account.individual.first_name} ${account.individual.last_name || ''}`.trim()
+                          : account.email ||
+                            'Business';
+
+    // Update account with email settings
+    const updatedAccount = await stripe.accounts.update(
+      accountRecord.stripeAccountId,
+      {
+        settings: {
+          dashboard: {
+            display_name: businessName
+          }
+        }
+      }
+    );
+
+    console.log(`Email settings fixed - display_name set to: ${businessName}`);
+
+    return {
+      success: true,
+      message: 'Email settings updated successfully',
+      displayName: updatedAccount.settings.dashboard.display_name
+    };
+  } catch (error) {
+    console.error("Error fixing account email settings:", error);
+    throw new Error(`Failed to fix account email settings: ${error.message}`);
   }
 };
 
@@ -430,6 +506,20 @@ exports.uploadPersonDocument = async (companyId, personId, file, side = "front")
   } catch (error) {
     console.error("Error uploading document:", error);
     throw new Error(`Failed to upload document: ${error.message}`);
+  }
+};
+
+/**
+ * Get Stripe account by ID
+ * @param {string} stripeAccountId - Stripe account ID
+ * @returns {object} Stripe account object
+ */
+exports.getAccount = async (stripeAccountId) => {
+  try {
+    return await stripe.accounts.retrieve(stripeAccountId);
+  } catch (error) {
+    console.error("Error retrieving account:", error);
+    throw new Error(`Failed to retrieve account: ${error.message}`);
   }
 };
 
@@ -1252,12 +1342,92 @@ exports.createClientCustomer = async (companyId, clientData) => {
 };
 
 /**
+ * Update customer address for tax calculation
+ * @param {string} companyId - MongoDB company ID
+ * @param {string} customerId - Stripe customer ID
+ * @param {object} address - Customer address { line1, line2, city, state, postal_code, country }
+ * @returns {object} Updated customer
+ */
+exports.updateCustomerAddress = async (companyId, customerId, address) => {
+  try {
+    console.log(`Updating customer address for ${customerId} on company: ${companyId}`);
+
+    // Find account
+    const accountRecord = await findAccountByCompany(companyId);
+    if (!accountRecord) {
+      throw new Error("Stripe account not found for this company");
+    }
+
+    // Update customer with address
+    const customer = await stripe.customers.update(
+      customerId,
+      {
+        address: {
+          line1: address.line1 || undefined,
+          line2: address.line2 || undefined,
+          city: address.city || undefined,
+          state: address.state || undefined,
+          postal_code: address.postal_code,
+          country: address.country
+        },
+        tax: {
+          validate_location: 'immediately' // Validate location immediately for tax calculation
+        }
+      },
+      {
+        stripeAccount: accountRecord.stripeAccountId,
+      }
+    );
+
+    console.log(`Customer address updated: ${customer.id}`);
+
+    return {
+      success: true,
+      customerId: customer.id,
+      address: customer.address
+    };
+  } catch (error) {
+    console.error("Error updating customer address:", error);
+    throw new Error(`Failed to update customer address: ${error.message}`);
+  }
+};
+
+/**
+ * Get customer details
+ * @param {object} params - { customerId, connectedAccountId }
+ * @returns {object} Customer object
+ */
+exports.getCustomer = async (params) => {
+  try {
+    const { customerId, connectedAccountId } = params;
+
+    console.log(`Retrieving customer: ${customerId}`);
+
+    const customer = await stripe.customers.retrieve(
+      customerId,
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    return {
+      success: true,
+      customer
+    };
+  } catch (error) {
+    console.error("Error retrieving customer:", error);
+    throw new Error(`Failed to retrieve customer: ${error.message}`);
+  }
+};
+
+/**
  * Create SetupIntent for collecting payment method without charging
  * @param {string} companyId - MongoDB company ID
  * @param {string} customerId - Stripe customer ID
+ * @param {array} paymentMethodTypes - Payment method types to enable ['card', 'us_bank_account']
  * @returns {object} SetupIntent with client_secret
  */
-exports.createClientSetupIntent = async (companyId, customerId) => {
+exports.createClientSetupIntent = async (companyId, customerId, paymentMethodTypes = ['card']) => {
   try {
     console.log(`Creating SetupIntent for customer ${customerId} on company: ${companyId}`);
 
@@ -1286,17 +1456,32 @@ exports.createClientSetupIntent = async (companyId, customerId) => {
       );
     }
 
+    // Build SetupIntent configuration
+    const setupIntentConfig = {
+      customer: customerId,
+      payment_method_types: paymentMethodTypes,
+      usage: "off_session", // For future charges when customer not present
+      metadata: {
+        companyId: companyId,
+        source: "boardd_client_management",
+      },
+    };
+
+    // Add payment method options for ACH Direct Debit
+    if (paymentMethodTypes.includes('us_bank_account')) {
+      setupIntentConfig.payment_method_options = {
+        us_bank_account: {
+          financial_connections: {
+            permissions: ['payment_method', 'balances']
+          },
+          verification_method: 'instant' // Instant verification via Stripe Financial Connections
+        }
+      };
+    }
+
     // Create SetupIntent for payment method collection
     const setupIntent = await stripe.setupIntents.create(
-      {
-        customer: customerId,
-        payment_method_types: ["card"],
-        usage: "off_session", // For future charges when customer not present
-        metadata: {
-          companyId: companyId,
-          source: "boardd_client_management",
-        },
-      },
+      setupIntentConfig,
       {
         stripeAccount: accountRecord.stripeAccountId,
       }
@@ -1474,5 +1659,1039 @@ exports.detachPaymentMethod = async (companyId, paymentMethodId) => {
   } catch (error) {
     console.error("Error detaching payment method:", error);
     throw new Error(`Failed to detach payment method: ${error.message}`);
+  }
+};
+
+// ==================== Invoice Operations ====================
+
+/**
+ * Create draft invoice on connected account
+ * @param {object} params - Invoice creation parameters
+ * @param {string} params.customerId - Stripe customer ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @param {string} params.collectionMethod - 'charge_automatically' or 'send_invoice'
+ * @param {number} params.daysUntilDue - Days until invoice is due (for send_invoice)
+ * @param {Date} params.dueDate - Specific due date (alternative to daysUntilDue)
+ * @param {string} params.description - Invoice description/memo
+ * @param {string} params.footer - Invoice footer text
+ * @param {string} params.currency - Currency code (default: 'usd')
+ * @param {boolean} params.enableAutomaticTax - Enable Stripe Tax
+ * @param {string} params.defaultPaymentMethod - Payment method ID to use
+ * @returns {object} Created invoice
+ */
+exports.createInvoice = async (params) => {
+  try {
+    const {
+      customerId,
+      connectedAccountId,
+      collectionMethod = 'send_invoice',
+      daysUntilDue,
+      dueDate,
+      description,
+      footer,
+      currency = 'usd',
+      enableAutomaticTax = true,
+      defaultPaymentMethod,
+      paymentMethods = ['card'],
+      platformFee
+    } = params;
+
+    console.log(`Creating invoice for customer: ${customerId}`);
+
+    // Build invoice creation request
+    const invoiceData = {
+      customer: customerId,
+      collection_method: collectionMethod,
+      currency,
+      auto_advance: false, // Don't auto-finalize - user controls when to send
+    };
+
+    // Configure payment methods
+    if (paymentMethods && paymentMethods.length > 0) {
+      invoiceData.payment_settings = {
+        payment_method_types: paymentMethods,
+        payment_method_options: {}
+      };
+
+      // Add ACH Direct Debit configuration if included
+      if (paymentMethods.includes('us_bank_account')) {
+        invoiceData.payment_settings.payment_method_options.us_bank_account = {
+          financial_connections: {
+            permissions: ['payment_method', 'balances']
+          },
+          verification_method: 'instant'
+        };
+      }
+    }
+
+    // Add description and footer if provided
+    if (description) invoiceData.description = description;
+    if (footer) invoiceData.footer = footer;
+
+    // Add due date settings (only for send_invoice)
+    if (collectionMethod === 'send_invoice') {
+      if (dueDate) {
+        invoiceData.due_date = Math.floor(new Date(dueDate).getTime() / 1000);
+      } else if (daysUntilDue) {
+        invoiceData.days_until_due = daysUntilDue;
+      }
+    }
+
+    // Add default payment method if provided
+    if (defaultPaymentMethod) {
+      invoiceData.default_payment_method = defaultPaymentMethod;
+    }
+
+    // Enable automatic tax calculation
+    if (enableAutomaticTax) {
+      invoiceData.automatic_tax = {
+        enabled: true,
+        liability: {
+          type: 'self' // Tax liability is on the connected account itself
+        }
+      };
+    }
+
+    // Add platform fee (application fee)
+    // Note: Will be calculated after line items are added
+    // Store platformFee config for later use
+    const platformFeeConfig = platformFee;
+
+    // Create invoice
+    const invoice = await stripe.invoices.create(
+      invoiceData,
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    console.log(`Invoice created: ${invoice.id}`);
+
+    return {
+      success: true,
+      invoice: {
+        id: invoice.id,
+        status: invoice.status,
+        amountDue: invoice.amount_due,
+        currency: invoice.currency,
+        dueDate: invoice.due_date,
+        hostedInvoiceUrl: invoice.hosted_invoice_url,
+        invoicePdf: invoice.invoice_pdf
+      },
+      platformFeeConfig // Return platform fee config for controller to use
+    };
+  } catch (error) {
+    console.error("Error creating invoice:", error);
+    throw new Error(`Failed to create invoice: ${error.message}`);
+  }
+};
+
+/**
+ * Add line items to draft invoice
+ * @param {object} params - Line items parameters
+ * @param {string} params.invoiceId - Stripe invoice ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @param {Array} params.lineItems - Array of line items
+ * @returns {object} Updated invoice
+ */
+exports.addInvoiceLineItems = async (params) => {
+  try {
+    const { invoiceId, connectedAccountId, lineItems } = params;
+
+    console.log(`Adding ${lineItems.length} line items to invoice: ${invoiceId}`);
+
+    // Format line items for Stripe
+    const formattedLineItems = lineItems.map(item => ({
+      description: item.description,
+      quantity: item.quantity,
+      price_data: {
+        currency: item.currency || 'usd',
+        unit_amount: item.unitAmount, // Price per unit in cents
+        product_data: {
+          name: item.description // Use line item description as product name
+        }
+      }
+    }));
+
+    // Add line items using bulk add API
+    const invoice = await stripe.invoices.addLines(
+      invoiceId,
+      {
+        lines: formattedLineItems
+      },
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    console.log(`Line items added to invoice: ${invoiceId}`);
+
+    return {
+      success: true,
+      invoice: {
+        id: invoice.id,
+        status: invoice.status,
+        amountDue: invoice.amount_due,
+        lineItemsCount: invoice.lines.data.length
+      }
+    };
+  } catch (error) {
+    console.error("Error adding line items:", error);
+    throw new Error(`Failed to add line items: ${error.message}`);
+  }
+};
+
+/**
+ * Apply platform fee to invoice
+ * @param {object} params - Platform fee parameters
+ * @param {string} params.invoiceId - Stripe invoice ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @param {object} params.platformFee - Platform fee configuration { type: 'percentage'|'fixed', value: number }
+ * @param {number} params.invoiceAmount - Total invoice amount to calculate fee from
+ * @returns {object} Updated invoice with application fee
+ */
+exports.applyPlatformFee = async (params) => {
+  try {
+    const { invoiceId, connectedAccountId, platformFee, invoiceAmount } = params;
+
+    if (!platformFee) {
+      return { success: true, feeAmount: 0 };
+    }
+
+    // Calculate platform fee amount
+    let feeAmount;
+    if (platformFee.type === 'percentage') {
+      feeAmount = Math.round((invoiceAmount * platformFee.value) / 100);
+    } else if (platformFee.type === 'fixed') {
+      feeAmount = platformFee.value;
+    } else {
+      throw new Error('Invalid platform fee type');
+    }
+
+    console.log(`Applying platform fee: ${feeAmount} cents (${platformFee.type}: ${platformFee.value})`);
+
+    // Update invoice with application fee
+    const invoice = await stripe.invoices.update(
+      invoiceId,
+      {
+        application_fee_amount: feeAmount
+      },
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    return {
+      success: true,
+      feeAmount,
+      invoice: {
+        id: invoice.id,
+        amountDue: invoice.amount_due,
+        applicationFeeAmount: invoice.application_fee_amount
+      }
+    };
+  } catch (error) {
+    console.error("Error applying platform fee:", error);
+    throw new Error(`Failed to apply platform fee: ${error.message}`);
+  }
+};
+
+/**
+ * Finalize invoice (draft → open)
+ * @param {object} params - Finalize parameters
+ * @param {string} params.invoiceId - Stripe invoice ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @param {boolean} params.autoAdvance - Auto-send after finalization
+ * @param {string} params.customerEmail - Optional custom email for invoice delivery
+ * @returns {object} Finalized invoice
+ */
+exports.finalizeInvoice = async (params) => {
+  try {
+    const { invoiceId, connectedAccountId, autoAdvance = false, customerEmail } = params;
+
+    console.log(`Finalizing invoice: ${invoiceId}`);
+
+    // If custom billing email provided, update customer email before finalizing
+    if (customerEmail) {
+      console.log(`Updating customer email for invoice delivery: ${customerEmail}`);
+
+      // Get invoice to find customer ID
+      const invoiceData = await stripe.invoices.retrieve(
+        invoiceId,
+        {
+          stripeAccount: connectedAccountId
+        }
+      );
+
+      // Update customer email
+      await stripe.customers.update(
+        invoiceData.customer,
+        {
+          email: customerEmail
+        },
+        {
+          stripeAccount: connectedAccountId
+        }
+      );
+    }
+
+    const invoice = await stripe.invoices.finalizeInvoice(
+      invoiceId,
+      {
+        auto_advance: autoAdvance
+      },
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    console.log(`Invoice finalized: ${invoice.id}, status: ${invoice.status}`);
+
+    return {
+      success: true,
+      invoice: {
+        id: invoice.id,
+        status: invoice.status,
+        amountDue: invoice.amount_due,
+        hostedInvoiceUrl: invoice.hosted_invoice_url,
+        invoicePdf: invoice.invoice_pdf,
+        number: invoice.number
+      }
+    };
+  } catch (error) {
+    console.error("Error finalizing invoice:", error);
+    throw new Error(`Failed to finalize invoice: ${error.message}`);
+  }
+};
+
+/**
+ * Validate that connected account has required settings for sending invoice emails
+ * @param {string} connectedAccountId - Stripe connected account ID
+ * @returns {object} Validation result with account settings
+ */
+async function validateAccountEmailSettings(connectedAccountId) {
+  try {
+    const account = await stripe.accounts.retrieve(connectedAccountId);
+
+    const hasDisplayName = account.settings?.dashboard?.display_name;
+    const hasBusinessName = account.business_profile?.name;
+
+    return {
+      valid: !!(hasDisplayName || hasBusinessName),
+      displayName: hasDisplayName,
+      businessName: hasBusinessName,
+      account: account
+    };
+  } catch (error) {
+    console.error('Error validating account email settings:', error);
+    throw new Error(`Failed to validate account settings: ${error.message}`);
+  }
+}
+
+/**
+ * Send invoice email to customer
+ * Note: Customer email should be updated during finalizeInvoice, not here
+ * @param {object} params - Send parameters
+ * @param {string} params.invoiceId - Stripe invoice ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @returns {object} Sent invoice
+ */
+exports.sendInvoice = async (params) => {
+  try {
+    const { invoiceId, connectedAccountId } = params;
+
+    console.log(`Sending invoice: ${invoiceId}`);
+
+    // Validate account has email settings configured
+    const validation = await validateAccountEmailSettings(connectedAccountId);
+
+    if (!validation.valid) {
+      console.warn(
+        `Warning: Connected account ${connectedAccountId} missing email settings. ` +
+        `Emails may not be delivered. Please configure business_profile.name or ` +
+        `settings.dashboard.display_name in Stripe account settings.`
+      );
+    } else {
+      console.log(`Account email settings verified - Display: ${validation.displayName}, Business: ${validation.businessName}`);
+    }
+
+    const invoice = await stripe.invoices.sendInvoice(
+      invoiceId,
+      {},
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    console.log(`Invoice sent: ${invoice.id}`);
+
+    return {
+      success: true,
+      invoice: {
+        id: invoice.id,
+        status: invoice.status,
+        hostedInvoiceUrl: invoice.hosted_invoice_url
+      }
+    };
+  } catch (error) {
+    console.error("Error sending invoice:", error);
+    throw new Error(`Failed to send invoice: ${error.message}`);
+  }
+};
+
+/**
+ * Get payment method details for a paid invoice
+ * @param {string} invoiceId - Stripe invoice ID
+ * @param {string} connectedAccountId - Stripe connected account ID
+ * @returns {object} Payment method details
+ */
+exports.getInvoicePaymentDetails = async (invoiceId, connectedAccountId) => {
+  try {
+    // Step 1: Retrieve invoice with payments (Stripe API 2025-03-31+)
+    // Only expand to 3 levels to avoid 4-level limit
+    const invoice = await stripe.invoices.retrieve(
+      invoiceId,
+      {
+        expand: ['payments']
+      },
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    console.log(`Attempting to retrieve payment details for invoice: ${invoiceId}`);
+
+    // Get first payment from payments array (most invoices have single payment)
+    const payment = invoice.payments?.data?.[0]?.payment;
+
+    if (!payment) {
+      console.log(`No payment found in payments array for invoice: ${invoiceId}`);
+      return null;
+    }
+
+    let paymentSource = null;
+    let sourceType = null;
+
+    // Step 2: Fetch payment details based on payment type
+    if (payment.type === 'payment_intent' && payment.payment_intent) {
+      // Get PaymentIntent ID (it's just a string at this point)
+      const paymentIntentId = typeof payment.payment_intent === 'string'
+        ? payment.payment_intent
+        : payment.payment_intent.id;
+
+      console.log(`Fetching PaymentIntent details: ${paymentIntentId}`);
+
+      // Fetch PaymentIntent with payment_method expanded
+      const paymentIntent = await stripe.paymentIntents.retrieve(
+        paymentIntentId,
+        {
+          expand: ['payment_method']
+        },
+        {
+          stripeAccount: connectedAccountId
+        }
+      );
+
+      if (paymentIntent.payment_method && typeof paymentIntent.payment_method === 'object') {
+        paymentSource = paymentIntent.payment_method;
+        sourceType = 'PaymentIntent';
+        console.log(`Payment details found via PaymentIntent for invoice: ${invoiceId}`);
+      }
+    }
+    else if (payment.type === 'charge' && payment.charge) {
+      // Get Charge ID (it's just a string at this point)
+      const chargeId = typeof payment.charge === 'string'
+        ? payment.charge
+        : payment.charge.id;
+
+      console.log(`Fetching Charge details: ${chargeId}`);
+
+      // Fetch Charge (payment_method_details are included by default)
+      const charge = await stripe.charges.retrieve(
+        chargeId,
+        {},
+        {
+          stripeAccount: connectedAccountId
+        }
+      );
+
+      if (charge.payment_method_details) {
+        paymentSource = charge.payment_method_details;
+        sourceType = 'Charge';
+        console.log(`Payment details found via Charge for invoice: ${invoiceId}`);
+      }
+    }
+
+    // No payment details available (e.g., manually marked as paid)
+    if (!paymentSource) {
+      console.log(`No payment details available for invoice: ${invoiceId}`);
+      return null;
+    }
+
+    // Extract payment details based on type
+    const paymentDetails = {
+      type: paymentSource.type
+    };
+
+    // Card payment details
+    if (paymentSource.type === 'card' && paymentSource.card) {
+      paymentDetails.card = {
+        brand: paymentSource.card.brand,
+        last4: paymentSource.card.last4,
+        expMonth: paymentSource.card.exp_month,
+        expYear: paymentSource.card.exp_year,
+        funding: paymentSource.card.funding,
+        country: paymentSource.card.country
+      };
+    }
+
+    // US Bank Account payment details
+    if (paymentSource.type === 'us_bank_account' && paymentSource.us_bank_account) {
+      paymentDetails.bankAccount = {
+        bankName: paymentSource.us_bank_account.bank_name,
+        last4: paymentSource.us_bank_account.last4,
+        accountType: paymentSource.us_bank_account.account_type
+      };
+    }
+
+    // Customer balance / bank transfer
+    if (paymentSource.type === 'customer_balance') {
+      paymentDetails.customerBalance = {
+        type: 'bank_transfer'
+      };
+    }
+
+    console.log(`Successfully extracted payment details from ${sourceType} for invoice: ${invoiceId}`);
+    return paymentDetails;
+  } catch (error) {
+    console.error('Error fetching invoice payment details:', error);
+    throw new Error(`Failed to fetch payment details: ${error.message}`);
+  }
+};
+
+/**
+ * Void invoice
+ * @param {object} params - Void parameters
+ * @param {string} params.invoiceId - Stripe invoice ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @returns {object} Voided invoice
+ */
+exports.voidInvoice = async (params) => {
+  try {
+    const { invoiceId, connectedAccountId } = params;
+
+    console.log(`Voiding invoice: ${invoiceId}`);
+
+    const invoice = await stripe.invoices.voidInvoice(
+      invoiceId,
+      {},
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    console.log(`Invoice voided: ${invoice.id}`);
+
+    return {
+      success: true,
+      invoice: {
+        id: invoice.id,
+        status: invoice.status
+      }
+    };
+  } catch (error) {
+    console.error("Error voiding invoice:", error);
+    throw new Error(`Failed to void invoice: ${error.message}`);
+  }
+};
+
+/**
+ * Update draft invoice
+ * @param {object} params - Update parameters
+ * @param {string} params.invoiceId - Stripe invoice ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @param {object} params.updates - Fields to update
+ * @returns {object} Updated invoice
+ */
+exports.updateInvoice = async (params) => {
+  try {
+    const { invoiceId, connectedAccountId, updates } = params;
+
+    console.log(`Updating invoice: ${invoiceId}`);
+
+    const invoice = await stripe.invoices.update(
+      invoiceId,
+      updates,
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    console.log(`Invoice updated: ${invoice.id}`);
+
+    return {
+      success: true,
+      invoice: {
+        id: invoice.id,
+        status: invoice.status,
+        amountDue: invoice.amount_due
+      }
+    };
+  } catch (error) {
+    console.error("Error updating invoice:", error);
+    throw new Error(`Failed to update invoice: ${error.message}`);
+  }
+};
+
+/**
+ * Delete draft invoice
+ * @param {object} params - Delete parameters
+ * @param {string} params.invoiceId - Stripe invoice ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @returns {object} Deletion result
+ */
+exports.deleteInvoice = async (params) => {
+  try {
+    const { invoiceId, connectedAccountId } = params;
+
+    console.log(`Deleting invoice: ${invoiceId}`);
+
+    const deleted = await stripe.invoices.del(
+      invoiceId,
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    console.log(`Invoice deleted: ${invoiceId}`);
+
+    return {
+      success: true,
+      deleted: deleted.deleted,
+      invoiceId: deleted.id
+    };
+  } catch (error) {
+    console.error("Error deleting invoice:", error);
+    throw new Error(`Failed to delete invoice: ${error.message}`);
+  }
+};
+
+/**
+ * Get invoice details
+ * @param {object} params - Retrieve parameters
+ * @param {string} params.invoiceId - Stripe invoice ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @returns {object} Invoice details
+ */
+exports.getInvoice = async (params) => {
+  try {
+    const { invoiceId, connectedAccountId } = params;
+
+    console.log(`Retrieving invoice: ${invoiceId}`);
+
+    const invoice = await stripe.invoices.retrieve(
+      invoiceId,
+      {
+        expand: ['lines']
+      },
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    return {
+      success: true,
+      invoice: {
+        id: invoice.id,
+        number: invoice.number,
+        status: invoice.status,
+        amountDue: invoice.amount_due,
+        amountPaid: invoice.amount_paid,
+        amountRemaining: invoice.amount_remaining,
+        subtotal: invoice.subtotal,
+        tax: invoice.tax,
+        total: invoice.total,
+        currency: invoice.currency,
+        created: invoice.created,
+        dueDate: invoice.due_date,
+        paidAt: invoice.status_transitions?.paid_at,
+        hostedInvoiceUrl: invoice.hosted_invoice_url,
+        invoicePdf: invoice.invoice_pdf,
+        lineItems: invoice.lines.data.map(line => ({
+          id: line.id,
+          description: line.description,
+          amount: line.amount,
+          quantity: line.quantity,
+          unitAmount: line.unit_amount,
+          currency: line.currency
+        }))
+      }
+    };
+  } catch (error) {
+    console.error("Error retrieving invoice:", error);
+    throw new Error(`Failed to retrieve invoice: ${error.message}`);
+  }
+};
+
+/**
+ * List invoices for customer
+ * @param {object} params - List parameters
+ * @param {string} params.customerId - Stripe customer ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @param {string} params.status - Filter by status
+ * @param {number} params.limit - Number of invoices to return
+ * @returns {object} Invoice list
+ */
+exports.listInvoices = async (params) => {
+  try {
+    const {
+      customerId,
+      connectedAccountId,
+      status,
+      limit = 10
+    } = params;
+
+    console.log(`Listing invoices for customer: ${customerId}`);
+
+    const queryParams = {
+      customer: customerId,
+      limit
+    };
+
+    if (status) {
+      queryParams.status = status;
+    }
+
+    const invoices = await stripe.invoices.list(
+      queryParams,
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    return {
+      success: true,
+      invoices: invoices.data.map(invoice => ({
+        id: invoice.id,
+        number: invoice.number,
+        status: invoice.status,
+        amountDue: invoice.amount_due,
+        amountPaid: invoice.amount_paid,
+        currency: invoice.currency,
+        created: invoice.created,
+        dueDate: invoice.due_date,
+        hostedInvoiceUrl: invoice.hosted_invoice_url
+      })),
+      hasMore: invoices.has_more
+    };
+  } catch (error) {
+    console.error("Error listing invoices:", error);
+    throw new Error(`Failed to list invoices: ${error.message}`);
+  }
+};
+
+// ==================== Subscription Operations ====================
+
+/**
+ * Create subscription with recurring billing
+ * @param {object} params - Subscription parameters
+ * @param {string} params.customerId - Stripe customer ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @param {number} params.unitAmount - Price per billing period in cents
+ * @param {string} params.currency - Currency code
+ * @param {string} params.interval - 'day', 'week', 'month', or 'year'
+ * @param {number} params.intervalCount - Billing every X intervals
+ * @param {string} params.collectionMethod - Payment collection method
+ * @param {Date} params.endDate - Subscription end date
+ * @param {number} params.endAfterCycles - End after X billing cycles
+ * @param {string} params.description - Subscription description
+ * @param {string} params.defaultPaymentMethod - Payment method ID
+ * @returns {object} Created subscription
+ */
+exports.createSubscription = async (params) => {
+  try {
+    const {
+      customerId,
+      connectedAccountId,
+      unitAmount,
+      currency = 'usd',
+      interval,
+      intervalCount = 1,
+      collectionMethod = 'charge_automatically',
+      endDate,
+      endAfterCycles,
+      description,
+      defaultPaymentMethod,
+      paymentMethods = ['card'],
+      platformFee
+    } = params;
+
+    console.log(`Creating subscription for customer: ${customerId}`);
+
+    // Create Price for the subscription
+    const price = await stripe.prices.create(
+      {
+        currency,
+        unit_amount: unitAmount,
+        recurring: {
+          interval,
+          interval_count: intervalCount
+        },
+        product_data: {
+          name: description || 'Subscription'
+        }
+      },
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    // Build subscription request
+    const subscriptionData = {
+      customer: customerId,
+      items: [{ price: price.id }],
+      collection_method: collectionMethod,
+      expand: ['latest_invoice']
+    };
+
+    // Configure payment methods
+    if (paymentMethods && paymentMethods.length > 0) {
+      subscriptionData.payment_settings = {
+        payment_method_types: paymentMethods,
+        payment_method_options: {}
+      };
+
+      // Add ACH Direct Debit configuration if included
+      if (paymentMethods.includes('us_bank_account')) {
+        subscriptionData.payment_settings.payment_method_options.us_bank_account = {
+          financial_connections: {
+            permissions: ['payment_method', 'balances']
+          },
+          verification_method: 'instant'
+        };
+      }
+    }
+
+    // Add platform fee (application fee percentage for subscriptions)
+    if (platformFee) {
+      if (platformFee.type === 'percentage') {
+        subscriptionData.application_fee_percent = platformFee.value;
+      } else if (platformFee.type === 'fixed') {
+        // For fixed fees on subscriptions, calculate percentage
+        const feePercentage = (platformFee.value / unitAmount) * 100;
+        subscriptionData.application_fee_percent = feePercentage;
+      }
+    }
+
+    if (defaultPaymentMethod) {
+      subscriptionData.default_payment_method = defaultPaymentMethod;
+    }
+
+    if (description) {
+      subscriptionData.description = description;
+    }
+
+    // Add end conditions
+    if (endDate) {
+      subscriptionData.cancel_at = Math.floor(new Date(endDate).getTime() / 1000);
+    } else if (endAfterCycles) {
+      subscriptionData.cancel_after = endAfterCycles;
+    }
+
+    // Create subscription
+    const subscription = await stripe.subscriptions.create(
+      subscriptionData,
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    console.log(`Subscription created: ${subscription.id}`);
+
+    return {
+      success: true,
+      subscription: {
+        id: subscription.id,
+        status: subscription.status,
+        currentPeriodStart: subscription.current_period_start,
+        currentPeriodEnd: subscription.current_period_end,
+        cancelAt: subscription.cancel_at,
+        latestInvoiceId: subscription.latest_invoice?.id,
+        priceId: price.id
+      }
+    };
+  } catch (error) {
+    console.error("Error creating subscription:", error);
+    throw new Error(`Failed to create subscription: ${error.message}`);
+  }
+};
+
+/**
+ * Update subscription
+ * @param {object} params - Update parameters
+ * @param {string} params.subscriptionId - Stripe subscription ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @param {object} params.updates - Fields to update
+ * @returns {object} Updated subscription
+ */
+exports.updateSubscription = async (params) => {
+  try {
+    const { subscriptionId, connectedAccountId, updates } = params;
+
+    console.log(`Updating subscription: ${subscriptionId}`);
+
+    const subscription = await stripe.subscriptions.update(
+      subscriptionId,
+      updates,
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    console.log(`Subscription updated: ${subscription.id}`);
+
+    return {
+      success: true,
+      subscription: {
+        id: subscription.id,
+        status: subscription.status
+      }
+    };
+  } catch (error) {
+    console.error("Error updating subscription:", error);
+    throw new Error(`Failed to update subscription: ${error.message}`);
+  }
+};
+
+/**
+ * Cancel subscription
+ * @param {object} params - Cancel parameters
+ * @param {string} params.subscriptionId - Stripe subscription ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @param {boolean} params.cancelAtPeriodEnd - Cancel at end of billing period
+ * @returns {object} Canceled subscription
+ */
+exports.cancelSubscription = async (params) => {
+  try {
+    const { subscriptionId, connectedAccountId, cancelAtPeriodEnd = false } = params;
+
+    console.log(`Canceling subscription: ${subscriptionId}`);
+
+    let subscription;
+    if (cancelAtPeriodEnd) {
+      // Cancel at period end
+      subscription = await stripe.subscriptions.update(
+        subscriptionId,
+        {
+          cancel_at_period_end: true
+        },
+        {
+          stripeAccount: connectedAccountId
+        }
+      );
+    } else {
+      // Cancel immediately
+      subscription = await stripe.subscriptions.cancel(
+        subscriptionId,
+        {},
+        {
+          stripeAccount: connectedAccountId
+        }
+      );
+    }
+
+    console.log(`Subscription canceled: ${subscription.id}`);
+
+    return {
+      success: true,
+      subscription: {
+        id: subscription.id,
+        status: subscription.status,
+        canceledAt: subscription.canceled_at,
+        cancelAtPeriodEnd: subscription.cancel_at_period_end
+      }
+    };
+  } catch (error) {
+    console.error("Error canceling subscription:", error);
+    throw new Error(`Failed to cancel subscription: ${error.message}`);
+  }
+};
+
+/**
+ * Pause subscription
+ * @param {object} params - Pause parameters
+ * @param {string} params.subscriptionId - Stripe subscription ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @returns {object} Paused subscription
+ */
+exports.pauseSubscription = async (params) => {
+  try {
+    const { subscriptionId, connectedAccountId } = params;
+
+    console.log(`Pausing subscription: ${subscriptionId}`);
+
+    const subscription = await stripe.subscriptions.update(
+      subscriptionId,
+      {
+        pause_collection: {
+          behavior: 'mark_uncollectible'
+        }
+      },
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    console.log(`Subscription paused: ${subscription.id}`);
+
+    return {
+      success: true,
+      subscription: {
+        id: subscription.id,
+        status: subscription.status,
+        pauseCollection: subscription.pause_collection
+      }
+    };
+  } catch (error) {
+    console.error("Error pausing subscription:", error);
+    throw new Error(`Failed to pause subscription: ${error.message}`);
+  }
+};
+
+/**
+ * Resume paused subscription
+ * @param {object} params - Resume parameters
+ * @param {string} params.subscriptionId - Stripe subscription ID
+ * @param {string} params.connectedAccountId - Stripe connected account ID
+ * @returns {object} Resumed subscription
+ */
+exports.resumeSubscription = async (params) => {
+  try {
+    const { subscriptionId, connectedAccountId } = params;
+
+    console.log(`Resuming subscription: ${subscriptionId}`);
+
+    const subscription = await stripe.subscriptions.update(
+      subscriptionId,
+      {
+        pause_collection: ''
+      },
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    console.log(`Subscription resumed: ${subscription.id}`);
+
+    return {
+      success: true,
+      subscription: {
+        id: subscription.id,
+        status: subscription.status
+      }
+    };
+  } catch (error) {
+    console.error("Error resuming subscription:", error);
+    throw new Error(`Failed to resume subscription: ${error.message}`);
   }
 };

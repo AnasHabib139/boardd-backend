@@ -18,7 +18,7 @@ const activitySchema = new Schema({
   channelId: { type: Types.ObjectId, ref: "Channel" }, // For channel-based tasks without project
 
   // Activity metadata
-  userId: { type: Types.ObjectId, ref: "User", required: true },
+  userId: { type: Types.ObjectId, ref: "User", required: false }, // Optional for system/webhook events
   actionType: {
     type: String,
     enum: Object.values(ACTION_TYPE),
