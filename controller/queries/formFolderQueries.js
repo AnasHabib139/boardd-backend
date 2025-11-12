@@ -139,6 +139,43 @@ exports.buildFolderFormsQuery = ({ user, type, created_by, status, sortBy }) => 
           pipeline: [{ $match: { isActive: true } }],
         },
       },
+      // Lookup users who match invited emails (for internal users)
+      {
+        $lookup: {
+          from: "users",
+          let: {
+            inviteEmails: {
+              $map: {
+                input: "$invites",
+                as: "inv",
+                in: "$$inv.invitedEmail"
+              }
+            }
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $in: ["$email", "$$inviteEmails"]
+                }
+              }
+            },
+            {
+              $project: {
+                _id: 1,
+                email: 1,
+                name: 1,
+                image: 1,
+                coverImage: 1,
+                role: 1,
+                designation: 1,
+                title: 1,
+              }
+            }
+          ],
+          as: "inviteMatchedUsers"
+        }
+      },
       {
         $addFields: {
           totalResponses: {
@@ -170,6 +207,41 @@ exports.buildFolderFormsQuery = ({ user, type, created_by, status, sortBy }) => 
                 dateTime: "$$invite.respondedAt",
                 isSubmitted: "$$invite.hasResponded",
                 sharedAt: "$$invite.createdAt",
+                // Conditionally add user details if matching User exists
+                userDetails: {
+                  $let: {
+                    vars: {
+                      matchedUser: {
+                        $arrayElemAt: [
+                          {
+                            $filter: {
+                              input: "$inviteMatchedUsers",
+                              as: "user",
+                              cond: { $eq: ["$$user.email", "$$invite.invitedEmail"] }
+                            }
+                          },
+                          0
+                        ]
+                      }
+                    },
+                    in: {
+                      $cond: [
+                        { $ne: ["$$matchedUser", null] },
+                        {
+                          // Internal user - return full details
+                          _id: "$$matchedUser._id",
+                          name: "$$matchedUser.name",
+                          image: "$$matchedUser.image",
+                          coverImage: "$$matchedUser.coverImage",
+                          role: "$$matchedUser.role",
+                          designation: "$$matchedUser.designation",
+                          title: "$$matchedUser.title",
+                        },
+                        null  // External user - no user details
+                      ]
+                    }
+                  }
+                }
               },
             },
           },
