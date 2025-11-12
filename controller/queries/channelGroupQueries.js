@@ -114,6 +114,35 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                     as: "conversation"
                   }
                 },
+                // Lookup creator details for each channel
+                {
+                  $lookup: {
+                    from: "users",
+                    localField: "createdBy",
+                    foreignField: "_id",
+                    as: "creator",
+                    pipeline: [
+                      {
+                        $project: {
+                          _id: 1,
+                          name: 1,
+                          email: 1,
+                          image: 1,
+                          coverImage: 1,
+                          role: 1,
+                          designation: 1,
+                          title: 1,
+                        },
+                      },
+                    ],
+                  },
+                },
+                {
+                  $unwind: {
+                    path: "$creator",
+                    preserveNullAndEmptyArrays: true,
+                  },
+                },
                 {
                   $project: {
                     _id: 1,
@@ -121,6 +150,7 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                     channelDescription: 1,
                     createdAt: 1,
                     members: 1, // Include members for filtering
+                    creator: 1, // Include creator details
                     conversationId: {
                       $arrayElemAt: ["$conversation._id", 0]
                     },
@@ -160,7 +190,7 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
             },
           },
 
-          // Clean up channels field (remove members for response, include conversationId and unreadCount)
+          // Clean up channels field (remove members for response, include conversationId, unreadCount, and creator)
           {
             $addFields: {
               channels: {
@@ -173,7 +203,17 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                     channelDescription: "$$channel.channelDescription",
                     createdAt: "$$channel.createdAt",
                     conversationId: "$$channel.conversationId",
-                    unreadCount: "$$channel.unreadCount"
+                    unreadCount: "$$channel.unreadCount",
+                    creator: {
+                      _id: "$$channel.creator._id",
+                      name: "$$channel.creator.name",
+                      email: "$$channel.creator.email",
+                      image: "$$channel.creator.image",
+                      coverImage: "$$channel.creator.coverImage",
+                      role: "$$channel.creator.role",
+                      designation: "$$channel.creator.designation",
+                      title: "$$channel.creator.title"
+                    }
                   }
                 }
               }
@@ -342,12 +382,42 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                     as: "conversation"
                   }
                 },
+                // Lookup creator details for each channel
+                {
+                  $lookup: {
+                    from: "users",
+                    localField: "createdBy",
+                    foreignField: "_id",
+                    as: "creator",
+                    pipeline: [
+                      {
+                        $project: {
+                          _id: 1,
+                          name: 1,
+                          email: 1,
+                          image: 1,
+                          coverImage: 1,
+                          role: 1,
+                          designation: 1,
+                          title: 1,
+                        },
+                      },
+                    ],
+                  },
+                },
+                {
+                  $unwind: {
+                    path: "$creator",
+                    preserveNullAndEmptyArrays: true,
+                  },
+                },
                 {
                   $project: {
                     _id: 1,
                     channelName: 1,
                     channelDescription: 1,
                     createdAt: 1,
+                    creator: 1, // Include creator details
                     conversationId: {
                       $arrayElemAt: ["$conversation._id", 0]
                     },
