@@ -1109,12 +1109,12 @@ exports.getUserTasksByFilter = async (req, res, next) => {
     let sortOption = {};
     if (filter === "today" || filter === "overdue") {
       sortOption = { dueDate: 1 }; // Ascending order: earliest due date first
-    } else if (filter === "yesterday") {
+    } else if (filter === "yesterday" || filter === "lastweek") {
       sortOption = { completedAt: -1 }; // Descending order: most recently completed first
     }
 
     // Get totals for all filters
-    const [todayQuery, overdueQuery, yesterdayQuery] = await Promise.all([
+    const [todayQuery, overdueQuery, yesterdayQuery, lastweekQuery] = await Promise.all([
       getAllTasks({
         query: getUserTasksByFilterQuery(userId, "today"),
         page: 1,
@@ -1129,6 +1129,12 @@ exports.getUserTasksByFilter = async (req, res, next) => {
       }),
       getAllTasks({
         query: getUserTasksByFilterQuery(userId, "yesterday"),
+        page: 1,
+        limit: 1,
+        responseKey: "count",
+      }),
+      getAllTasks({
+        query: getUserTasksByFilterQuery(userId, "lastweek"),
         page: 1,
         limit: 1,
         responseKey: "count",
@@ -1149,6 +1155,7 @@ exports.getUserTasksByFilter = async (req, res, next) => {
       today: todayQuery.pagination.totalItems,
       overdue: overdueQuery.pagination.totalItems,
       yesterday: yesterdayQuery.pagination.totalItems,
+      lastweek: lastweekQuery.pagination.totalItems,
     };
 
     return generateResponse(

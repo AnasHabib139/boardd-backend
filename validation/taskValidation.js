@@ -404,10 +404,10 @@ const recentActivitiesQueryValidation = Joi.object({
 // Task filter query validation
 const taskFilterQueryValidation = Joi.object({
   filter: Joi.string()
-    .valid('today', 'overdue', 'yesterday')
+    .valid('today', 'overdue', 'yesterday', 'lastweek')
     .required()
     .messages({
-      "any.only": "Filter must be one of: today, overdue, yesterday",
+      "any.only": "Filter must be one of: today, overdue, yesterday, lastweek",
       "any.required": "Filter is required",
     }),
   page: Joi.number().integer().min(1).default(1),

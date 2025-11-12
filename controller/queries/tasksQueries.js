@@ -1052,11 +1052,12 @@ exports.getRecentActivitiesQuery = (userId, { projectId, channelId } = {}) => {
 
 exports.getUserTasksByFilterQuery = (userId, filter) => {
   const userObjectId = typeof userId === "string" ? new Types.ObjectId(userId) : userId;
-  
+
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
   const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  const lastWeekStart = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   let query = [];
 
@@ -1088,6 +1089,56 @@ exports.getUserTasksByFilterQuery = (userId, filter) => {
                     { $eq: ["$field", "status"] },
                     { $eq: ["$newValue", "completed"] },
                     { $gte: ["$timestamp", yesterday] },
+                    { $lt: ["$timestamp", today] },
+                  ]
+                }
+              }
+            },
+            { $sort: { timestamp: -1 } },
+            { $limit: 1 }
+          ],
+          as: "completionActivity"
+        }
+      },
+      {
+        $match: {
+          "completionActivity.0": { $exists: true }
+        }
+      },
+      {
+        $addFields: {
+          completedAt: { $arrayElemAt: ["$completionActivity.timestamp", 0] }
+        }
+      }
+    ];
+  } else if (filter === 'lastweek') {
+    // For last week - find tasks completed in the last 7 days through activities
+    query = [
+      {
+        $match: {
+          isActive: true,
+          status: TASK_STATUS.COMPLETED,
+          // Simple access: only tasks assigned to me or created by me
+          $or: [
+            { assignedTo: userObjectId },
+            { createdBy: userObjectId },
+          ],
+        },
+      },
+      // Lookup activities to find completion timestamp
+      {
+        $lookup: {
+          from: "activities",
+          let: { taskId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$taskId", "$$taskId"] },
+                    { $eq: ["$field", "status"] },
+                    { $eq: ["$newValue", "completed"] },
+                    { $gte: ["$timestamp", lastWeekStart] },
                     { $lt: ["$timestamp", today] },
                   ]
                 }
@@ -1239,7 +1290,7 @@ exports.getUserTasksByFilterQuery = (userId, filter) => {
     },
   };
 
-  if (filter === 'yesterday') {
+  if (filter === 'yesterday' || filter === 'lastweek') {
     baseProjection.completedAt = 1;
   } else {
     baseProjection.dueDate = 1;
