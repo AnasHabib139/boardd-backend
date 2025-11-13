@@ -24,6 +24,16 @@ const timeEntrySchema = new Schema({
     trim: true,
     maxlength: 1000,
   },
+  tags: {
+    type: [String],
+    default: [],
+    validate: {
+      validator: function(tags) {
+        return tags.every(tag => tag.length <= 50);
+      },
+      message: 'Each tag must be 50 characters or less'
+    }
+  },
   startTime: {
     type: Date,
     required: true,

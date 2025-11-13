@@ -10,6 +10,16 @@ const startClockValidation = Joi.object({
     "string.max": "Description cannot exceed 1000 characters",
   }),
 
+  tags: Joi.array()
+    .items(Joi.string().trim().max(50))
+    .max(10)
+    .optional()
+    .default([])
+    .messages({
+      "array.max": "Cannot have more than 10 tags",
+      "string.max": "Each tag cannot exceed 50 characters",
+    }),
+
   startTime: Joi.date().required().messages({
     "any.required": "Start time is required",
     "date.base": "Start time must be a valid date",
@@ -33,6 +43,15 @@ const editTimeEntryValidation = Joi.object({
   description: Joi.string().trim().max(1000).optional().allow("").messages({
     "string.max": "Description cannot exceed 1000 characters",
   }),
+
+  tags: Joi.array()
+    .items(Joi.string().trim().max(50))
+    .max(10)
+    .optional()
+    .messages({
+      "array.max": "Cannot have more than 10 tags",
+      "string.max": "Each tag cannot exceed 50 characters",
+    }),
 
   startTime: Joi.string().pattern(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/).optional().messages({
     "string.pattern.base": "Start time must be in HH:MM format (24-hour)",

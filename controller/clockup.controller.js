@@ -36,7 +36,7 @@ const { generateClockupReportPDF } = require("../services/pdfGenerator");
  */
 exports.startClock = async (req, res, next) => {
   try {
-    const { title, description, startTime } = parseBody(req.body);
+    const { title, description, startTime, tags } = parseBody(req.body);
     const userId = req?.user?.id;
 
     // Validate user exists
@@ -71,6 +71,7 @@ exports.startClock = async (req, res, next) => {
       userId,
       title: title || "",
       description: description || "",
+      tags: tags || [],
       startTime: new Date(startTime), // Convert user's local time to Date object
       createdAt: new Date(startTime),
     });
@@ -81,6 +82,7 @@ exports.startClock = async (req, res, next) => {
           _id: timeEntry._id,
           title: timeEntry.title,
           description: timeEntry.description,
+          tags: timeEntry.tags,
           startTime: timeEntry.startTime,
           totalTime: timeEntry.totalTime,
           isActive: timeEntry.isActive,
@@ -146,6 +148,7 @@ exports.stopClock = async (req, res, next) => {
           _id: updatedEntry._id,
           title: updatedEntry.title,
           description: updatedEntry.description,
+          tags: updatedEntry.tags,
           startTime: updatedEntry.startTime,
           endTime: updatedEntry.endTime,
           totalTime: updatedEntry.totalTime, // In minutes
@@ -171,7 +174,7 @@ exports.stopClock = async (req, res, next) => {
 exports.editTimeEntry = async (req, res, next) => {
   try {
     const { entryId } = req.params;
-    const { title, description, startTime, endTime, totalTime } = parseBody(
+    const { title, description, startTime, endTime, totalTime, tags } = parseBody(
       req.body
     );
     const userId = req?.user?.id;
@@ -223,9 +226,10 @@ exports.editTimeEntry = async (req, res, next) => {
     let newEndTime = timeEntry.endTime;
     let daysAdded = 0;
 
-    // Update title and description if provided
+    // Update title, description, and tags if provided
     if (title !== undefined) updateData.title = title;
     if (description !== undefined) updateData.description = description;
+    if (tags !== undefined) updateData.tags = tags;
 
     // Handle different types of time changes
     if (startTime && endTime && totalTime) {
@@ -321,6 +325,7 @@ exports.editTimeEntry = async (req, res, next) => {
           _id: updatedEntry._id,
           title: updatedEntry.title,
           description: updatedEntry.description,
+          tags: updatedEntry.tags,
           startTime: updatedEntry.startTime,
           endTime: updatedEntry.endTime,
           totalTime: updatedEntry.totalTime, // In minutes
@@ -418,6 +423,7 @@ exports.restartTimeEntry = async (req, res, next) => {
       userId,
       title: timeEntry.title,
       description: timeEntry.description,
+      tags: timeEntry.tags || [],
       startTime: new Date(startTime),
       createdAt: new Date(startTime),
       parentEntryId: timeEntry._id, // Link to parent
@@ -429,6 +435,7 @@ exports.restartTimeEntry = async (req, res, next) => {
           _id: childTimeEntry._id,
           title: childTimeEntry.title,
           description: childTimeEntry.description,
+          tags: childTimeEntry.tags,
           startTime: childTimeEntry.startTime,
           totalTime: childTimeEntry.totalTime,
           isActive: childTimeEntry.isActive,
@@ -439,6 +446,7 @@ exports.restartTimeEntry = async (req, res, next) => {
           _id: timeEntry._id,
           title: timeEntry.title,
           description: timeEntry.description,
+          tags: timeEntry.tags,
         },
       },
       "Time entry restarted successfully",
@@ -643,6 +651,7 @@ exports.duplicateTimeEntry = async (req, res, next) => {
       userId,
       title: timeEntry.title || "",
       description: timeEntry.description || "",
+      tags: timeEntry.tags || [],
       startTime: timeEntry.startTime, // Copy exact start time
       endTime: timeEntry.endTime, // Copy exact end time
       totalTime: timeEntry.totalTime, // Copy exact total time
@@ -670,6 +679,7 @@ exports.duplicateTimeEntry = async (req, res, next) => {
           _id: duplicatedEntry._id,
           title: duplicatedEntry.title,
           description: duplicatedEntry.description,
+          tags: duplicatedEntry.tags,
           startTime: duplicatedEntry.startTime,
           endTime: duplicatedEntry.endTime,
           totalTime: duplicatedEntry.totalTime,
@@ -682,6 +692,7 @@ exports.duplicateTimeEntry = async (req, res, next) => {
           _id: timeEntry._id,
           title: timeEntry.title,
           description: timeEntry.description,
+          tags: timeEntry.tags,
           isParent: !timeEntry.parentEntryId,
         },
       },

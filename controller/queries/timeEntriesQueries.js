@@ -111,6 +111,7 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
       _id: 1,
       title: 1,
       description: 1,
+      tags: 1,
       startTime: {
         $dateToString: {
           format: "%H:%M",
@@ -294,6 +295,7 @@ exports.getChildrenTimeEntriesQuery = (parentEntryId) => {
       _id: 1,
       title: 1,
       description: 1,
+      tags: 1,
       startTime: {
         $dateToString: {
           format: "%H:%M",
@@ -490,6 +492,7 @@ exports.getUserTimeEntriesReportQuery = (userId, startDate, endDate) => {
       date: "$formattedDate",
       title: 1,
       description: 1,
+      tags: 1,
       duration: "$formattedDuration",
       totalTimeMinutes: "$totalTime", // Keep for week total calculation
       userName: "$userDetails.name",
@@ -648,6 +651,7 @@ exports.getUserTimeEntriesWithChildrenForDownloadQuery = (userId, startDate, end
             _id: "$$child._id",
             title: "$$child.title",
             description: "$$child.description",
+            tags: "$$child.tags",
             startTime: {
               $dateToString: {
                 format: "%H:%M",
@@ -725,6 +729,7 @@ exports.getUserTimeEntriesWithChildrenForDownloadQuery = (userId, startDate, end
       _id: 1,
       title: 1,
       description: 1,
+      tags: 1,
       date: "$formattedDate",
       startTime: "$formattedStartTime",
       endTime: "$formattedEndTime",
@@ -888,6 +893,7 @@ exports.getUserSelectedTimeEntriesForDownloadQuery = (userId, entryIds) => {
             _id: "$$child._id",
             title: "$$child.title",
             description: "$$child.description",
+            tags: "$$child.tags",
             startTime: {
               $dateToString: {
                 format: "%H:%M",
@@ -1126,6 +1132,7 @@ exports.getSingleTimeEntryWithChildrenForDownloadQuery = (entryId) => {
             _id: "$$child._id",
             title: "$$child.title",
             description: "$$child.description",
+            tags: "$$child.tags",
             startTime: {
               $dateToString: {
                 format: "%H:%M",
