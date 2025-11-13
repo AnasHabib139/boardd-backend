@@ -26,6 +26,11 @@ module.exports = {
     );
 
     console.log(`✓ Updated ${result.modifiedCount} users with new notification preferences`);
+
+    return {
+      success: true,
+      message: `Updated ${result.modifiedCount} users with new notification preferences`
+    };
   },
 
   async down() {
@@ -49,5 +54,10 @@ module.exports = {
     );
 
     console.log(`✓ Rolled back ${result.modifiedCount} users to previous notification structure`);
+
+    return {
+      success: true,
+      message: `Rolled back ${result.modifiedCount} users to previous notification structure`
+    };
   }
 };
