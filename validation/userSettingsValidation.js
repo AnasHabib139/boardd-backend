@@ -140,7 +140,10 @@ const updateUserSettingsSchema = Joi.object({
   notifications: Joi.object({
     email: Joi.boolean().optional(),
     push: Joi.boolean().optional(),
-    desktop: Joi.boolean().optional()
+    sms: Joi.boolean().optional(),
+    paymentReminders: Joi.boolean().optional(),
+    paymentSuccess: Joi.boolean().optional(),
+    paymentFailure: Joi.boolean().optional()
   }).optional(),
 
   // Privacy settings (optional for future use)

@@ -477,8 +477,17 @@ exports.updateUserSettings = async (req, res, next) => {
       if (notifications.push !== undefined) {
         updateData["settings.notifications.push"] = notifications.push;
       }
-      if (notifications.desktop !== undefined) {
-        updateData["settings.notifications.desktop"] = notifications.desktop;
+      if (notifications.sms !== undefined) {
+        updateData["settings.notifications.sms"] = notifications.sms;
+      }
+      if (notifications.paymentReminders !== undefined) {
+        updateData["settings.notifications.paymentReminders"] = notifications.paymentReminders;
+      }
+      if (notifications.paymentSuccess !== undefined) {
+        updateData["settings.notifications.paymentSuccess"] = notifications.paymentSuccess;
+      }
+      if (notifications.paymentFailure !== undefined) {
+        updateData["settings.notifications.paymentFailure"] = notifications.paymentFailure;
       }
     }
 

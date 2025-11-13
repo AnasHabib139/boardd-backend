@@ -61,9 +61,21 @@ const userSettingsSchema = new Schema(
         type: Boolean,
         default: true
       },
-      desktop: {
+      sms: {
         type: Boolean,
-        default: false
+        default: true
+      },
+      paymentReminders: {
+        type: Boolean,
+        default: true
+      },
+      paymentSuccess: {
+        type: Boolean,
+        default: true
+      },
+      paymentFailure: {
+        type: Boolean,
+        default: true
       }
     },
 
