@@ -240,6 +240,10 @@ const processChatMessageSend = async (socket, data, io) => {
         name: author.name,
         email: author.email,
         image: author.image,
+        coverImage: author.coverImage,
+        role: author.role,
+        designation: author.designation,
+        title: author.title,
       },
     };
 
@@ -420,6 +424,10 @@ const processChatMessageEdit = async (socket, data, io) => {
         name: author.name,
         email: author.email,
         image: author.image,
+        coverImage: author.coverImage,
+        role: author.role,
+        designation: author.designation,
+        title: author.title,
       },
     };
 
@@ -484,6 +492,10 @@ const processChatMessageDelete = async (socket, data, io) => {
         name: author.name,
         email: author.email,
         image: author.image,
+        coverImage: author.coverImage,
+        role: author.role,
+        designation: author.designation,
+        title: author.title,
       },
     };
 
