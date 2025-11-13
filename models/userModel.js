@@ -76,6 +76,47 @@ const userSettingsSchema = new Schema(
       paymentFailure: {
         type: Boolean,
         default: true
+      },
+      // Activity notifications (string for now, will be enum later)
+      activityNotifications: {
+        type: String,
+        default: "all",
+        trim: true
+      },
+      // Inbox notifications (string for now, will be enum later)
+      inboxNotifications: {
+        type: String,
+        default: "all",
+        trim: true
+      },
+      // Notification schedule
+      notificationSchedule: {
+        weekdays: {
+          type: String,
+          default: "monday-friday",
+          trim: true
+        },
+        startTime: {
+          type: String,
+          default: "9:00 AM",
+          trim: true
+        },
+        endTime: {
+          type: String,
+          default: "5:00 PM",
+          trim: true
+        }
+      },
+      // Security notifications
+      securityNotifications: {
+        loginAlerts: {
+          type: Boolean,
+          default: true
+        },
+        suspiciousActivity: {
+          type: Boolean,
+          default: true
+        }
       }
     },
 

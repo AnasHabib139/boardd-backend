@@ -489,6 +489,35 @@ exports.updateUserSettings = async (req, res, next) => {
       if (notifications.paymentFailure !== undefined) {
         updateData["settings.notifications.paymentFailure"] = notifications.paymentFailure;
       }
+      // Activity notifications
+      if (notifications.activityNotifications !== undefined) {
+        updateData["settings.notifications.activityNotifications"] = notifications.activityNotifications;
+      }
+      // Inbox notifications
+      if (notifications.inboxNotifications !== undefined) {
+        updateData["settings.notifications.inboxNotifications"] = notifications.inboxNotifications;
+      }
+      // Notification schedule (nested)
+      if (notifications.notificationSchedule) {
+        if (notifications.notificationSchedule.weekdays !== undefined) {
+          updateData["settings.notifications.notificationSchedule.weekdays"] = notifications.notificationSchedule.weekdays;
+        }
+        if (notifications.notificationSchedule.startTime !== undefined) {
+          updateData["settings.notifications.notificationSchedule.startTime"] = notifications.notificationSchedule.startTime;
+        }
+        if (notifications.notificationSchedule.endTime !== undefined) {
+          updateData["settings.notifications.notificationSchedule.endTime"] = notifications.notificationSchedule.endTime;
+        }
+      }
+      // Security notifications (nested)
+      if (notifications.securityNotifications) {
+        if (notifications.securityNotifications.loginAlerts !== undefined) {
+          updateData["settings.notifications.securityNotifications.loginAlerts"] = notifications.securityNotifications.loginAlerts;
+        }
+        if (notifications.securityNotifications.suspiciousActivity !== undefined) {
+          updateData["settings.notifications.securityNotifications.suspiciousActivity"] = notifications.securityNotifications.suspiciousActivity;
+        }
+      }
     }
 
     if (privacy) {

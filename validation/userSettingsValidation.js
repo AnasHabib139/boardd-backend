@@ -143,7 +143,49 @@ const updateUserSettingsSchema = Joi.object({
     sms: Joi.boolean().optional(),
     paymentReminders: Joi.boolean().optional(),
     paymentSuccess: Joi.boolean().optional(),
-    paymentFailure: Joi.boolean().optional()
+    paymentFailure: Joi.boolean().optional(),
+    // Activity notifications
+    activityNotifications: Joi.string()
+      .trim()
+      .optional()
+      .messages({
+        "string.empty": "Activity notifications cannot be empty"
+      }),
+    // Inbox notifications
+    inboxNotifications: Joi.string()
+      .trim()
+      .optional()
+      .messages({
+        "string.empty": "Inbox notifications cannot be empty"
+      }),
+    // Notification schedule (nested object)
+    notificationSchedule: Joi.object({
+      weekdays: Joi.string()
+        .trim()
+        .optional()
+        .messages({
+          "string.empty": "Weekdays cannot be empty"
+        }),
+      startTime: Joi.string()
+        .trim()
+        .pattern(/^(1[0-2]|0?[1-9]):[0-5][0-9] (AM|PM)$/i)
+        .optional()
+        .messages({
+          "string.pattern.base": "Start time must be in format HH:MM AM/PM (e.g., 9:00 AM)"
+        }),
+      endTime: Joi.string()
+        .trim()
+        .pattern(/^(1[0-2]|0?[1-9]):[0-5][0-9] (AM|PM)$/i)
+        .optional()
+        .messages({
+          "string.pattern.base": "End time must be in format HH:MM AM/PM (e.g., 5:00 PM)"
+        })
+    }).optional(),
+    // Security notifications (nested object)
+    securityNotifications: Joi.object({
+      loginAlerts: Joi.boolean().optional(),
+      suspiciousActivity: Joi.boolean().optional()
+    }).optional()
   }).optional(),
 
   // Privacy settings (optional for future use)
