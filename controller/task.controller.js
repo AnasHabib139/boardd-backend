@@ -243,6 +243,7 @@ exports.createTask = async (req, res, next) => {
       title: title,
       projectId: projectId || null,
       channelId: projectId ? project.channelId : channelId,
+      companyId: channel.companyId,
       tabId: tab ? tab._id : null,
       assignedTo: assignedTo || [],
       status: taskStatus,

@@ -23,6 +23,7 @@ const buildTasksSearchPipeline = (filters) => {
 
   // Match by company (required for access control)
   const matchStage = {
+    companyId: new Types.ObjectId(companyId),
     isActive: true
   };
 
@@ -309,6 +310,7 @@ const buildTasksCountPipeline = (filters) => {
   const pipeline = [];
 
   const matchStage = {
+    companyId: new Types.ObjectId(companyId),
     isActive: true
   };
 
