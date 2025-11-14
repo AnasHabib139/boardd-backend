@@ -569,7 +569,7 @@ exports.getClientForTab = async (req, res, next) => {
       client,
       "Client fetched successfully",
       res,
-      STATUS_CODES.OK
+      STATUS_CODES.SUCCESS
     );
   } catch (error) {
     next({

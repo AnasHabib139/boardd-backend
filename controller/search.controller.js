@@ -297,7 +297,7 @@ const globalSearch = async (req, res) => {
       }
     }
 
-    return res.status(STATUS_CODES.OK).json({
+    return res.status(STATUS_CODES.SUCCESS).json({
       message: "Search completed successfully",
       results,
       totalResults,
