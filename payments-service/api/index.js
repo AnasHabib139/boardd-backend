@@ -46,6 +46,7 @@ const {
   getInvoice,
   listInvoices,
   deleteInvoice,
+  getTransactions,
 } = require("../controllers/invoice.controller");
 
 const {
@@ -477,6 +478,20 @@ class PaymentsAPI {
       "/clients/:tabId/invoices/:invoiceId",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       deleteInvoice
+    );
+
+    /**
+     * GET /api/payments/clients/:tabId/transactions
+     * Get transactions (invoices where payment was attempted)
+     * Query: ?status=paid|open|void|uncollectible&limit=10&page=1
+     * Auth: Admin or Employee
+     * Returns: Transaction history with payment details
+     */
+    router.get(
+      "/clients/:tabId/transactions",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("accessClientPayments"),
+      getTransactions
     );
 
     // ==================== Subscription Routes ====================

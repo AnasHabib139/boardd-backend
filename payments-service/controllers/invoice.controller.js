@@ -1098,6 +1098,107 @@ exports.listInvoices = async (req, res, next) => {
 };
 
 /**
+ * Get transactions (invoices where payment was attempted)
+ * GET /api/payments/clients/:tabId/transactions
+ */
+exports.getTransactions = async (req, res, next) => {
+  try {
+    const { tabId } = req.params;
+    const userId = req.user.id;
+    const { status, limit = 10, page = 1 } = req.query;
+
+    // Validate tab access
+    await validateTabAccess(tabId, userId);
+
+    // Get client
+    const client = await findClient({ tabId });
+    if (!client) {
+      throw new Error("CLIENT_NOT_FOUND");
+    }
+
+    // Find transactions (invoices where payment was attempted)
+    const skip = (page - 1) * limit;
+    const { findTransactionsByTab, countTransactionsByTab } = require("../../models/invoiceModel");
+
+    const transactions = await findTransactionsByTab(tabId, {
+      status,
+      limit: parseInt(limit),
+      skip
+    });
+
+    const totalCount = await countTransactionsByTab(tabId, status);
+
+    // Get connected account for fetching payment details
+    const accountRecord = await findAccountByCompany(client.companyId);
+    const connectedAccountId = accountRecord?.stripeAccountId;
+
+    // Enrich transactions with payment details
+    const transactionsWithDetails = await Promise.all(
+      transactions.map(async (inv) => {
+        const transactionData = {
+          id: inv._id,
+          invoiceNumber: inv.invoiceNumber,
+          stripeInvoiceId: inv.stripeInvoiceId,
+          amount: inv.amountDue,
+          currency: inv.currency,
+          status: inv.status,
+          date: inv.paidAt || inv.createdAt, // Use paidAt if available, otherwise createdAt
+          customerEmail: inv.billTo?.email || null,
+          description: inv.paymentIntentId || inv.stripeInvoiceId, // Payment Intent ID (the "long numbers")
+          attemptCount: inv.attemptCount || 0,
+          hostedInvoiceUrl: inv.hostedInvoiceUrl,
+          invoicePdf: inv.invoicePdf
+        };
+
+        // Add payment method details if invoice was paid
+        if (inv.status === 'paid' && inv.stripeInvoiceId && connectedAccountId) {
+          try {
+            const paymentDetails = await stripeService.getInvoicePaymentDetails(
+              inv.stripeInvoiceId,
+              connectedAccountId
+            );
+            transactionData.paymentMethod = paymentDetails || null;
+          } catch (error) {
+            console.error(`Error fetching payment details for transaction ${inv._id}:`, error);
+            transactionData.paymentMethod = null;
+          }
+        } else {
+          transactionData.paymentMethod = null;
+        }
+
+        return transactionData;
+      })
+    );
+
+    return generateResponse(
+      {
+        transactions: transactionsWithDetails,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / parseInt(limit))
+        }
+      },
+      "Transactions retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error retrieving transactions:", error);
+
+    const message = error.message || "Failed to retrieve transactions";
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      STATUS_CODES.BAD_REQUEST
+    );
+  }
+};
+
+/**
  * Delete draft invoice
  * DELETE /api/payments/clients/:tabId/invoices/:invoiceId
  */

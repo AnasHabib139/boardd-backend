@@ -610,14 +610,18 @@ exports.handleWebhook = async (req, res, next) => {
           const invoiceRecord = await findInvoice({ stripeInvoiceId: invoice.id });
 
           if (invoiceRecord) {
-            // Update status using MongoDB _id
+            // Update status using MongoDB _id and mark as attempted
             await updateInvoiceStatus(
               invoiceRecord._id,
               'paid',
               {
                 amountPaid: invoice.amount_paid,
                 amountRemaining: 0,
-                paidAt: new Date(invoice.status_transitions.paid_at * 1000)
+                paidAt: new Date(invoice.status_transitions.paid_at * 1000),
+                // Track payment attempt (successfully paid)
+                attempted: true,
+                attemptCount: invoice.attempt_count || 1,
+                paymentIntentId: invoice.payment_intent || invoiceRecord.paymentIntentId
               }
             );
 
@@ -630,6 +634,8 @@ exports.handleWebhook = async (req, res, next) => {
               amount: invoice.amount_paid,
               currency: invoice.currency
             });
+
+            console.log(`Invoice ${invoice.id} marked as attempted (paid successfully)`);
           } else {
             console.warn(`Invoice not found in MongoDB: ${invoice.id}`);
           }
@@ -641,11 +647,21 @@ exports.handleWebhook = async (req, res, next) => {
           const invoice = event.data.object;
           console.log(`Invoice payment failed: ${invoice.id}, attempt: ${invoice.attempt_count}`);
 
-          // Create activity for payment failure
-          const { findInvoice } = require("../../models/invoiceModel");
+          // Create activity for payment failure and update payment attempt tracking
+          const { findInvoice, updateInvoice } = require("../../models/invoiceModel");
           const invoiceRecord = await findInvoice({ stripeInvoiceId: invoice.id });
 
           if (invoiceRecord) {
+            // Mark invoice as attempted and update attempt count
+            await updateInvoice(
+              { stripeInvoiceId: invoice.id },
+              {
+                attempted: true, // Payment was attempted (failed)
+                attemptCount: invoice.attempt_count || 1,
+                paymentIntentId: invoice.payment_intent || invoiceRecord.paymentIntentId
+              }
+            );
+
             const { createInvoicePaymentFailedActivity } = require("../../controller/helpers/invoices/invoiceActivityHelpers");
             await createInvoicePaymentFailedActivity({
               tabId: invoiceRecord.tabId,
@@ -655,6 +671,8 @@ exports.handleWebhook = async (req, res, next) => {
               currency: invoice.currency,
               attemptCount: invoice.attempt_count
             });
+
+            console.log(`Invoice ${invoice.id} marked as attempted (failed) - attempt #${invoice.attempt_count}`);
           }
         }
         break;
@@ -664,11 +682,21 @@ exports.handleWebhook = async (req, res, next) => {
           const invoice = event.data.object;
           console.log(`Invoice payment action required (3D Secure): ${invoice.id}`);
 
-          // Find invoice and create activity
-          const { findInvoice } = require("../../models/invoiceModel");
+          // Find invoice, update payment attempt tracking, and create activity
+          const { findInvoice, updateInvoice } = require("../../models/invoiceModel");
           const invoiceRecord = await findInvoice({ stripeInvoiceId: invoice.id });
 
           if (invoiceRecord) {
+            // Mark invoice as attempted (customer initiated payment, waiting for 3D Secure)
+            await updateInvoice(
+              { stripeInvoiceId: invoice.id },
+              {
+                attempted: true, // Customer started payment process
+                attemptCount: invoice.attempt_count || 1,
+                paymentIntentId: invoice.payment_intent || invoiceRecord.paymentIntentId
+              }
+            );
+
             const { createActivity } = require("../../models/activityModel");
             await createActivity({
               tabId: invoiceRecord.tabId,
@@ -680,6 +708,8 @@ exports.handleWebhook = async (req, res, next) => {
                 actionType: '3d_secure'
               }
             });
+
+            console.log(`Invoice ${invoice.id} marked as attempted (action required)`);
           }
         }
         break;
@@ -715,7 +745,11 @@ exports.handleWebhook = async (req, res, next) => {
               amountRemaining: invoice.amount_remaining,
               subtotal: invoice.subtotal,
               tax: invoice.tax,
-              total: invoice.total
+              total: invoice.total,
+              // Track payment attempt status
+              attempted: invoice.attempted || false,
+              attemptCount: invoice.attempt_count || 0,
+              paymentIntentId: invoice.payment_intent || null
             };
 
             // Add issue date if available
@@ -733,7 +767,7 @@ exports.handleWebhook = async (req, res, next) => {
               updateData
             );
 
-            console.log(`Invoice ${invoice.id} finalized and updated in MongoDB`);
+            console.log(`Invoice ${invoice.id} finalized and updated in MongoDB (attempted: ${updateData.attempted})`);
           } else {
             console.warn(`Invoice ${invoice.id} not found in MongoDB during finalize`);
           }

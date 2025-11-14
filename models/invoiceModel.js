@@ -160,6 +160,27 @@ const invoiceSchema = new Schema({
   // Line items count (for quick display, full items stored in Stripe)
   lineItemsCount: { type: Number, default: 0 },
 
+  // ==================== Payment Attempt Tracking ====================
+
+  // Whether a payment attempt was made (customer clicked "Pay Now")
+  attempted: {
+    type: Boolean,
+    default: false,
+    index: true // For efficient transaction queries
+  },
+
+  // Number of payment retry attempts
+  attemptCount: {
+    type: Number,
+    default: 0
+  },
+
+  // Stripe Payment Intent ID (the "transaction ID" - long format like pi_xxx...)
+  paymentIntentId: {
+    type: String,
+    index: true
+  },
+
   // ==================== Timestamps ====================
 
   updatedAt: { type: Date, default: Date.now }
@@ -171,6 +192,8 @@ invoiceSchema.index({ clientId: 1, status: 1 });
 invoiceSchema.index({ companyId: 1, status: 1 });
 invoiceSchema.index({ invoiceType: 1, status: 1 });
 invoiceSchema.index({ 'recurring.nextBillingDate': 1 }); // For finding upcoming renewals
+invoiceSchema.index({ tabId: 1, attempted: 1 }); // For transaction queries
+invoiceSchema.index({ clientId: 1, attempted: 1 }); // For transaction queries
 
 // Register pagination plugins
 invoiceSchema.plugin(mongoosePaginate);
@@ -411,6 +434,46 @@ exports.findInvoiceBySubscriptionCycle = async (stripeSubscriptionId, billingCyc
     stripeSubscriptionId,
     billingCycleNumber
   });
+};
+
+/**
+ * Find transactions (invoices where payment was attempted) by tab
+ * Used for transaction history endpoint
+ */
+exports.findTransactionsByTab = async (tabId, options = {}) => {
+  const { status, limit, skip } = options;
+
+  const query = {
+    tabId,
+    attempted: true // Only invoices where customer attempted payment
+  };
+
+  if (status) {
+    query.status = status;
+  }
+
+  let queryBuilder = InvoiceModel.find(query).sort({ createdAt: -1 });
+
+  if (limit) queryBuilder = queryBuilder.limit(limit);
+  if (skip) queryBuilder = queryBuilder.skip(skip);
+
+  return queryBuilder.exec();
+};
+
+/**
+ * Count transactions (attempted invoices) by tab
+ */
+exports.countTransactionsByTab = async (tabId, status = null) => {
+  const query = {
+    tabId,
+    attempted: true
+  };
+
+  if (status) {
+    query.status = status;
+  }
+
+  return InvoiceModel.countDocuments(query);
 };
 
 // Export the model
