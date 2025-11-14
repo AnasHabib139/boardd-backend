@@ -8,7 +8,7 @@ exports.getCompanyUsersQuery = (companyId, currentUserId, searchTerm) => {
   queryArray.push({
     $match: {
       $or: [
-        { companyId: Types.ObjectId.createFromHexString(companyId) },
+        { companyId: new Types.ObjectId(companyId) },
         { isDemo: true }, // Always include demo user
       ],
     },
@@ -21,7 +21,7 @@ exports.getCompanyUsersQuery = (companyId, currentUserId, searchTerm) => {
   queryArray.push({
     $match: {
       $or: [
-        { _id: { $ne: Types.ObjectId.createFromHexString(currentUserId) } },
+        { _id: { $ne: new Types.ObjectId(currentUserId) } },
         { isDemo: true },
       ],
     },
@@ -142,7 +142,7 @@ exports.getUniqueDesignationsQuery = (companyId) => {
   return [
     {
       $match: {
-        companyId: Types.ObjectId.createFromHexString(companyId),
+        companyId: new Types.ObjectId(companyId),
         isActive: true,
         designation: { $exists: true, $ne: null, $ne: "" }
       }

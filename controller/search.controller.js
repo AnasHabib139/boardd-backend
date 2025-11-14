@@ -350,6 +350,13 @@ const getDesignations = async (req, res) => {
 
     const companyId = user.companyId;
 
+    // Validate user has a company
+    if (!companyId) {
+      return res.status(STATUS_CODES.BAD_REQUEST).json({
+        message: "User does not have a company assigned"
+      });
+    }
+
     // Get unique designations using aggregation
     const pipeline = getUniqueDesignationsQuery(companyId);
     const results = await aggregateUsers(pipeline);
