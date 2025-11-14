@@ -1,11 +1,14 @@
 "use strict";
 
+const mongoose = require("mongoose");
 const Task = require("../models/taskModel");
 const User = require("../models/userModel");
 const { findUser } = require("../models/userModel");
 const ChatMessage = require("../models/chatMessageModel");
-const Form = require("../models/formModel");
 const { STATUS_CODES } = require("../utils/constants");
+
+// Get Mongoose models for aggregation
+const FormModel = mongoose.model("Form");
 const {
   buildTasksSearchPipeline,
   buildMembersSearchPipeline,
@@ -44,8 +47,17 @@ const globalSearch = async (req, res) => {
       limit
     } = req.validatedQuery;
 
-    const userId = req.user._id;
-    const companyId = req.user.companyId;
+    const userId = req.user.id;
+
+    // Fetch user from database to get companyId (not in JWT)
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return res.status(STATUS_CODES.NOT_FOUND).json({
+        message: "User not found"
+      });
+    }
+
+    const companyId = user.companyId;
 
     // Determine which entity types to search
     let typesToSearch = [];
@@ -210,8 +222,8 @@ const globalSearch = async (req, res) => {
         const foldersCountPipeline = buildFoldersCountPipeline(filters);
 
         const [foldersData, foldersCountData] = await Promise.all([
-          Form.aggregate(foldersPipeline),
-          Form.aggregate(foldersCountPipeline)
+          FormModel.aggregate(foldersPipeline),
+          FormModel.aggregate(foldersCountPipeline)
         ]);
 
         const foldersTotal = foldersCountData.length > 0 ? foldersCountData[0].total : 0;
@@ -242,8 +254,8 @@ const globalSearch = async (req, res) => {
         const documentsCountPipeline = buildDocumentsCountPipeline(filters);
 
         const [documentsData, documentsCountData] = await Promise.all([
-          Form.aggregate(documentsPipeline),
-          Form.aggregate(documentsCountPipeline)
+          FormModel.aggregate(documentsPipeline),
+          FormModel.aggregate(documentsCountPipeline)
         ]);
 
         const documentsTotal = documentsCountData.length > 0 ? documentsCountData[0].total : 0;
@@ -274,8 +286,8 @@ const globalSearch = async (req, res) => {
         const templatesCountPipeline = buildTemplatesCountPipeline(filters);
 
         const [templatesData, templatesCountData] = await Promise.all([
-          Form.aggregate(templatesPipeline),
-          Form.aggregate(templatesCountPipeline)
+          FormModel.aggregate(templatesPipeline),
+          FormModel.aggregate(templatesCountPipeline)
         ]);
 
         const templatesTotal = templatesCountData.length > 0 ? templatesCountData[0].total : 0;
