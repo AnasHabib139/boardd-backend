@@ -2,6 +2,7 @@
 
 const Task = require("../models/taskModel");
 const User = require("../models/userModel");
+const { findUser } = require("../models/userModel");
 const ChatMessage = require("../models/chatMessageModel");
 const Form = require("../models/formModel");
 const { STATUS_CODES } = require("../utils/constants");
@@ -21,6 +22,7 @@ const {
   buildTemplatesSearchPipeline,
   buildTemplatesCountPipeline
 } = require("./queries/searchQueries");
+const { getUniqueDesignationsQuery } = require("./queries/userQueries");
 
 /**
  * Global search across multiple entity types
@@ -321,6 +323,47 @@ const globalSearch = async (req, res) => {
   }
 };
 
+/**
+ * Get unique designations for company (for dropdown filters)
+ * GET /api/search/designations
+ */
+const getDesignations = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Fetch user from database to get companyId
+    const user = await findUser({ _id: userId });
+
+    if (!user) {
+      return res.status(STATUS_CODES.NOT_FOUND).json({
+        message: "User not found"
+      });
+    }
+
+    const companyId = user.companyId;
+
+    // Get unique designations using aggregation
+    const pipeline = getUniqueDesignationsQuery(companyId);
+    const results = await User.aggregate(pipeline);
+
+    // Extract designations array from results
+    const designations = results.map(item => item.designation);
+
+    return res.status(STATUS_CODES.SUCCESS).json({
+      message: "Designations fetched successfully",
+      designations,
+      total: designations.length
+    });
+  } catch (error) {
+    console.error("Get designations error:", error);
+    return res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({
+      message: "An error occurred while fetching designations",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
-  globalSearch
+  globalSearch,
+  getDesignations
 };

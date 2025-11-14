@@ -136,3 +136,30 @@ exports.getCompanyUsersQuery = (companyId, currentUserId, searchTerm) => {
 
   return queryArray;
 };
+
+// Get unique designations for a company (for dropdown filters)
+exports.getUniqueDesignationsQuery = (companyId) => {
+  return [
+    {
+      $match: {
+        companyId: Types.ObjectId.createFromHexString(companyId),
+        isActive: true,
+        designation: { $exists: true, $ne: null, $ne: "" }
+      }
+    },
+    {
+      $group: {
+        _id: "$designation"
+      }
+    },
+    {
+      $sort: { _id: 1 }
+    },
+    {
+      $project: {
+        _id: 0,
+        designation: "$_id"
+      }
+    }
+  ];
+};
