@@ -229,3 +229,6 @@ exports.moveTaskToChannel = async (
     { new: true }
   );
 };
+
+// Aggregate tasks (for complex queries)
+exports.aggregateTasks = (pipeline) => TaskModel.aggregate(pipeline);

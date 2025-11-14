@@ -1,14 +1,10 @@
 "use strict";
 
-const mongoose = require("mongoose");
-const Task = require("../models/taskModel");
-const User = require("../models/userModel");
-const { findUser } = require("../models/userModel");
-const ChatMessage = require("../models/chatMessageModel");
+const { aggregateTasks } = require("../models/taskModel");
+const { aggregateUsers, findUser } = require("../models/userModel");
+const { aggregateChatMessages } = require("../models/chatMessageModel");
+const { aggregateForms } = require("../models/formModel");
 const { STATUS_CODES } = require("../utils/constants");
-
-// Get Mongoose models for aggregation
-const FormModel = mongoose.model("Form");
 const {
   buildTasksSearchPipeline,
   buildMembersSearchPipeline,
@@ -94,8 +90,8 @@ const globalSearch = async (req, res) => {
         const tasksCountPipeline = buildTasksCountPipeline(filters);
 
         const [tasksData, tasksCountData] = await Promise.all([
-          Task.aggregate(tasksPipeline),
-          Task.aggregate(tasksCountPipeline)
+          aggregateTasks(tasksPipeline),
+          aggregateTasks(tasksCountPipeline)
         ]);
 
         const tasksTotal = tasksCountData.length > 0 ? tasksCountData[0].total : 0;
@@ -126,8 +122,8 @@ const globalSearch = async (req, res) => {
         const membersCountPipeline = buildMembersCountPipeline(filters);
 
         const [membersData, membersCountData] = await Promise.all([
-          User.aggregate(membersPipeline),
-          User.aggregate(membersCountPipeline)
+          aggregateUsers(membersPipeline),
+          aggregateUsers(membersCountPipeline)
         ]);
 
         const membersTotal = membersCountData.length > 0 ? membersCountData[0].total : 0;
@@ -158,8 +154,8 @@ const globalSearch = async (req, res) => {
         const chatsCountPipeline = buildChatsCountPipeline(filters);
 
         const [chatsData, chatsCountData] = await Promise.all([
-          ChatMessage.aggregate(chatsPipeline),
-          ChatMessage.aggregate(chatsCountPipeline)
+          aggregateChatMessages(chatsPipeline),
+          aggregateChatMessages(chatsCountPipeline)
         ]);
 
         const chatsTotal = chatsCountData.length > 0 ? chatsCountData[0].total : 0;
@@ -190,8 +186,8 @@ const globalSearch = async (req, res) => {
         const filesCountPipeline = buildFilesCountPipeline(filters);
 
         const [filesData, filesCountData] = await Promise.all([
-          Task.aggregate(filesPipeline),
-          Task.aggregate(filesCountPipeline)
+          aggregateTasks(filesPipeline),
+          aggregateTasks(filesCountPipeline)
         ]);
 
         const filesTotal = filesCountData.length > 0 ? filesCountData[0].total : 0;
@@ -222,8 +218,8 @@ const globalSearch = async (req, res) => {
         const foldersCountPipeline = buildFoldersCountPipeline(filters);
 
         const [foldersData, foldersCountData] = await Promise.all([
-          FormModel.aggregate(foldersPipeline),
-          FormModel.aggregate(foldersCountPipeline)
+          aggregateForms(foldersPipeline),
+          aggregateForms(foldersCountPipeline)
         ]);
 
         const foldersTotal = foldersCountData.length > 0 ? foldersCountData[0].total : 0;
@@ -254,8 +250,8 @@ const globalSearch = async (req, res) => {
         const documentsCountPipeline = buildDocumentsCountPipeline(filters);
 
         const [documentsData, documentsCountData] = await Promise.all([
-          FormModel.aggregate(documentsPipeline),
-          FormModel.aggregate(documentsCountPipeline)
+          aggregateForms(documentsPipeline),
+          aggregateForms(documentsCountPipeline)
         ]);
 
         const documentsTotal = documentsCountData.length > 0 ? documentsCountData[0].total : 0;
@@ -286,8 +282,8 @@ const globalSearch = async (req, res) => {
         const templatesCountPipeline = buildTemplatesCountPipeline(filters);
 
         const [templatesData, templatesCountData] = await Promise.all([
-          FormModel.aggregate(templatesPipeline),
-          FormModel.aggregate(templatesCountPipeline)
+          aggregateForms(templatesPipeline),
+          aggregateForms(templatesCountPipeline)
         ]);
 
         const templatesTotal = templatesCountData.length > 0 ? templatesCountData[0].total : 0;
@@ -356,7 +352,7 @@ const getDesignations = async (req, res) => {
 
     // Get unique designations using aggregation
     const pipeline = getUniqueDesignationsQuery(companyId);
-    const results = await User.aggregate(pipeline);
+    const results = await aggregateUsers(pipeline);
 
     // Extract designations array from results
     const designations = results.map(item => item.designation);

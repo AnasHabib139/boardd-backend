@@ -204,3 +204,6 @@ exports.findFormsByChannel = (channelId, options = {}) => {
 exports.findFormsByType = (type, options = {}) => {
   return FormModel.find({ type, isActive: true, ...options });
 };
+
+// Aggregate forms (for complex queries)
+exports.aggregateForms = (pipeline) => FormModel.aggregate(pipeline);
