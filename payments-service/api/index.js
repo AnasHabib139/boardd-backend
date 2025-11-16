@@ -59,6 +59,18 @@ const {
 } = require("../controllers/subscription.controller");
 
 const {
+  enableIssuing,
+  completeIssuingRequirements,
+  createFinancialAccount,
+  createCardholder,
+  deleteCardholder,
+  issueCard,
+  getCardDetails,
+  toggleCardFreeze,
+  listTransactions,
+} = require("../controllers/issuing.controller");
+
+const {
   validateCreateAccount,
   validateUpdateAccount,
   validateAddPerson,
@@ -67,6 +79,16 @@ const {
   validateGetAccountStatus,
   validateSetPersonsProvided,
 } = require("../validation/connect.validation");
+
+const {
+  validateEnableIssuing,
+  validateCompleteRequirements,
+  validateCreateFinancialAccount,
+  validateCreateCardholder,
+  validateIssueCard,
+  validateToggleCardFreeze,
+  validateListTransactions,
+} = require("../validation/issuing.validation");
 
 const {
   validateBrandingFileUpload,
@@ -315,6 +337,139 @@ class PaymentsAPI {
       Auth([ROLES.ADMIN]),
       checkPermission("accessBilling"),
       removeBrandingAsset
+    );
+
+    // ==================== Issuing Routes ====================
+
+    /**
+     * POST /api/payments/issuing/enable
+     * Enable card_issuing capability for connected account
+     * Auth: Admin only
+     * Returns: Capability status and requirements
+     */
+    router.post(
+      "/issuing/enable",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateEnableIssuing,
+      enableIssuing
+    );
+
+    /**
+     * POST /api/payments/issuing/complete-requirements
+     * Complete Issuing requirements to activate capability
+     * Auth: Admin only
+     * Body: { annualRevenue, estimatedWorkerCount, tosAcceptance }
+     * Returns: Updated capability status
+     */
+    router.post(
+      "/issuing/complete-requirements",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateCompleteRequirements,
+      completeIssuingRequirements
+    );
+
+    /**
+     * POST /api/payments/issuing/financial-account
+     * Create Financial Account for company
+     * Auth: Admin only
+     * Returns: Financial Account details
+     */
+    router.post(
+      "/issuing/financial-account",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateCreateFinancialAccount,
+      createFinancialAccount
+    );
+
+    /**
+     * POST /api/payments/issuing/cardholder
+     * Create cardholder for company
+     * Auth: Admin only
+     * Body: { name, email, phoneNumber, taxId, billing }
+     * Returns: Created cardholder details
+     */
+    router.post(
+      "/issuing/cardholder",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateCreateCardholder,
+      createCardholder
+    );
+
+    /**
+     * DELETE /api/payments/issuing/cardholder
+     * Delete cardholder and associated cards for company
+     * Auth: Admin only
+     * Returns: Confirmation message
+     */
+    router.delete(
+      "/issuing/cardholder",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      deleteCardholder
+    );
+
+    /**
+     * POST /api/payments/issuing/card
+     * Issue virtual card for company
+     * Auth: Admin only
+     * Body: { currency } (optional, defaults to "usd")
+     * Returns: Issued card details
+     */
+    router.post(
+      "/issuing/card",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateIssueCard,
+      issueCard
+    );
+
+    /**
+     * GET /api/payments/issuing/card/details
+     * Get sensitive card details (full number, CVC)
+     * Auth: Admin only
+     * Body: None
+     * Returns: Full card number, CVC, expiry
+     * SECURITY: Audit logged
+     */
+    router.get(
+      "/issuing/card/details",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      getCardDetails
+    );
+
+    /**
+     * POST /api/payments/issuing/card/toggle-freeze
+     * Toggle card freeze status (active ↔ inactive)
+     * Auth: Admin only
+     * Body: None
+     * Returns: New card status and freeze state
+     */
+    router.post(
+      "/issuing/card/toggle-freeze",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateToggleCardFreeze,
+      toggleCardFreeze
+    );
+
+    /**
+     * GET /api/payments/issuing/transactions
+     * List transactions (purchase, refunds, deposit, send)
+     * Auth: Admin only
+     * Query params: type (purchase|refunds|deposit|send), limit (1-100), starting_after
+     * Returns: Unified transaction list from Issuing + Treasury APIs
+     */
+    router.get(
+      "/issuing/transactions",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateListTransactions,
+      listTransactions
     );
 
     // ==================== Client Payment Routes ====================

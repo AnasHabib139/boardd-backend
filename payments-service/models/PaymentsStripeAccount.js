@@ -90,6 +90,11 @@ const paymentsStripeAccountSchema = new Schema(
         enum: Object.values(CAPABILITY_STATUSES),
         default: CAPABILITY_STATUSES.INACTIVE,
       },
+      treasury: {
+        type: String,
+        enum: Object.values(CAPABILITY_STATUSES),
+        default: CAPABILITY_STATUSES.INACTIVE,
+      },
     },
 
     // Account Status Flags
