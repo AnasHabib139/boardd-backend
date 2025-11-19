@@ -67,6 +67,7 @@ const {
   issueCard,
   getCardDetails,
   toggleCardFreeze,
+  cancelCard,
   listTransactions,
 } = require("../controllers/issuing.controller");
 
@@ -87,6 +88,7 @@ const {
   validateCreateCardholder,
   validateIssueCard,
   validateToggleCardFreeze,
+  validateCancelCard,
   validateListTransactions,
 } = require("../validation/issuing.validation");
 
@@ -458,6 +460,21 @@ class PaymentsAPI {
     );
 
     /**
+     * POST /api/payments/issuing/cards/:cardId/cancel
+     * Cancel an issued card (permanent action)
+     * Auth: Admin only
+     * Params: cardId
+     * Returns: Canceled card details
+     */
+    router.post(
+      "/issuing/cards/:cardId/cancel",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateCancelCard,
+      cancelCard
+    );
+
+    /**
      * GET /api/payments/issuing/transactions
      * List transactions (purchase, refunds, deposit, send)
      * Auth: Admin only
@@ -732,6 +749,18 @@ class PaymentsAPI {
      */
     router.post(
       "/webhooks/stripe",
+      express.raw({ type: "application/json" }),
+      handleWebhook
+    );
+
+    /**
+     * POST /api/payments/webhook
+     * Webhook route alias for Stripe CLI compatibility
+     * Auth: Webhook signature verification
+     * Body: Raw Stripe webhook payload
+     */
+    router.post(
+      "/webhook",
       express.raw({ type: "application/json" }),
       handleWebhook
     );

@@ -385,6 +385,38 @@ exports.toggleCardFreeze = async (connectedAccountId, cardId) => {
   }
 };
 
+/**
+ * Cancel an issued card (permanent action)
+ * @param {string} cardId - Stripe card ID
+ * @param {string} connectedAccountId - Stripe connected account ID
+ * @returns {object} Canceled card details
+ */
+exports.cancelCard = async (cardId, connectedAccountId) => {
+  try {
+    // Cancel the card by updating status to "canceled"
+    const canceledCard = await stripe.issuing.cards.update(
+      cardId,
+      {
+        status: "canceled"
+      },
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    return {
+      cardId: canceledCard.id,
+      status: canceledCard.status,
+      last4: canceledCard.last4,
+      brand: canceledCard.brand,
+      cardholderId: canceledCard.cardholder
+    };
+  } catch (error) {
+    console.error("Error canceling card:", error);
+    throw new Error(error.message || "Failed to cancel card");
+  }
+};
+
 // ==================== Transaction Management ====================
 
 /**
@@ -399,8 +431,7 @@ exports.toggleCardFreeze = async (connectedAccountId, cardId) => {
 exports.listIssuingTransactions = async (connectedAccountId, filters = {}) => {
   try {
     const params = {
-      limit: Math.min(filters.limit || 20, 100),
-      ...(filters.starting_after && { starting_after: filters.starting_after }),
+      limit: Math.min(filters.limit || 100, 100),
       ...(filters.type && { type: filters.type })
     };
 
@@ -431,8 +462,7 @@ exports.listInboundTransfers = async (financialAccountId, connectedAccountId, fi
   try {
     const params = {
       financial_account: financialAccountId,
-      limit: Math.min(filters.limit || 20, 100),
-      ...(filters.starting_after && { starting_after: filters.starting_after })
+      limit: Math.min(filters.limit || 100, 100)
     };
 
     const transfers = await stripe.treasury.inboundTransfers.list(
@@ -462,8 +492,7 @@ exports.listOutboundTransfers = async (financialAccountId, connectedAccountId, f
   try {
     const params = {
       financial_account: financialAccountId,
-      limit: Math.min(filters.limit || 20, 100),
-      ...(filters.starting_after && { starting_after: filters.starting_after })
+      limit: Math.min(filters.limit || 100, 100)
     };
 
     const transfers = await stripe.treasury.outboundTransfers.list(
@@ -493,8 +522,7 @@ exports.listOutboundPayments = async (financialAccountId, connectedAccountId, fi
   try {
     const params = {
       financial_account: financialAccountId,
-      limit: Math.min(filters.limit || 20, 100),
-      ...(filters.starting_after && { starting_after: filters.starting_after })
+      limit: Math.min(filters.limit || 100, 100)
     };
 
     const payments = await stripe.treasury.outboundPayments.list(
@@ -512,19 +540,78 @@ exports.listOutboundPayments = async (financialAccountId, connectedAccountId, fi
 };
 
 /**
+ * List received credits (deposits from external sources)
+ * @param {string} financialAccountId - Stripe Financial Account ID
+ * @param {string} connectedAccountId - Stripe connected account ID
+ * @param {object} filters - Filter options
+ * @param {number} filters.limit - Max results (1-100, default: 20)
+ * @param {string} filters.starting_after - Cursor for pagination
+ * @returns {object} List of received credits
+ */
+exports.listReceivedCredits = async (financialAccountId, connectedAccountId, filters = {}) => {
+  try {
+    const params = {
+      financial_account: financialAccountId,
+      limit: Math.min(filters.limit || 100, 100)
+    };
+
+    const credits = await stripe.treasury.receivedCredits.list(
+      params,
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    return credits;
+  } catch (error) {
+    console.error("Error listing received credits:", error);
+    throw new Error(error.message || "Failed to list received credits");
+  }
+};
+
+/**
+ * List received debits (debits by external sources)
+ * @param {string} financialAccountId - Stripe Financial Account ID
+ * @param {string} connectedAccountId - Stripe connected account ID
+ * @param {object} filters - Filter options
+ * @param {number} filters.limit - Max results (1-100, default: 20)
+ * @param {string} filters.starting_after - Cursor for pagination
+ * @returns {object} List of received debits
+ */
+exports.listReceivedDebits = async (financialAccountId, connectedAccountId, filters = {}) => {
+  try {
+    const params = {
+      financial_account: financialAccountId,
+      limit: Math.min(filters.limit || 100, 100)
+    };
+
+    const debits = await stripe.treasury.receivedDebits.list(
+      params,
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    return debits;
+  } catch (error) {
+    console.error("Error listing received debits:", error);
+    throw new Error(error.message || "Failed to list received debits");
+  }
+};
+
+/**
  * Get unified transactions from multiple sources
  * @param {string} financialAccountId - Stripe Financial Account ID (optional for purchase/refunds only)
  * @param {string} connectedAccountId - Stripe connected account ID
  * @param {object} filters - Filter options
  * @param {string} filters.type - Transaction type: 'purchase', 'refunds', 'deposit', 'send' (optional)
- * @param {number} filters.limit - Max results (1-100, default: 20)
- * @param {string} filters.starting_after - Cursor for pagination
+ * @param {number} filters.limit - Max results (1-100, default: 100)
  * @returns {object} Unified transaction list
  */
 exports.getUnifiedTransactions = async (financialAccountId, connectedAccountId, filters = {}) => {
   try {
-    const limit = Math.min(filters.limit || 20, 100);
-    const { type, starting_after } = filters;
+    const limit = Math.min(filters.limit || 100, 100);
+    const { type } = filters;
 
     let transactions = [];
     let hasMore = false;
@@ -534,78 +621,93 @@ exports.getUnifiedTransactions = async (financialAccountId, connectedAccountId, 
       // Only card purchases (captures)
       const result = await exports.listIssuingTransactions(connectedAccountId, {
         type: "capture",
-        limit,
-        starting_after
+        limit
       });
       transactions = result.data.map(txn => formatIssuingTransaction(txn, "purchase"));
-      hasMore = result.has_more;
+      hasMore = false;
 
     } else if (type === "refunds") {
       // Only refunds
       const result = await exports.listIssuingTransactions(connectedAccountId, {
         type: "refund",
-        limit,
-        starting_after
+        limit
       });
       transactions = result.data.map(txn => formatIssuingTransaction(txn, "refunds"));
-      hasMore = result.has_more;
+      hasMore = false;
 
     } else if (type === "deposit") {
-      // Only deposits (inbound transfers)
+      // Only deposits (inbound transfers + received credits)
       if (!financialAccountId) {
         throw new Error("Financial Account required for deposit transactions");
       }
-      const result = await exports.listInboundTransfers(financialAccountId, connectedAccountId, {
-        limit,
-        starting_after
-      });
-      transactions = result.data.map(txn => formatTreasuryTransaction(txn, "deposit"));
-      hasMore = result.has_more;
+      const [inboundTransfers, receivedCredits] = await Promise.all([
+        exports.listInboundTransfers(financialAccountId, connectedAccountId, {
+          limit: Math.ceil(limit / 2)
+        }),
+        exports.listReceivedCredits(financialAccountId, connectedAccountId, {
+          limit: Math.ceil(limit / 2)
+        })
+      ]);
+
+      const allDeposits = [
+        ...inboundTransfers.data.map(txn => formatTreasuryTransaction(txn, "deposit")),
+        ...receivedCredits.data.map(txn => formatTreasuryTransaction(txn, "deposit"))
+      ];
+
+      // Sort by created date (descending) and limit
+      transactions = allDeposits.sort((a, b) => b.created - a.created).slice(0, limit);
+      hasMore = false;
 
     } else if (type === "send") {
-      // Only sends (outbound transfers + payments)
+      // Only sends (outbound transfers + payments + received debits)
       if (!financialAccountId) {
         throw new Error("Financial Account required for send transactions");
       }
-      const [transfers, payments] = await Promise.all([
+      const [outboundTransfers, outboundPayments, receivedDebits] = await Promise.all([
         exports.listOutboundTransfers(financialAccountId, connectedAccountId, {
-          limit: Math.ceil(limit / 2),
-          starting_after
+          limit: Math.ceil(limit / 3)
         }),
         exports.listOutboundPayments(financialAccountId, connectedAccountId, {
-          limit: Math.ceil(limit / 2),
-          starting_after
+          limit: Math.ceil(limit / 3)
+        }),
+        exports.listReceivedDebits(financialAccountId, connectedAccountId, {
+          limit: Math.ceil(limit / 3)
         })
       ]);
 
       const allSends = [
-        ...transfers.data.map(txn => formatTreasuryTransaction(txn, "send")),
-        ...payments.data.map(txn => formatTreasuryTransaction(txn, "send"))
+        ...outboundTransfers.data.map(txn => formatTreasuryTransaction(txn, "send")),
+        ...outboundPayments.data.map(txn => formatTreasuryTransaction(txn, "send")),
+        ...receivedDebits.data.map(txn => formatTreasuryTransaction(txn, "send"))
       ];
 
       // Sort by created date (descending) and limit
       transactions = allSends.sort((a, b) => b.created - a.created).slice(0, limit);
-      hasMore = transfers.has_more || payments.has_more;
+      hasMore = false;
 
     } else {
       // No filter - fetch all types and merge
-      const [issuing, inbound, outbound, payments] = await Promise.all([
+      const [issuing, inbound, outbound, payments, receivedCredits, receivedDebits] = await Promise.all([
         exports.listIssuingTransactions(connectedAccountId, { limit }),
         financialAccountId ? exports.listInboundTransfers(financialAccountId, connectedAccountId, { limit }) : { data: [] },
         financialAccountId ? exports.listOutboundTransfers(financialAccountId, connectedAccountId, { limit }) : { data: [] },
-        financialAccountId ? exports.listOutboundPayments(financialAccountId, connectedAccountId, { limit }) : { data: [] }
+        financialAccountId ? exports.listOutboundPayments(financialAccountId, connectedAccountId, { limit }) : { data: [] },
+        financialAccountId ? exports.listReceivedCredits(financialAccountId, connectedAccountId, { limit }) : { data: [] },
+        financialAccountId ? exports.listReceivedDebits(financialAccountId, connectedAccountId, { limit }) : { data: [] }
       ]);
 
       const all = [
         ...issuing.data.map(txn => formatIssuingTransaction(txn, txn.type === "capture" ? "purchase" : "refunds")),
         ...inbound.data.map(txn => formatTreasuryTransaction(txn, "deposit")),
         ...outbound.data.map(txn => formatTreasuryTransaction(txn, "send")),
-        ...payments.data.map(txn => formatTreasuryTransaction(txn, "send"))
+        ...payments.data.map(txn => formatTreasuryTransaction(txn, "send")),
+        ...receivedCredits.data.map(txn => formatTreasuryTransaction(txn, "deposit")),
+        ...receivedDebits.data.map(txn => formatTreasuryTransaction(txn, "send"))
       ];
 
       // Sort by created date (descending) and limit
       transactions = all.sort((a, b) => b.created - a.created).slice(0, limit);
-      hasMore = issuing.has_more || inbound.has_more || outbound.has_more || payments.has_more;
+      hasMore = false;
     }
 
     return {

@@ -48,10 +48,10 @@ const io = initSocket(server);
 // Make io available to controllers
 app.set('io', io);
 
-// Conditional JSON parsing - exempt webhook route (needs raw body)
+// Conditional JSON parsing - exempt webhook routes (needs raw body)
 app.use((req, res, next) => {
-  if (req.path === '/api/payments/webhooks/stripe') {
-    next(); // Skip JSON parsing for webhook
+  if (req.path === '/api/payments/webhooks/stripe' || req.path === '/api/payments/webhook') {
+    next(); // Skip JSON parsing for webhooks
   } else {
     express.json()(req, res, next);
   }

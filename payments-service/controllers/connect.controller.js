@@ -871,6 +871,195 @@ exports.handleWebhook = async (req, res, next) => {
         }
         break;
 
+      // ==================== Issuing Authorization Events ====================
+
+      case "issuing_authorization.created":
+        {
+          const authorization = event.data.object;
+          console.log(`Issuing authorization created: ${authorization.id} for ${authorization.amount/100} ${authorization.currency.toUpperCase()} at ${authorization.merchant_data?.name || 'Unknown'}`);
+
+          // Log authorization details for audit trail
+          console.log(`Authorization status: ${authorization.approved ? 'APPROVED' : 'DECLINED'}`);
+          console.log(`Card: ${authorization.card.id} (last4: ${authorization.card.last4})`);
+          console.log(`Merchant: ${authorization.merchant_data?.name} (${authorization.merchant_data?.city}, ${authorization.merchant_data?.country})`);
+
+          // Future enhancement: Store authorization in separate model for detailed tracking
+        }
+        break;
+
+      case "issuing_authorization.updated":
+        {
+          const authorization = event.data.object;
+          console.log(`Issuing authorization updated: ${authorization.id} - Status: ${authorization.status}`);
+          console.log(`Authorization amount: ${authorization.amount/100} ${authorization.currency.toUpperCase()}`);
+
+          // Log status changes for monitoring
+          if (authorization.status === 'closed') {
+            console.log(`Authorization closed - transactions: ${authorization.transactions.length}`);
+          }
+        }
+        break;
+
+      // ==================== Issuing Transaction Events ====================
+
+      case "issuing_transaction.created":
+        {
+          const transaction = event.data.object;
+          const type = transaction.type === "capture" ? "PURCHASE" : "REFUND";
+          console.log(`Issuing transaction created: ${transaction.id} - ${type} ${transaction.amount/100} ${transaction.currency.toUpperCase()}`);
+          console.log(`Card: ${transaction.card} | Merchant: ${transaction.merchant_data?.name || 'Unknown'}`);
+
+          // Transaction is already tracked via Issuing API in transactions endpoint
+          // This webhook provides real-time notification
+        }
+        break;
+
+      case "issuing_transaction.updated":
+        {
+          const transaction = event.data.object;
+          console.log(`Issuing transaction updated: ${transaction.id} - Amount: ${transaction.amount/100} ${transaction.currency.toUpperCase()}`);
+
+          // Log transaction updates for monitoring
+          if (transaction.dispute) {
+            console.log(`Transaction disputed: ${transaction.id}`);
+          }
+        }
+        break;
+
+      // ==================== Issuing Card Events ====================
+
+      case "issuing_card.updated":
+        {
+          const card = event.data.object;
+          console.log(`Issuing card updated: ${card.id} (last4: ${card.last4}) - Status: ${card.status}`);
+
+          // Sync card status with MongoDB
+          const { findCardByStripeId, updateCard } = require("../../models/paymentsIssuedCardModel");
+          const cardRecord = await findCardByStripeId(card.id);
+
+          if (cardRecord) {
+            await updateCard({ stripeCardId: card.id }, {
+              status: card.status,
+              cancellationReason: card.cancellation_reason || cardRecord.cancellationReason,
+              spendingControls: card.spending_controls || cardRecord.spendingControls,
+              updatedAt: new Date()
+            });
+            console.log(`Updated card record in database: ${card.id}`);
+          } else {
+            console.warn(`Card not found in database: ${card.id}`);
+          }
+        }
+        break;
+
+      // ==================== Issuing Cardholder Events ====================
+
+      case "issuing_cardholder.updated":
+        {
+          const cardholder = event.data.object;
+          console.log(`Issuing cardholder updated: ${cardholder.id} - Status: ${cardholder.status}`);
+
+          // Sync cardholder status with MongoDB
+          const { findCardholderByStripeId, updateCardholder } = require("../../models/paymentsCardholderModel");
+          const cardholderRecord = await findCardholderByStripeId(cardholder.id);
+
+          if (cardholderRecord) {
+            await updateCardholder({ stripeCardholderId: cardholder.id }, {
+              status: cardholder.status,
+              email: cardholder.email || cardholderRecord.email,
+              phoneNumber: cardholder.phone_number || cardholderRecord.phoneNumber,
+              billing: cardholder.billing || cardholderRecord.billing,
+              updatedAt: new Date()
+            });
+            console.log(`Updated cardholder record in database: ${cardholder.id}`);
+          } else {
+            console.warn(`Cardholder not found in database: ${cardholder.id}`);
+          }
+        }
+        break;
+
+      // ==================== Treasury Financial Account Events ====================
+
+      case "treasury.financial_account.updated":
+        {
+          const account = event.data.object;
+          console.log(`Treasury Financial Account updated: ${account.id} - Status: ${account.status}`);
+          console.log(`Balance: ${Object.entries(account.balance.cash).map(([curr, amt]) => `${amt/100} ${curr.toUpperCase()}`).join(', ')}`);
+
+          // Sync Financial Account balance and status with MongoDB
+          const { findFinancialAccountByStripeId, updateFinancialAccount } = require("../../models/paymentsFinancialAccountModel");
+          const faRecord = await findFinancialAccountByStripeId(account.id);
+
+          if (faRecord) {
+            await updateFinancialAccount({ stripeFinancialAccountId: account.id }, {
+              status: account.status,
+              'balance.cash': account.balance.cash,
+              'balance.inbound_pending': account.balance.inbound_pending,
+              'balance.outbound_pending': account.balance.outbound_pending,
+              updatedAt: new Date()
+            });
+            console.log(`Updated Financial Account balance in database: ${account.id}`);
+          } else {
+            console.warn(`Financial Account not found in database: ${account.id}`);
+          }
+        }
+        break;
+
+      case "treasury.financial_account.features_status_updated":
+        {
+          const account = event.data.object;
+          console.log(`Treasury Financial Account features updated: ${account.id}`);
+
+          // Log feature status changes
+          if (account.features) {
+            const activeFeatures = [];
+            if (account.features.card_issuing?.status === 'active') activeFeatures.push('card_issuing');
+            if (account.features.deposit_insurance?.status === 'active') activeFeatures.push('deposit_insurance');
+            if (account.features.financial_addresses?.aba?.status === 'active') activeFeatures.push('aba');
+            if (account.features.inbound_transfers?.ach?.status === 'active') activeFeatures.push('inbound_ach');
+            if (account.features.outbound_transfers?.ach?.status === 'active') activeFeatures.push('outbound_ach');
+            console.log(`Active features: ${activeFeatures.join(', ')}`);
+          }
+
+          // Sync features with MongoDB
+          const { findFinancialAccountByStripeId, updateFinancialAccount } = require("../../models/paymentsFinancialAccountModel");
+          const faRecord = await findFinancialAccountByStripeId(account.id);
+
+          if (faRecord) {
+            await updateFinancialAccount({ stripeFinancialAccountId: account.id }, {
+              features: account.features,
+              updatedAt: new Date()
+            });
+            console.log(`Updated Financial Account features in database: ${account.id}`);
+          }
+        }
+        break;
+
+      // ==================== Treasury Transaction Events ====================
+
+      case "treasury.received_credit.created":
+        {
+          const credit = event.data.object;
+          console.log(`Treasury received credit: ${credit.id} - ${credit.amount/100} ${credit.currency.toUpperCase()} via ${credit.network}`);
+          console.log(`Financial Account: ${credit.financial_account} | Status: ${credit.status}`);
+          console.log(`Description: ${credit.description || 'No description'}`);
+
+          // Credit is already tracked via Treasury API in transactions endpoint
+          // This webhook provides real-time notification for balance updates
+        }
+        break;
+
+      case "treasury.received_debit.created":
+        {
+          const debit = event.data.object;
+          console.log(`Treasury received debit: ${debit.id} - ${debit.amount/100} ${debit.currency.toUpperCase()} via ${debit.network}`);
+          console.log(`Financial Account: ${debit.financial_account} | Status: ${debit.status}`);
+          console.log(`Description: ${debit.description || 'No description'}`);
+
+          // Debit is already tracked via Treasury API in transactions endpoint
+          // This webhook provides real-time notification for balance updates
+        }
+        break;
+
       default:
         console.log(`Unhandled webhook event type: ${event.type}`);
     }

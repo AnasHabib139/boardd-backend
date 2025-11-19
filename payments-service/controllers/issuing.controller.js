@@ -738,13 +738,111 @@ exports.toggleCardFreeze = async (req, res, next) => {
 };
 
 /**
+ * Cancel an issued card (permanent action)
+ * POST /api/payments/issuing/cards/:cardId/cancel
+ */
+exports.cancelCard = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { cardId } = req.params;
+
+    // 1. Fetch user to get companyId
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const companyId = user.companyId;
+
+    // 2. Find the issued card for this company
+    const { findIssuedCardByCompany } = require("../../models/paymentsIssuedCardModel");
+    const cardRecord = await findIssuedCardByCompany(companyId);
+
+    if (!cardRecord) {
+      throw new Error("CARD_NOT_FOUND");
+    }
+
+    // 3. Verify the cardId matches
+    if (cardRecord.stripeCardId !== cardId) {
+      throw new Error("CARD_MISMATCH");
+    }
+
+    // 4. Check if card is already canceled
+    if (cardRecord.status === "canceled") {
+      throw new Error("CARD_ALREADY_CANCELED");
+    }
+
+    // 5. Find connected account
+    const { findAccountByCompany } = require("../../models/paymentsStripeAccountModel");
+    const accountRecord = await findAccountByCompany(companyId);
+
+    if (!accountRecord) {
+      throw new Error("STRIPE_ACCOUNT_NOT_FOUND");
+    }
+
+    const connectedAccountId = accountRecord.stripeAccountId;
+
+    // 6. Cancel the card via Stripe
+    const result = await issuingService.cancelCard(cardId, connectedAccountId);
+
+    // 7. Update local database
+    const { updateIssuedCard } = require("../../models/paymentsIssuedCardModel");
+    await updateIssuedCard(companyId, {
+      status: "canceled",
+      updatedAt: new Date()
+    });
+
+    return generateResponse(
+      result,
+      "Card canceled successfully. This action is permanent and cannot be undone.",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error canceling card:", error.message);
+
+    let message = "Failed to cancel card";
+    let statusCode = STATUS_CODES.BAD_REQUEST;
+
+    if (error.message === "USER_NOT_FOUND") {
+      message = "User not found";
+      statusCode = STATUS_CODES.UNAUTHORIZED;
+    } else if (error.message === "CARD_NOT_FOUND") {
+      message = "No card found for this company";
+      statusCode = STATUS_CODES.NOT_FOUND;
+    } else if (error.message === "CARD_MISMATCH") {
+      message = "Card ID does not match the card for this company";
+      statusCode = STATUS_CODES.FORBIDDEN;
+    } else if (error.message === "CARD_ALREADY_CANCELED") {
+      message = "Card is already canceled";
+      statusCode = STATUS_CODES.BAD_REQUEST;
+    } else if (error.message === "STRIPE_ACCOUNT_NOT_FOUND") {
+      message = "Stripe account not found for this company";
+      statusCode = STATUS_CODES.NOT_FOUND;
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      statusCode
+    );
+  }
+};
+
+/**
  * List transactions (purchase, refunds, deposit, send)
  * GET /api/payments/issuing/transactions
  */
 exports.listTransactions = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { type, limit, starting_after } = req.query;
+    const { type, limit } = req.query;
 
     // Fetch user to get companyId
     const { model } = require("mongoose");
@@ -779,14 +877,13 @@ exports.listTransactions = async (req, res, next) => {
       financialAccountId = financialAccount ? financialAccount.stripeFinancialAccountId : null;
     }
 
-    // Get unified transactions
+    // Get unified transactions (latest 100, no pagination)
     const result = await issuingService.getUnifiedTransactions(
       financialAccountId,
       connectedAccountId,
       {
         type,
-        limit: limit ? parseInt(limit) : 20,
-        starting_after
+        limit: Math.min(limit ? parseInt(limit) : 100, 100)
       }
     );
 

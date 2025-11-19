@@ -241,6 +241,24 @@ exports.validateToggleCardFreeze = (req, res, next) => {
   next();
 };
 
+// ==================== Cancel Card ====================
+
+// No body validation needed - cardId comes from URL params
+exports.validateCancelCard = (req, res, next) => {
+  const { cardId } = req.params;
+
+  if (!cardId || cardId.trim() === "") {
+    return generateResponse(
+      { error: "Card ID is required" },
+      "Card ID is required",
+      res,
+      STATUS_CODES.BAD_REQUEST
+    );
+  }
+
+  next();
+};
+
 // ==================== List Transactions ====================
 
 const listTransactionsSchema = Joi.object({
@@ -261,12 +279,6 @@ const listTransactionsSchema = Joi.object({
       "number.integer": "Limit must be an integer",
       "number.min": "Limit must be at least 1",
       "number.max": "Limit cannot exceed 100"
-    }),
-
-  starting_after: Joi.string()
-    .optional()
-    .messages({
-      "string.base": "starting_after must be a string"
     })
 });
 
