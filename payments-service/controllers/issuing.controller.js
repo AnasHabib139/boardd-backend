@@ -855,6 +855,26 @@ exports.listTransactions = async (req, res, next) => {
 
     const companyId = user.companyId;
 
+    // Check if any cards have been issued for this company
+    const { findCardsByCompany } = require("../../models/paymentsIssuedCardModel");
+    const cards = await findCardsByCompany(companyId);
+
+    if (cards.length === 0) {
+      // No cards issued yet - return user-friendly message
+      return generateResponse(
+        {
+          isIssued: false,
+          message: "Please issue a card first",
+          transactions: [],
+          hasMore: false,
+          count: 0
+        },
+        "No cards issued yet",
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+
     // Find connected account
     const accountRecord = await findAccountByCompany(companyId);
     if (!accountRecord) {
