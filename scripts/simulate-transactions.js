@@ -15,10 +15,21 @@ const Stripe = require("stripe");
 // ==================== CONFIGURATION ====================
 // Update these values with your test data
 const CONFIG = {
-  stripeSecretKey: process.env.STRIPE_SECRET_KEY,
-  connectedAccountId: "acct_1SPBd7DR0t5ATrK9",
-  issuedCardId: "ic_1SU8nHDR0t5ATrK9BKOWqj86",
-  financialAccountId: "fa_1SU7vODR0t5ATrK9PQNZM8Z1"
+  stripeSecretKey:
+    process.env.STRIPE_SECRET_KEY,
+  connectedAccountId: "acct_1SWLSVRg4n3bbRuZ",
+  issuedCardId: "ic_1SWMVsRg4n3bbRuZ0bSZvE5F",
+  financialAccountId: "fa_1SWLkHRg4n3bbRuZERiR2ElN",
+
+  // Card spending controls (must match card configuration)
+  // Update these to match your card's actual spending controls
+  cardSpendingControls: {
+    allowedMerchants: ["accounting_bookkeeping_services"],
+    spendingLimit: {
+      amount: 50000, // $500.00 in cents
+      interval: "monthly",
+    },
+  },
 };
 
 // Initialize Stripe
@@ -30,25 +41,25 @@ const results = {
   refund: null,
   deposit: null,
   send: null,
-  paymentMethod: null
+  paymentMethod: null,
 };
 
 // ==================== HELPER FUNCTIONS ====================
 
 function log(message, type = "info") {
   const colors = {
-    info: "\x1b[36m",    // Cyan
+    info: "\x1b[36m", // Cyan
     success: "\x1b[32m", // Green
-    error: "\x1b[31m",   // Red
+    error: "\x1b[31m", // Red
     warning: "\x1b[33m", // Yellow
-    reset: "\x1b[0m"
+    reset: "\x1b[0m",
   };
 
   const prefix = {
     info: "ℹ",
     success: "✓",
     error: "✗",
-    warning: "⚠"
+    warning: "⚠",
   };
 
   console.log(`${colors[type]}${prefix[type]} ${message}${colors.reset}`);
@@ -75,14 +86,17 @@ async function ensureFinancialAccountFeatures() {
     log("Current features retrieved");
 
     // Enable ABA if needed
-    if (!features.financial_addresses?.aba || features.financial_addresses.aba.status !== "active") {
+    if (
+      !features.financial_addresses?.aba ||
+      features.financial_addresses.aba.status !== "active"
+    ) {
       log("Enabling financial_addresses.aba feature...", "warning");
       await stripe.treasury.financialAccounts.updateFeatures(
         CONFIG.financialAccountId,
         {
-          "financial_addresses": {
-            "aba": { "requested": true }
-          }
+          financial_addresses: {
+            aba: { requested: true },
+          },
         },
         { stripeAccount: CONFIG.connectedAccountId }
       );
@@ -92,14 +106,17 @@ async function ensureFinancialAccountFeatures() {
     }
 
     // Enable outbound transfers if needed
-    if (!features.outbound_transfers?.ach || features.outbound_transfers.ach.status !== "active") {
+    if (
+      !features.outbound_transfers?.ach ||
+      features.outbound_transfers.ach.status !== "active"
+    ) {
       log("Enabling outbound_transfers.ach feature...", "warning");
       await stripe.treasury.financialAccounts.updateFeatures(
         CONFIG.financialAccountId,
         {
-          "outbound_transfers": {
-            "ach": { "requested": true }
-          }
+          outbound_transfers: {
+            ach: { requested: true },
+          },
         },
         { stripeAccount: CONFIG.connectedAccountId }
       );
@@ -107,7 +124,6 @@ async function ensureFinancialAccountFeatures() {
     } else {
       log("Outbound transfers already active", "success");
     }
-
   } catch (error) {
     log(`Error setting up features: ${error.message}`, "error");
     throw error;
@@ -126,11 +142,11 @@ async function createPaymentMethod() {
         us_bank_account: {
           account_holder_type: "individual",
           account_number: "000123456789",
-          routing_number: "110000000"
+          routing_number: "110000000",
         },
         billing_details: {
-          name: "Test User"
-        }
+          name: "Test User",
+        },
       },
       { stripeAccount: CONFIG.connectedAccountId }
     );
@@ -138,7 +154,6 @@ async function createPaymentMethod() {
     results.paymentMethod = paymentMethod.id;
     log(`PaymentMethod created: ${paymentMethod.id}`, "success");
     return paymentMethod.id;
-
   } catch (error) {
     log(`Error creating payment method: ${error.message}`, "error");
     throw error;
@@ -146,28 +161,44 @@ async function createPaymentMethod() {
 }
 
 async function simulatePurchase(paymentMethodId) {
-  section("Step 2: Simulating Purchase Transaction");
+  section("Step 3: Simulating Purchase Transaction");
 
   try {
     // Create a test purchase authorization
-    const authorization = await stripe.testHelpers.issuing.authorizations.create(
-      {
-        amount: 5000, // $50.00
-        currency: "usd",
-        card: CONFIG.issuedCardId,
-        merchant_data: {
-          category: "taxicabs_limousines",
-          city: "San Francisco",
-          country: "US",
-          name: "Rocket Rides",
-          network_id: "1234567890",
-          postal_code: "94107"
-        }
-      },
-      { stripeAccount: CONFIG.connectedAccountId }
-    );
+    // Using allowed merchant category from CONFIG.cardSpendingControls
+    const authorization =
+      await stripe.testHelpers.issuing.authorizations.create(
+        {
+          amount: 5000, // $50.00 (under the $500 spending limit)
+          currency: "usd",
+          card: CONFIG.issuedCardId,
+          merchant_data: {
+            category: CONFIG.cardSpendingControls.allowedMerchants[0], // Use allowed category
+            city: "San Francisco",
+            country: "US",
+            name: "QuickBooks Accounting",
+            network_id: "1234567890",
+            postal_code: "94107",
+          },
+        },
+        { stripeAccount: CONFIG.connectedAccountId }
+      );
 
     log(`Authorization created: ${authorization.id}`, "success");
+    log(`  Status: ${authorization.status}`, "info");
+    log(`  Approved: ${authorization.approved}`, "info");
+
+    // Check if authorization was declined
+    if (!authorization.approved || authorization.status !== "pending") {
+      log(`Authorization was declined!`, "error");
+      if (authorization.request_history && authorization.request_history.length > 0) {
+        const lastRequest = authorization.request_history[authorization.request_history.length - 1];
+        log(`  Decline reason: ${lastRequest.reason}`, "error");
+        log(`  Amount: ${lastRequest.amount}`, "info");
+        log(`  Merchant category: ${lastRequest.merchant_category}`, "info");
+      }
+      throw new Error(`Authorization declined: ${authorization.status} - Check card spending controls or status`);
+    }
 
     // Capture the authorization to create a transaction
     const captured = await stripe.testHelpers.issuing.authorizations.capture(
@@ -189,7 +220,6 @@ async function simulatePurchase(paymentMethodId) {
     log(`  Merchant: ${transaction.merchant_data?.name || "Unknown"}`, "info");
 
     return transaction.id;
-
   } catch (error) {
     log(`Error creating purchase: ${error.message}`, "error");
     throw error;
@@ -197,21 +227,22 @@ async function simulatePurchase(paymentMethodId) {
 }
 
 async function simulateRefund(purchaseTransactionId) {
-  section("Step 3: Simulating Refund Transaction");
+  section("Step 4: Simulating Refund Transaction");
 
   try {
     // Create a test refund
-    const refund = await stripe.testHelpers.issuing.transactions.createForceCapture(
-      {
-        amount: 5000, // Full refund of $50.00
-        currency: "usd",
-        card: CONFIG.issuedCardId,
-        purchase_details: {
-          reference: purchaseTransactionId
-        }
-      },
-      { stripeAccount: CONFIG.connectedAccountId }
-    );
+    const refund =
+      await stripe.testHelpers.issuing.transactions.createForceCapture(
+        {
+          amount: 5000, // Full refund of $50.00
+          currency: "usd",
+          card: CONFIG.issuedCardId,
+          purchase_details: {
+            reference: purchaseTransactionId,
+          },
+        },
+        { stripeAccount: CONFIG.connectedAccountId }
+      );
 
     // Refund it
     const refunded = await stripe.testHelpers.issuing.transactions.refund(
@@ -225,7 +256,6 @@ async function simulateRefund(purchaseTransactionId) {
     log(`  Amount: $${(refunded.amount / 100).toFixed(2)}`, "info");
 
     return refunded.id;
-
   } catch (error) {
     log(`Error creating refund: ${error.message}`, "error");
     throw error;
@@ -233,20 +263,21 @@ async function simulateRefund(purchaseTransactionId) {
 }
 
 async function simulateDeposit() {
-  section("Step 4: Simulating Deposit Transaction");
+  section("Step 2: Funding Account (Deposit)");
 
   try {
     // Create a received credit (incoming wire transfer)
-    const receivedCredit = await stripe.testHelpers.treasury.receivedCredits.create(
-      {
-        financial_account: CONFIG.financialAccountId,
-        amount: 50000, // $500.00
-        currency: "usd",
-        network: "us_domestic_wire",
-        description: "Test deposit"
-      },
-      { stripeAccount: CONFIG.connectedAccountId }
-    );
+    const receivedCredit =
+      await stripe.testHelpers.treasury.receivedCredits.create(
+        {
+          financial_account: CONFIG.financialAccountId,
+          amount: 50000, // $500.00
+          currency: "usd",
+          network: "us_domestic_wire",
+          description: "Test deposit",
+        },
+        { stripeAccount: CONFIG.connectedAccountId }
+      );
 
     results.deposit = receivedCredit.id;
 
@@ -256,7 +287,6 @@ async function simulateDeposit() {
     log(`  Status: ${receivedCredit.status}`, "info");
 
     return receivedCredit.id;
-
   } catch (error) {
     log(`Error creating deposit: ${error.message}`, "error");
     throw error;
@@ -268,16 +298,17 @@ async function simulateSend() {
 
   try {
     // Create a received debit (outgoing ACH debit)
-    const receivedDebit = await stripe.testHelpers.treasury.receivedDebits.create(
-      {
-        financial_account: CONFIG.financialAccountId,
-        amount: 10000, // $100.00
-        currency: "usd",
-        network: "ach",
-        description: "Test send"
-      },
-      { stripeAccount: CONFIG.connectedAccountId }
-    );
+    const receivedDebit =
+      await stripe.testHelpers.treasury.receivedDebits.create(
+        {
+          financial_account: CONFIG.financialAccountId,
+          amount: 10000, // $100.00
+          currency: "usd",
+          network: "ach",
+          description: "Test send",
+        },
+        { stripeAccount: CONFIG.connectedAccountId }
+      );
 
     results.send = receivedDebit.id;
 
@@ -287,7 +318,6 @@ async function simulateSend() {
     log(`  Status: ${receivedDebit.status}`, "info");
 
     return receivedDebit.id;
-
   } catch (error) {
     log(`Error creating send: ${error.message}`, "error");
     throw error;
@@ -302,11 +332,21 @@ function printSummary() {
   console.log("┌─────────────────────┬──────────────────────────────────────┐");
   console.log("│ Transaction Type    │ ID                                   │");
   console.log("├─────────────────────┼──────────────────────────────────────┤");
-  console.log(`│ PaymentMethod       │ ${results.paymentMethod || "Failed".padEnd(36)} │`);
-  console.log(`│ Purchase (capture)  │ ${results.purchase || "Failed".padEnd(36)} │`);
-  console.log(`│ Refund              │ ${results.refund || "Failed".padEnd(36)} │`);
-  console.log(`│ Deposit (credit)    │ ${results.deposit || "Failed".padEnd(36)} │`);
-  console.log(`│ Send (debit)        │ ${results.send || "Failed".padEnd(36)} │`);
+  console.log(
+    `│ PaymentMethod       │ ${results.paymentMethod || "Failed".padEnd(36)} │`
+  );
+  console.log(
+    `│ Purchase (capture)  │ ${results.purchase || "Failed".padEnd(36)} │`
+  );
+  console.log(
+    `│ Refund              │ ${results.refund || "Failed".padEnd(36)} │`
+  );
+  console.log(
+    `│ Deposit (credit)    │ ${results.deposit || "Failed".padEnd(36)} │`
+  );
+  console.log(
+    `│ Send (debit)        │ ${results.send || "Failed".padEnd(36)} │`
+  );
   console.log("└─────────────────────┴──────────────────────────────────────┘");
 
   console.log("\n" + "=".repeat(60));
@@ -333,21 +373,20 @@ async function main() {
     // Step 1: Create PaymentMethod
     const paymentMethodId = await createPaymentMethod();
 
-    // Step 2: Simulate Purchase
+    // Step 2: Fund the account first (deposit before spending)
+    await simulateDeposit();
+
+    // Step 3: Simulate Purchase (now account has funds)
     const purchaseId = await simulatePurchase(paymentMethodId);
 
-    // Step 3: Simulate Refund
+    // Step 4: Simulate Refund
     await simulateRefund(purchaseId);
-
-    // Step 4: Simulate Deposit
-    await simulateDeposit();
 
     // Step 5: Simulate Send
     await simulateSend();
 
     // Print summary
     printSummary();
-
   } catch (error) {
     console.log("\n");
     log("Simulation failed!", "error");

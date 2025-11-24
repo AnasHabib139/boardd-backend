@@ -54,19 +54,15 @@ exports.createConnectAccount = async (companyId, accountData, tosData) => {
       business_type: accountData.business_type,
       capabilities,
 
-      // Settings (always set for platform control + email delivery)
+      // Settings (always set for platform control)
       settings: {
         ...(accountData.settings || {}),
         payouts: {
           schedule: {
             interval: "manual", // Platform controls payouts
           },
-        },
-        // Required for invoice email delivery
-        dashboard: {
-          display_name: businessName || accountData.email || 'Business',
-          ...(accountData.settings?.dashboard || {})
         }
+        // Note: dashboard.display_name can only be set via account update, not creation
       },
     };
 

@@ -69,6 +69,7 @@ const {
   toggleCardFreeze,
   cancelCard,
   listTransactions,
+  getMerchants,
 } = require("../controllers/issuing.controller");
 
 const {
@@ -487,6 +488,18 @@ class PaymentsAPI {
       checkPermission("accessBilling"),
       validateListTransactions,
       listTransactions
+    );
+
+    /**
+     * GET /api/payments/issuing/merchants
+     * Get list of available merchants for spending controls
+     * Auth: None (public reference data)
+     * Query: ?search=keyword (optional)
+     * Returns: List of merchant codes and names
+     */
+    router.get(
+      "/issuing/merchants",
+      getMerchants
     );
 
     // ==================== Client Payment Routes ====================

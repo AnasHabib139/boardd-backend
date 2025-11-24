@@ -167,7 +167,20 @@ const createCardholderSchema = Joi.object({
     }).required()
   }).required().messages({
     "any.required": "Billing address is required"
-  })
+  }),
+
+  // Notification preferences (for future use)
+  notifications: Joi.object({
+    email: Joi.boolean().optional().default(true).messages({
+      "boolean.base": "Email notification must be a boolean"
+    }),
+    sms: Joi.boolean().optional().default(false).messages({
+      "boolean.base": "SMS notification must be a boolean"
+    }),
+    push: Joi.boolean().optional().default(false).messages({
+      "boolean.base": "Push notification must be a boolean"
+    })
+  }).optional()
 });
 
 exports.validateCreateCardholder = (req, res, next) => {
@@ -202,8 +215,146 @@ const issueCardSchema = Joi.object({
     .default("usd")
     .messages({
       "string.length": "Currency must be a 3-letter code (e.g., 'usd')"
+    }),
+
+  // Custom card name/label
+  customName: Joi.string()
+    .max(100)
+    .optional()
+    .messages({
+      "string.max": "Custom card name cannot exceed 100 characters"
+    }),
+
+  // Spending limit (single card-wide limit)
+  spendingLimit: Joi.object({
+    amount: Joi.number()
+      .integer()
+      .min(1)
+      .required()
+      .messages({
+        "number.base": "Spending limit amount must be a number",
+        "number.integer": "Spending limit amount must be an integer (in cents)",
+        "number.min": "Spending limit amount must be at least 1 cent",
+        "any.required": "Spending limit amount is required"
+      }),
+    interval: Joi.string()
+      .valid("per_authorization", "daily", "weekly", "monthly", "yearly", "all_time")
+      .required()
+      .messages({
+        "any.only": "Interval must be one of: per_authorization, daily, weekly, monthly, yearly, all_time",
+        "any.required": "Spending limit interval is required"
+      })
+  }).optional(),
+
+  // Merchant controls (mutually exclusive)
+  allowedMerchants: Joi.array()
+    .items(Joi.string())
+    .optional()
+    .messages({
+      "array.base": "Allowed merchants must be an array of strings"
+    }),
+
+  blockedMerchants: Joi.array()
+    .items(Joi.string())
+    .optional()
+    .messages({
+      "array.base": "Blocked merchants must be an array of strings"
+    }),
+
+  // International spending toggle
+  allowInternational: Joi.boolean()
+    .optional()
+    .default(true)
+    .messages({
+      "boolean.base": "Allow international must be a boolean"
+    }),
+
+  // Country controls (mutually exclusive)
+  allowedCountries: Joi.array()
+    .items(
+      Joi.string()
+        .length(2)
+        .uppercase()
+    )
+    .optional()
+    .messages({
+      "array.base": "Allowed countries must be an array",
+      "string.length": "Country codes must be 2-letter ISO codes (e.g., 'US')"
+    }),
+
+  blockedCountries: Joi.array()
+    .items(
+      Joi.string()
+        .length(2)
+        .uppercase()
+    )
+    .optional()
+    .messages({
+      "array.base": "Blocked countries must be an array",
+      "string.length": "Country codes must be 2-letter ISO codes (e.g., 'US')"
+    }),
+
+  // Department and accounting
+  department: Joi.string()
+    .max(100)
+    .optional()
+    .messages({
+      "string.max": "Department name cannot exceed 100 characters"
+    }),
+
+  costCenter: Joi.string()
+    .max(100)
+    .optional()
+    .messages({
+      "string.max": "Cost center code cannot exceed 100 characters"
+    }),
+
+  projectId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .optional()
+    .messages({
+      "string.pattern.base": "Project ID must be a valid MongoDB ObjectId"
+    }),
+
+  // Validity period
+  validFrom: Joi.date()
+    .iso()
+    .optional()
+    .messages({
+      "date.base": "Valid from must be a valid date",
+      "date.format": "Valid from must be in ISO 8601 format"
+    }),
+
+  validUntil: Joi.date()
+    .iso()
+    .greater(Joi.ref("validFrom"))
+    .optional()
+    .messages({
+      "date.base": "Valid until must be a valid date",
+      "date.format": "Valid until must be in ISO 8601 format",
+      "date.greater": "Valid until must be after valid from date"
     })
-});
+})
+  // Custom validation for mutually exclusive fields
+  .custom((value, helpers) => {
+    // Check allowed vs blocked merchants mutual exclusivity
+    if (value.allowedMerchants && value.allowedMerchants.length > 0 &&
+        value.blockedMerchants && value.blockedMerchants.length > 0) {
+      return helpers.error("object.xor", {
+        message: "Cannot specify both allowedMerchants and blockedMerchants - use one or the other"
+      });
+    }
+
+    // Check allowed vs blocked countries mutual exclusivity
+    if (value.allowedCountries && value.allowedCountries.length > 0 &&
+        value.blockedCountries && value.blockedCountries.length > 0) {
+      return helpers.error("object.xor", {
+        message: "Cannot specify both allowedCountries and blockedCountries - use one or the other"
+      });
+    }
+
+    return value;
+  });
 
 exports.validateIssueCard = (req, res, next) => {
   const { error } = issueCardSchema.validate(req.body, {

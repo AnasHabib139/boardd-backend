@@ -93,6 +93,24 @@ const cardholderSchema = new Schema(
       default: "active"
     },
 
+    // ==================== Notification Preferences ====================
+
+    // Notification settings for transaction alerts
+    notificationPreferences: {
+      email: {
+        type: Boolean,
+        default: true
+      },
+      sms: {
+        type: Boolean,
+        default: false
+      },
+      push: {
+        type: Boolean,
+        default: false  // For future mobile app integration
+      }
+    },
+
     // ==================== Metadata ====================
 
     // Additional metadata from Stripe

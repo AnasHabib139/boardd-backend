@@ -135,6 +135,59 @@ const issuedCardSchema = new Schema(
     isFrozen: {
       type: Boolean,
       default: false
+    },
+
+    // ==================== Custom Card Settings ====================
+
+    // Custom card name/label (e.g., "Marketing Campaign Card")
+    customName: {
+      type: String,
+      maxlength: 100,
+      default: null
+    },
+
+    // ==================== Department & Accounting ====================
+
+    // Department assignment for accounting automation
+    department: {
+      type: String,
+      index: true,
+      default: null
+    },
+
+    // Cost center for expense tracking
+    costCenter: {
+      type: String,
+      index: true,
+      default: null
+    },
+
+    // Project assignment for project-based accounting
+    projectId: {
+      type: Schema.Types.ObjectId,
+      ref: "Project",
+      index: true,
+      default: null
+    },
+
+    // ==================== Validity Period ====================
+
+    // Start date for card validity (cards can be scheduled)
+    validFrom: {
+      type: Date,
+      default: null
+    },
+
+    // End date for card validity (auto-deactivation)
+    validUntil: {
+      type: Date,
+      default: null
+    },
+
+    // Whether this is a temporary card (auto-deactivates after validUntil)
+    isTemporary: {
+      type: Boolean,
+      default: false
     }
   },
   {

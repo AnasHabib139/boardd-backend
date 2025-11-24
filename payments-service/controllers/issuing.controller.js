@@ -17,6 +17,7 @@ const {
   createCard: createCardInDB,
   updateCardStatus
 } = require("../../models/paymentsIssuedCardModel");
+const { getAllMerchants, searchMerchants } = require("../constants/merchants");
 
 /**
  * Issuing Controller
@@ -232,7 +233,7 @@ exports.completeIssuingRequirements = async (req, res, next) => {
 exports.createCardholder = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { firstName, lastName, email, phoneNumber, userIp, billing } = req.body;
+    const { firstName, lastName, email, phoneNumber, userIp, billing, notifications } = req.body;
 
     // Get user IP from request if not provided in body
     const ipAddress = userIp || req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.connection.remoteAddress;
@@ -293,7 +294,12 @@ exports.createCardholder = async (req, res, next) => {
       email: cardholderResult.email,
       phoneNumber: cardholderResult.phoneNumber,
       billing: cardholderResult.billing,
-      status: cardholderResult.status
+      status: cardholderResult.status,
+      notificationPreferences: notifications || {
+        email: true,
+        sms: false,
+        push: false
+      }
     });
 
     return generateResponse(
@@ -440,7 +446,21 @@ exports.deleteCardholder = async (req, res, next) => {
 exports.issueCard = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { currency = "usd" } = req.body;
+    const {
+      currency = "usd",
+      customName,
+      spendingLimit,
+      allowedMerchants,
+      blockedMerchants,
+      allowInternational,
+      allowedCountries,
+      blockedCountries,
+      department,
+      costCenter,
+      projectId,
+      validFrom,
+      validUntil
+    } = req.body;
 
     // Fetch user to get companyId
     const { model } = require("mongoose");
@@ -480,17 +500,32 @@ exports.issueCard = async (req, res, next) => {
 
     const connectedAccountId = accountRecord.stripeAccountId;
 
-    // Issue card via Stripe
+    // Issue card via Stripe with all new parameters
     const cardResult = await issuingService.issueCard(
       connectedAccountId,
       cardholder.stripeCardholderId,
       {
         currency,
-        financialAccountId: financialAccount.stripeFinancialAccountId
+        financialAccountId: financialAccount.stripeFinancialAccountId,
+        customName,
+        spendingLimit,
+        allowedMerchants,
+        blockedMerchants,
+        allowInternational,
+        allowedCountries,
+        blockedCountries,
+        department,
+        costCenter,
+        projectId,
+        validFrom,
+        validUntil
       }
     );
 
-    // Save to database
+    // Determine if card is temporary
+    const isTemporary = !!validUntil;
+
+    // Save to database with all new fields
     await createCardInDB({
       cardholderId: cardholder._id,
       companyId,
@@ -501,7 +536,16 @@ exports.issueCard = async (req, res, next) => {
       expMonth: cardResult.expMonth,
       expYear: cardResult.expYear,
       type: cardResult.type,
-      status: cardResult.status
+      status: cardResult.status,
+      spendingControls: cardResult.spendingControls,
+      metadata: cardResult.metadata,
+      customName,
+      department,
+      costCenter,
+      projectId,
+      validFrom: validFrom ? new Date(validFrom) : null,
+      validUntil: validUntil ? new Date(validUntil) : null,
+      isTemporary
     });
 
     return generateResponse(
@@ -513,7 +557,13 @@ exports.issueCard = async (req, res, next) => {
         expYear: cardResult.expYear,
         currency: cardResult.currency,
         type: cardResult.type,
-        status: cardResult.status
+        status: cardResult.status,
+        customName,
+        spendingControls: cardResult.spendingControls,
+        department,
+        costCenter,
+        validFrom,
+        validUntil
       },
       "Card issued successfully",
       res,
@@ -940,6 +990,46 @@ exports.listTransactions = async (req, res, next) => {
       message,
       res,
       statusCode
+    );
+  }
+};
+
+// ==================== Merchants Reference Data ====================
+
+/**
+ * Get list of available merchants for spending controls
+ * GET /api/payments/issuing/merchants
+ */
+exports.getMerchants = async (req, res, next) => {
+  try {
+    const { search } = req.query;
+
+    let merchants;
+    if (search && search.trim()) {
+      // Search merchants by name/description
+      merchants = searchMerchants(search.trim());
+    } else {
+      // Return all merchants
+      merchants = getAllMerchants();
+    }
+
+    return generateResponse(
+      {
+        merchants,
+        count: merchants.length
+      },
+      "Merchants retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error getting merchants:", error);
+
+    return generateResponse(
+      { error: "Failed to retrieve merchants" },
+      "Failed to retrieve merchants",
+      res,
+      STATUS_CODES.INTERNAL_SERVER_ERROR
     );
   }
 };

@@ -248,28 +248,139 @@ exports.updateCardholderStatus = async (connectedAccountId, cardholderId, status
 // ==================== Card Management ====================
 
 /**
+ * Build spending controls object for Stripe
+ * @param {object} controlsData - Spending control parameters
+ * @returns {object} Stripe spending_controls object
+ */
+const buildSpendingControls = (controlsData) => {
+  const {
+    spendingLimit = null,
+    allowedMerchants = [],
+    blockedMerchants = [],
+    allowInternational = true,
+    allowedCountries = [],
+    blockedCountries = [],
+    currency = "usd"
+  } = controlsData;
+
+  const spendingControls = {};
+
+  // Add spending limit (single card-wide limit)
+  if (spendingLimit && spendingLimit.amount && spendingLimit.interval) {
+    spendingControls.spending_limits = [{
+      amount: spendingLimit.amount,
+      interval: spendingLimit.interval
+    }];
+  }
+
+  // Add merchant controls (mutually exclusive)
+  if (allowedMerchants && allowedMerchants.length > 0) {
+    spendingControls.allowed_categories = allowedMerchants;
+  } else if (blockedMerchants && blockedMerchants.length > 0) {
+    spendingControls.blocked_categories = blockedMerchants;
+  }
+
+  // Add country controls (mutually exclusive)
+  if (!allowInternational) {
+    // Block all international - only allow US (or default domestic country)
+    spendingControls.allowed_merchant_countries = ["US"];
+  } else if (allowedCountries && allowedCountries.length > 0) {
+    spendingControls.allowed_merchant_countries = allowedCountries;
+  } else if (blockedCountries && blockedCountries.length > 0) {
+    spendingControls.blocked_merchant_countries = blockedCountries;
+  }
+
+  // Only return if we have controls
+  return Object.keys(spendingControls).length > 0 ? spendingControls : null;
+};
+
+/**
  * Issue virtual card for cardholder
  * @param {string} connectedAccountId - Stripe connected account ID
  * @param {string} cardholderId - Stripe cardholder ID
  * @param {object} cardData - Card details
  * @param {string} cardData.currency - Card currency (default: "usd")
  * @param {string} cardData.financialAccountId - Financial Account ID (required for platforms)
+ * @param {string} cardData.customName - Custom card label
+ * @param {object} cardData.spendingLimit - Spending limit object with amount and interval
+ * @param {array} cardData.allowedMerchants - Allowed merchants (Stripe MCC codes)
+ * @param {array} cardData.blockedMerchants - Blocked merchants (Stripe MCC codes)
+ * @param {boolean} cardData.allowInternational - Allow international transactions
+ * @param {array} cardData.allowedCountries - Allowed country codes
+ * @param {array} cardData.blockedCountries - Blocked country codes
+ * @param {string} cardData.department - Department assignment
+ * @param {string} cardData.costCenter - Cost center code
+ * @param {string} cardData.projectId - Project ID
+ * @param {Date} cardData.validFrom - Start date for card validity
+ * @param {Date} cardData.validUntil - End date for card validity
  * @returns {object} Created card
  */
 exports.issueCard = async (connectedAccountId, cardholderId, cardData = {}) => {
   try {
-    const { currency = "usd", financialAccountId } = cardData;
+    const {
+      currency = "usd",
+      financialAccountId,
+      customName,
+      spendingLimit,
+      allowedMerchants,
+      blockedMerchants,
+      allowInternational,
+      allowedCountries,
+      blockedCountries,
+      department,
+      costCenter,
+      projectId,
+      validFrom,
+      validUntil
+    } = cardData;
+
+    // Build card payload
+    const cardPayload = {
+      cardholder: cardholderId,
+      currency,
+      type: "virtual",
+      status: "active",
+      financial_account: financialAccountId
+    };
+
+    // Add spending controls if provided
+    const spendingControls = buildSpendingControls({
+      spendingLimit,
+      allowedMerchants,
+      blockedMerchants,
+      allowInternational,
+      allowedCountries,
+      blockedCountries,
+      currency
+    });
+
+    if (spendingControls) {
+      cardPayload.spending_controls = spendingControls;
+    }
+
+    // Add custom expiration if validUntil provided
+    if (validUntil) {
+      const expiryDate = new Date(validUntil);
+      cardPayload.exp_month = expiryDate.getMonth() + 1;
+      cardPayload.exp_year = expiryDate.getFullYear();
+    }
+
+    // Build metadata for Stripe
+    const metadata = {};
+    if (customName) metadata.custom_name = customName;
+    if (department) metadata.department = department;
+    if (costCenter) metadata.cost_center = costCenter;
+    if (projectId) metadata.project_id = projectId;
+    if (validFrom) metadata.valid_from = new Date(validFrom).toISOString();
+    if (validUntil) metadata.valid_until = new Date(validUntil).toISOString();
+
+    if (Object.keys(metadata).length > 0) {
+      cardPayload.metadata = metadata;
+    }
 
     // Create virtual card
     const card = await stripe.issuing.cards.create(
-      {
-        cardholder: cardholderId,
-        currency,
-        type: "virtual",
-        status: "active",
-        financial_account: financialAccountId
-        // No spending_controls = unlimited spending
-      },
+      cardPayload,
       {
         stripeAccount: connectedAccountId
       }
@@ -284,7 +395,9 @@ exports.issueCard = async (connectedAccountId, cardholderId, cardData = {}) => {
       expYear: card.exp_year,
       currency: card.currency,
       type: card.type,
-      status: card.status
+      status: card.status,
+      spendingControls: card.spending_controls,
+      metadata: card.metadata
     };
   } catch (error) {
     console.error("Error issuing card:", error);
