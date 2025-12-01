@@ -6,6 +6,7 @@ const {
   FORM_STATUS,
   FORM_SHARING,
   FORM_TYPE,
+  TEMPLATE_CATEGORY,
 } = require("../utils/constants");
 const { STATUS_CODES } = require("../utils/constants");
 
@@ -92,6 +93,13 @@ const createFormSchema = Joi.object({
   title: Joi.string().required().trim().min(1).max(100),
   description: Joi.string().trim().max(500).allow("").default(""),
   type: Joi.string().trim().max(100).allow(""),
+  templateCategory: Joi.string()
+    .valid(...Object.values(TEMPLATE_CATEGORY))
+    .when("type", {
+      is: FORM_TYPE.TEMPLATE,
+      then: Joi.required(),
+      otherwise: Joi.optional(),
+    }),
   isFolder: Joi.boolean().default(false),
   tabId: Joi.string()
     .pattern(/^[0-9a-fA-F]{24}$/)
@@ -120,6 +128,7 @@ const updateFormSchema = Joi.object({
   title: Joi.string().trim().min(1).max(100),
   description: Joi.string().trim().max(500).allow(""),
   type: Joi.string().trim().max(100).allow(""),
+  templateCategory: Joi.string().valid(...Object.values(TEMPLATE_CATEGORY)),
   status: Joi.string().valid(...Object.values(FORM_STATUS)),
   fields: Joi.array().items(formFieldSchema),
   attachments: Joi.array().items(

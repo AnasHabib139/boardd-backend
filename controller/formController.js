@@ -1,7 +1,7 @@
 "use strict";
 
 const { parseBody, generateResponse, generateNextOrder } = require("../utils");
-const { STATUS_CODES, FORM_TYPE } = require("../utils/constants");
+const { STATUS_CODES, FORM_TYPE, TEMPLATE_CATEGORY } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
@@ -79,6 +79,7 @@ exports.createForm = async (req, res, next) => {
       title,
       description,
       type,
+      templateCategory,
       isFolder,
       tabId,
       channelId,
@@ -182,6 +183,7 @@ exports.createForm = async (req, res, next) => {
       title,
       description: description || "",
       type: type || FORM_TYPE.FORM,
+      templateCategory: templateCategory || undefined,
       isFolder: isFolder || false,
       tabId,
       channelId,
@@ -629,6 +631,21 @@ exports.getFormsByFolder = async (req, res, next) => {
       responseKey: "forms",
       sort: getSortOptions(sortBy),
     });
+
+    // If fetching templates, group by templateCategory
+    if (type === FORM_TYPE.TEMPLATE && result.forms) {
+      result.groupedByCategory = {
+        [TEMPLATE_CATEGORY.FORM]: result.forms.filter(
+          (f) => f.templateCategory === TEMPLATE_CATEGORY.FORM
+        ),
+        [TEMPLATE_CATEGORY.DOCUMENT]: result.forms.filter(
+          (f) => f.templateCategory === TEMPLATE_CATEGORY.DOCUMENT
+        ),
+        [TEMPLATE_CATEGORY.TASK]: result.forms.filter(
+          (f) => f.templateCategory === TEMPLATE_CATEGORY.TASK
+        ),
+      };
+    }
 
     return generateResponse(
       result,

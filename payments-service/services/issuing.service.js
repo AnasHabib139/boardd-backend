@@ -915,3 +915,171 @@ exports.createFinancialAccount = async (connectedAccountId, options = {}) => {
     throw new Error(error.message || "Failed to create Financial Account");
   }
 };
+
+// ==================== Banking Operations ====================
+
+/**
+ * Create payout from Connected Account to linked external bank
+ * @param {string} connectedAccountId - Stripe connected account ID
+ * @param {object} data - Payout details
+ * @param {number} data.amount - Amount in cents
+ * @param {string} data.description - Payout description (optional)
+ * @param {string} data.method - 'standard' (2-3 days) or 'instant' (minutes)
+ * @returns {object} Created payout
+ */
+exports.createPayout = async (connectedAccountId, data) => {
+  try {
+    const { amount, description, method = "standard" } = data;
+
+    const payout = await stripe.payouts.create(
+      {
+        amount,
+        currency: "usd",
+        description: description || "Payout to bank",
+        method // 'standard' or 'instant'
+      },
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    // Get destination bank info if available
+    let destination = null;
+    if (payout.destination) {
+      try {
+        const bankAccount = await stripe.accounts.retrieveExternalAccount(
+          connectedAccountId,
+          payout.destination
+        );
+        destination = {
+          last4: bankAccount.last4,
+          bank_name: bankAccount.bank_name,
+          routing_number: bankAccount.routing_number
+        };
+      } catch (err) {
+        // Bank details not retrievable, continue without them
+        console.log("Could not retrieve bank account details:", err.message);
+      }
+    }
+
+    return {
+      id: payout.id,
+      amount: payout.amount,
+      currency: payout.currency,
+      status: payout.status,
+      arrival_date: payout.arrival_date,
+      method: payout.method,
+      description: payout.description,
+      destination
+    };
+  } catch (error) {
+    console.error("Error creating payout:", error);
+    throw new Error(error.message || "Failed to create payout");
+  }
+};
+
+/**
+ * Fund card balance by transferring from Payments Balance to Issuing Balance
+ * Uses Stripe Balance Transfers API for instant internal transfers
+ * @param {string} connectedAccountId - Stripe connected account ID
+ * @param {object} data - Transfer details
+ * @param {number} data.amount - Amount in cents
+ * @param {string} data.description - Transfer description (optional)
+ * @returns {object} Created balance transfer
+ */
+exports.fundCardBalance = async (connectedAccountId, data) => {
+  try {
+    const { amount, description } = data;
+
+    // Use Balance Transfers API to move from Payments → Issuing balance
+    // This is instant - no bank transfer delays
+    const balanceTransfer = await stripe.balanceTransfers.create(
+      {
+        amount,
+        currency: "usd",
+        source_balance: { type: "payments" },
+        destination_balance: { type: "issuing" },
+        description: description || "Fund card balance"
+      },
+      {
+        stripeAccount: connectedAccountId
+      }
+    );
+
+    return {
+      id: balanceTransfer.id,
+      amount: balanceTransfer.amount,
+      currency: balanceTransfer.currency,
+      source_balance: balanceTransfer.source_balance,
+      destination_balance: balanceTransfer.destination_balance,
+      status: balanceTransfer.status,
+      created: balanceTransfer.created
+    };
+  } catch (error) {
+    console.error("Error funding card balance:", error);
+    throw new Error(error.message || "Failed to fund card balance");
+  }
+};
+
+/**
+ * Get balances for Connected Account and Financial Account
+ * @param {string} connectedAccountId - Stripe connected account ID
+ * @param {string} financialAccountId - Stripe Financial Account ID (optional)
+ * @returns {object} Account balances
+ */
+exports.getBalances = async (connectedAccountId, financialAccountId = null) => {
+  try {
+    // Get Connected Account Balance (Payments Balance)
+    const accountBalance = await stripe.balance.retrieve({
+      stripeAccount: connectedAccountId
+    });
+
+    // Get Financial Account Balance if ID provided
+    let financialAccountBalance = null;
+    if (financialAccountId) {
+      const fa = await stripe.treasury.financialAccounts.retrieve(
+        financialAccountId,
+        {},
+        {
+          stripeAccount: connectedAccountId
+        }
+      );
+      financialAccountBalance = fa.balance;
+    }
+
+    // Calculate totals
+    const paymentsAvailable = accountBalance.available
+      .filter(b => b.currency === "usd")
+      .reduce((sum, b) => sum + b.amount, 0);
+
+    const paymentsPending = accountBalance.pending
+      .filter(b => b.currency === "usd")
+      .reduce((sum, b) => sum + b.amount, 0);
+
+    // Get issuing balance from account balance
+    const issuingAvailable = (accountBalance.issuing?.available || [])
+      .filter(b => b.currency === "usd")
+      .reduce((sum, b) => sum + b.amount, 0);
+
+    const financialAccountCash = financialAccountBalance?.cash?.usd || 0;
+
+    return {
+      connectedAccountBalance: {
+        available: accountBalance.available,
+        pending: accountBalance.pending,
+        issuing: accountBalance.issuing || null
+      },
+      financialAccountBalance,
+      summary: {
+        paymentsAvailable,
+        paymentsPending,
+        issuingAvailable,
+        financialAccountCash,
+        totalAvailable: paymentsAvailable + issuingAvailable + financialAccountCash
+      }
+    };
+  } catch (error) {
+    console.error("Error getting balances:", error);
+    throw new Error(error.message || "Failed to get balances");
+  }
+};

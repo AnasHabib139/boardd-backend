@@ -1230,27 +1230,21 @@ exports.removeBrandingAsset = async (companyId, assetType) => {
 };
 
 /**
- * Get list of all Stripe-supported countries with specifications
- * @returns {object} List of country specs
+ * Get list of all Stripe-supported countries
+ * @returns {object} List of country codes
  */
 exports.getCountrySpecs = async () => {
   try {
     console.log("Fetching country specs from Stripe");
 
-    // Fetch all country specs from Stripe (max 100 per request)
-    const countrySpecs = await stripe.countrySpecs.list({
-      limit: 100,
-    });
+    // Use auto-pagination to get ALL countries
+    const allSpecs = [];
+    for await (const spec of stripe.countrySpecs.list({ limit: 100 })) {
+      allSpecs.push(spec);
+    }
 
-    // Format the response for frontend consumption
-    const countries = countrySpecs.data.map((spec) => ({
-      code: spec.id,
-      default_currency: spec.default_currency,
-      supported_payment_currencies: spec.supported_payment_currencies || [],
-      supported_payment_methods: spec.supported_payment_methods || [],
-      supported_bank_account_currencies: spec.supported_bank_account_currencies || {},
-      supported_transfer_countries: spec.supported_transfer_countries || [],
-    }));
+    // Return only country codes
+    const countries = allSpecs.map((spec) => spec.id);
 
     console.log(`Retrieved ${countries.length} country specs`);
 

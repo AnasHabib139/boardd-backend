@@ -1139,3 +1139,225 @@ exports.createFinancialAccount = async (req, res, next) => {
     );
   }
 };
+
+// ==================== Banking Operations ====================
+
+/**
+ * Create payout from Connected Account to linked external bank
+ * POST /api/payments/banking/payout
+ */
+exports.payout = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { amount, description, method } = req.body;
+
+    // Fetch user to get companyId
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const companyId = user.companyId;
+
+    // Find connected account for this company
+    const accountRecord = await findAccountByCompany(companyId);
+
+    if (!accountRecord) {
+      throw new Error("STRIPE_ACCOUNT_NOT_FOUND");
+    }
+
+    const connectedAccountId = accountRecord.stripeAccountId;
+
+    // Create payout via Stripe
+    const payoutResult = await issuingService.createPayout(
+      connectedAccountId,
+      { amount, description, method }
+    );
+
+    return generateResponse(
+      payoutResult,
+      "Payout initiated successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error creating payout:", error);
+
+    let message = "Failed to create payout";
+    let statusCode = STATUS_CODES.BAD_REQUEST;
+
+    if (error.message === "USER_NOT_FOUND") {
+      message = "User not found";
+      statusCode = STATUS_CODES.UNAUTHORIZED;
+    } else if (error.message === "STRIPE_ACCOUNT_NOT_FOUND") {
+      message = "Stripe account not found for this company. Please complete account setup first.";
+      statusCode = STATUS_CODES.NOT_FOUND;
+    } else if (error.message.includes("balance_insufficient") || error.message.includes("insufficient")) {
+      message = "Insufficient balance for this payout";
+      statusCode = STATUS_CODES.BAD_REQUEST;
+    } else if (error.message.includes("payout_not_allowed")) {
+      message = "Payouts are not enabled for this account";
+      statusCode = STATUS_CODES.BAD_REQUEST;
+    } else if (error.message.includes("account_invalid")) {
+      message = "Account not properly configured for payouts";
+      statusCode = STATUS_CODES.BAD_REQUEST;
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      statusCode
+    );
+  }
+};
+
+/**
+ * Fund card balance by transferring from Payments Balance to Issuing Balance
+ * POST /api/payments/banking/fund-card
+ */
+exports.fundCard = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { amount, description } = req.body;
+
+    // Fetch user to get companyId
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const companyId = user.companyId;
+
+    // Find connected account for this company
+    const accountRecord = await findAccountByCompany(companyId);
+
+    if (!accountRecord) {
+      throw new Error("STRIPE_ACCOUNT_NOT_FOUND");
+    }
+
+    const connectedAccountId = accountRecord.stripeAccountId;
+
+    // Fund card balance via Stripe Balance Transfers API
+    const transferResult = await issuingService.fundCardBalance(
+      connectedAccountId,
+      { amount, description }
+    );
+
+    return generateResponse(
+      transferResult,
+      "Card balance funded successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error funding card balance:", error);
+
+    let message = "Failed to fund card balance";
+    let statusCode = STATUS_CODES.BAD_REQUEST;
+
+    if (error.message === "USER_NOT_FOUND") {
+      message = "User not found";
+      statusCode = STATUS_CODES.UNAUTHORIZED;
+    } else if (error.message === "STRIPE_ACCOUNT_NOT_FOUND") {
+      message = "Stripe account not found for this company. Please complete account setup first.";
+      statusCode = STATUS_CODES.NOT_FOUND;
+    } else if (error.message.includes("balance_insufficient") || error.message.includes("insufficient")) {
+      message = "Insufficient balance for this transfer";
+      statusCode = STATUS_CODES.BAD_REQUEST;
+    } else if (error.message.includes("account_invalid")) {
+      message = "Account not properly configured";
+      statusCode = STATUS_CODES.BAD_REQUEST;
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      statusCode
+    );
+  }
+};
+
+/**
+ * Get account balances (Connected Account + Financial Account)
+ * GET /api/payments/banking/balance
+ */
+exports.getBalance = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    // Fetch user to get companyId
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const companyId = user.companyId;
+
+    // Find connected account for this company
+    const accountRecord = await findAccountByCompany(companyId);
+
+    if (!accountRecord) {
+      throw new Error("STRIPE_ACCOUNT_NOT_FOUND");
+    }
+
+    const connectedAccountId = accountRecord.stripeAccountId;
+
+    // Get Financial Account ID if exists
+    let financialAccountId = null;
+    const { findFinancialAccountByCompany } = require("../../models/paymentsFinancialAccountModel");
+    const financialAccount = await findFinancialAccountByCompany(companyId);
+    if (financialAccount) {
+      financialAccountId = financialAccount.stripeFinancialAccountId;
+    }
+
+    // Get balances from Stripe
+    const balances = await issuingService.getBalances(
+      connectedAccountId,
+      financialAccountId
+    );
+
+    return generateResponse(
+      balances,
+      "Balances retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error getting balances:", error);
+
+    let message = "Failed to get balances";
+    let statusCode = STATUS_CODES.BAD_REQUEST;
+
+    if (error.message === "USER_NOT_FOUND") {
+      message = "User not found";
+      statusCode = STATUS_CODES.UNAUTHORIZED;
+    } else if (error.message === "STRIPE_ACCOUNT_NOT_FOUND") {
+      message = "Stripe account not found for this company. Please complete account setup first.";
+      statusCode = STATUS_CODES.NOT_FOUND;
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      statusCode
+    );
+  }
+};

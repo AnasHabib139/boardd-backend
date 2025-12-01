@@ -235,6 +235,12 @@ exports.FORM_TYPE = Object.freeze({
   DOCUMENT: "document",
 });
 
+exports.TEMPLATE_CATEGORY = Object.freeze({
+  FORM: "form",
+  DOCUMENT: "document",
+  TASK: "task",
+});
+
 // Work Progress Contribution Constants
 exports.CONTRIBUTION_LEVELS = {
   NONE: { level: 0, min: 0, max: 0, name: "none" },

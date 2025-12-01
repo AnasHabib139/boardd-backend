@@ -9,6 +9,7 @@ const {
   FORM_STATUS,
   FORM_SHARING,
   FORM_TYPE,
+  TEMPLATE_CATEGORY,
 } = require("../utils/constants");
 
 // Form field validation schema
@@ -95,6 +96,11 @@ const formSchema = new Schema({
     enum: Object.values(FORM_TYPE),
     default: FORM_TYPE.FORM,
   },
+  // Template category for grouping templates (only used when type === 'template')
+  templateCategory: {
+    type: String,
+    enum: Object.values(TEMPLATE_CATEGORY),
+  },
   // Support both folder and channel context
   isFolder: { type: Boolean, default: false }, // true if created in folder context
   tabId: { type: Types.ObjectId, ref: "ChannelTab", required: false },
@@ -123,6 +129,7 @@ formSchema.index({ channelId: 1 });
 formSchema.index({ createdBy: 1 });
 formSchema.index({ status: 1 });
 formSchema.index({ type: 1 });
+formSchema.index({ templateCategory: 1 });
 formSchema.index({ isPrivate: 1 });
 
 // Register pagination plugins

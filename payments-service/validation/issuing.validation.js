@@ -452,3 +452,101 @@ exports.validateListTransactions = (req, res, next) => {
 
   next();
 };
+
+// ==================== Banking: Payout to Bank ====================
+
+const payoutSchema = Joi.object({
+  amount: Joi.number()
+    .integer()
+    .min(100)
+    .required()
+    .messages({
+      "number.base": "Amount must be a number",
+      "number.integer": "Amount must be an integer (in cents)",
+      "number.min": "Minimum payout is $1.00 (100 cents)",
+      "any.required": "Amount is required"
+    }),
+
+  description: Joi.string()
+    .max(255)
+    .optional()
+    .messages({
+      "string.max": "Description cannot exceed 255 characters"
+    }),
+
+  method: Joi.string()
+    .valid("standard", "instant")
+    .default("standard")
+    .messages({
+      "any.only": "Method must be either 'standard' or 'instant'"
+    })
+});
+
+exports.validatePayout = (req, res, next) => {
+  const { error } = payoutSchema.validate(req.body, { abortEarly: false });
+
+  if (error) {
+    const errors = error.details.map(detail => ({
+      field: detail.path.join("."),
+      message: detail.message
+    }));
+
+    return generateResponse(
+      { errors },
+      "Validation error",
+      res,
+      STATUS_CODES.BAD_REQUEST
+    );
+  }
+
+  next();
+};
+
+// ==================== Banking: Fund Card Balance ====================
+
+const fundCardSchema = Joi.object({
+  amount: Joi.number()
+    .integer()
+    .min(100)
+    .required()
+    .messages({
+      "number.base": "Amount must be a number",
+      "number.integer": "Amount must be an integer (in cents)",
+      "number.min": "Minimum transfer is $1.00 (100 cents)",
+      "any.required": "Amount is required"
+    }),
+
+  description: Joi.string()
+    .max(255)
+    .optional()
+    .messages({
+      "string.max": "Description cannot exceed 255 characters"
+    })
+});
+
+exports.validateFundCard = (req, res, next) => {
+  const { error } = fundCardSchema.validate(req.body, { abortEarly: false });
+
+  if (error) {
+    const errors = error.details.map(detail => ({
+      field: detail.path.join("."),
+      message: detail.message
+    }));
+
+    return generateResponse(
+      { errors },
+      "Validation error",
+      res,
+      STATUS_CODES.BAD_REQUEST
+    );
+  }
+
+  next();
+};
+
+// ==================== Banking: Get Balance ====================
+
+// No validation needed - fetches balances using authenticated user's company
+exports.validateGetBalance = (req, res, next) => {
+  next();
+};

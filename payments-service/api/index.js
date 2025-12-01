@@ -70,6 +70,9 @@ const {
   cancelCard,
   listTransactions,
   getMerchants,
+  payout,
+  fundCard,
+  getBalance,
 } = require("../controllers/issuing.controller");
 
 const {
@@ -91,6 +94,9 @@ const {
   validateToggleCardFreeze,
   validateCancelCard,
   validateListTransactions,
+  validatePayout,
+  validateFundCard,
+  validateGetBalance,
 } = require("../validation/issuing.validation");
 
 const {
@@ -500,6 +506,52 @@ class PaymentsAPI {
     router.get(
       "/issuing/merchants",
       getMerchants
+    );
+
+    // ==================== Banking Routes ====================
+
+    /**
+     * POST /api/payments/banking/payout
+     * Create payout from Connected Account to linked external bank
+     * Auth: Admin only
+     * Body: { amount, description?, method? }
+     * Returns: Payout details with status and arrival date
+     */
+    router.post(
+      "/banking/payout",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validatePayout,
+      payout
+    );
+
+    /**
+     * POST /api/payments/banking/fund-card
+     * Fund card balance by transferring from Payments Balance to Issuing Balance
+     * Auth: Admin only
+     * Body: { amount, description? }
+     * Returns: Balance transfer details
+     */
+    router.post(
+      "/banking/fund-card",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateFundCard,
+      fundCard
+    );
+
+    /**
+     * GET /api/payments/banking/balance
+     * Get account balances (Connected Account + Financial Account)
+     * Auth: Admin only
+     * Returns: Payments balance, issuing balance, financial account balance, totals
+     */
+    router.get(
+      "/banking/balance",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateGetBalance,
+      getBalance
     );
 
     // ==================== Client Payment Routes ====================
