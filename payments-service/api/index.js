@@ -73,6 +73,8 @@ const {
   payout,
   fundCard,
   getBalance,
+  getPayoutSettings,
+  updatePayoutSettings,
 } = require("../controllers/issuing.controller");
 
 const {
@@ -97,6 +99,8 @@ const {
   validatePayout,
   validateFundCard,
   validateGetBalance,
+  validateGetPayoutSettings,
+  validateUpdatePayoutSettings,
 } = require("../validation/issuing.validation");
 
 const {
@@ -552,6 +556,35 @@ class PaymentsAPI {
       checkPermission("accessBilling"),
       validateGetBalance,
       getBalance
+    );
+
+    /**
+     * GET /api/payments/banking/payout-settings
+     * Get payout schedule and instant eligibility
+     * Auth: Admin only
+     * Returns: Current schedule settings and instant payout eligibility
+     */
+    router.get(
+      "/banking/payout-settings",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateGetPayoutSettings,
+      getPayoutSettings
+    );
+
+    /**
+     * PUT /api/payments/banking/payout-settings
+     * Update payout schedule (manual/daily/weekly/monthly)
+     * Auth: Admin only
+     * Body: { interval, delay_days?, weekly_anchor? }
+     * Returns: Updated schedule settings
+     */
+    router.put(
+      "/banking/payout-settings",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateUpdatePayoutSettings,
+      updatePayoutSettings
     );
 
     // ==================== Client Payment Routes ====================

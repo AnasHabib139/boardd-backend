@@ -1361,3 +1361,133 @@ exports.getBalance = async (req, res, next) => {
     );
   }
 };
+
+// ==================== Payout Settings ====================
+
+/**
+ * Get payout settings (schedule + instant eligibility)
+ * GET /api/payments/banking/payout-settings
+ */
+exports.getPayoutSettings = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    // Fetch user to get companyId
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const companyId = user.companyId;
+
+    // Find connected account for this company
+    const accountRecord = await findAccountByCompany(companyId);
+
+    if (!accountRecord) {
+      throw new Error("STRIPE_ACCOUNT_NOT_FOUND");
+    }
+
+    const connectedAccountId = accountRecord.stripeAccountId;
+
+    // Get payout settings from Stripe
+    const settings = await issuingService.getPayoutSettings(connectedAccountId);
+
+    return generateResponse(
+      settings,
+      "Payout settings retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error getting payout settings:", error);
+
+    let message = "Failed to get payout settings";
+    let statusCode = STATUS_CODES.BAD_REQUEST;
+
+    if (error.message === "USER_NOT_FOUND") {
+      message = "User not found";
+      statusCode = STATUS_CODES.UNAUTHORIZED;
+    } else if (error.message === "STRIPE_ACCOUNT_NOT_FOUND") {
+      message = "Stripe account not found for this company. Please complete account setup first.";
+      statusCode = STATUS_CODES.NOT_FOUND;
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      statusCode
+    );
+  }
+};
+
+/**
+ * Update payout schedule
+ * PUT /api/payments/banking/payout-settings
+ */
+exports.updatePayoutSettings = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { interval, delay_days, weekly_anchor } = req.body;
+
+    // Fetch user to get companyId
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const companyId = user.companyId;
+
+    // Find connected account for this company
+    const accountRecord = await findAccountByCompany(companyId);
+
+    if (!accountRecord) {
+      throw new Error("STRIPE_ACCOUNT_NOT_FOUND");
+    }
+
+    const connectedAccountId = accountRecord.stripeAccountId;
+
+    // Update payout schedule in Stripe
+    const settings = await issuingService.updatePayoutSchedule(
+      connectedAccountId,
+      { interval, delay_days, weekly_anchor }
+    );
+
+    return generateResponse(
+      settings,
+      "Payout settings updated successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error updating payout settings:", error);
+
+    let message = "Failed to update payout settings";
+    let statusCode = STATUS_CODES.BAD_REQUEST;
+
+    if (error.message === "USER_NOT_FOUND") {
+      message = "User not found";
+      statusCode = STATUS_CODES.UNAUTHORIZED;
+    } else if (error.message === "STRIPE_ACCOUNT_NOT_FOUND") {
+      message = "Stripe account not found for this company. Please complete account setup first.";
+      statusCode = STATUS_CODES.NOT_FOUND;
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      statusCode
+    );
+  }
+};

@@ -1022,64 +1022,140 @@ exports.fundCardBalance = async (connectedAccountId, data) => {
 };
 
 /**
- * Get balances for Connected Account and Financial Account
+ * Get balances for Connected Account with dashboard UI data
  * @param {string} connectedAccountId - Stripe connected account ID
  * @param {string} financialAccountId - Stripe Financial Account ID (optional)
- * @returns {object} Account balances
+ * @returns {object} Account balances formatted for dashboard UI
  */
 exports.getBalances = async (connectedAccountId, financialAccountId = null) => {
   try {
-    // Get Connected Account Balance (Payments Balance)
+    // 1. Get account details (for created date)
+    const account = await stripe.accounts.retrieve(connectedAccountId);
+    const sinceDate = new Date(account.created * 1000).toISOString().split("T")[0];
+
+    // 2. Get balance
     const accountBalance = await stripe.balance.retrieve({
       stripeAccount: connectedAccountId
     });
 
-    // Get Financial Account Balance if ID provided
-    let financialAccountBalance = null;
-    if (financialAccountId) {
-      const fa = await stripe.treasury.financialAccounts.retrieve(
-        financialAccountId,
-        {},
-        {
-          stripeAccount: connectedAccountId
-        }
-      );
-      financialAccountBalance = fa.balance;
-    }
+    // 3. Get pending transactions count
+    const pendingTransactions = await stripe.balanceTransactions.list(
+      { limit: 100 },
+      { stripeAccount: connectedAccountId }
+    );
 
-    // Calculate totals
-    const paymentsAvailable = accountBalance.available
+    // 4. Get external bank account
+    const externalAccounts = await stripe.accounts.listExternalAccounts(
+      connectedAccountId,
+      { object: "bank_account", limit: 1 }
+    );
+
+    // Calculate values
+    const available = accountBalance.available
       .filter(b => b.currency === "usd")
       .reduce((sum, b) => sum + b.amount, 0);
 
-    const paymentsPending = accountBalance.pending
+    const pending = accountBalance.pending
       .filter(b => b.currency === "usd")
       .reduce((sum, b) => sum + b.amount, 0);
 
-    // Get issuing balance from account balance
-    const issuingAvailable = (accountBalance.issuing?.available || [])
-      .filter(b => b.currency === "usd")
-      .reduce((sum, b) => sum + b.amount, 0);
+    const total = available + pending;
+    const availablePercentage = total > 0 ? Math.round((available / total) * 100) : 100;
 
-    const financialAccountCash = financialAccountBalance?.cash?.usd || 0;
+    // Count pending transactions
+    const pendingCount = pendingTransactions.data.filter(t => t.status === "pending").length;
+
+    // External bank
+    const bankAccount = externalAccounts.data[0] || null;
 
     return {
-      connectedAccountBalance: {
-        available: accountBalance.available,
-        pending: accountBalance.pending,
-        issuing: accountBalance.issuing || null
+      // Available Balance Card
+      availableBalance: {
+        amount: available,
+        percentage: availablePercentage,
+        sinceDate
       },
-      financialAccountBalance,
-      summary: {
-        paymentsAvailable,
-        paymentsPending,
-        issuingAvailable,
-        financialAccountCash,
-        totalAvailable: paymentsAvailable + issuingAvailable + financialAccountCash
-      }
+      // Incoming Transactions Card
+      incomingTransactions: {
+        count: pendingCount,
+        amount: pending
+      },
+      // Settled Balance Card (Available + Pending = Total received)
+      settledBalance: {
+        amount: total,
+        percentage: 100,
+        sinceDate
+      },
+      // External Bank Account
+      externalBankAccount: bankAccount ? {
+        id: bankAccount.id,
+        last4: bankAccount.last4,
+        bankName: bankAccount.bank_name,
+        routingNumber: bankAccount.routing_number,
+        accountHolderName: bankAccount.account_holder_name,
+        currency: bankAccount.currency
+      } : null
     };
   } catch (error) {
     console.error("Error getting balances:", error);
     throw new Error(error.message || "Failed to get balances");
+  }
+};
+
+/**
+ * Get payout settings for Connected Account
+ * @param {string} connectedAccountId - Stripe connected account ID
+ * @returns {object} Payout schedule and instant eligibility
+ */
+exports.getPayoutSettings = async (connectedAccountId) => {
+  try {
+    const account = await stripe.accounts.retrieve(connectedAccountId);
+
+    return {
+      schedule: account.settings?.payouts?.schedule || { interval: "manual" },
+      instantPayouts: {
+        eligible: account.capabilities?.instant_payouts === "active",
+        fee_percent: 1.5
+      }
+    };
+  } catch (error) {
+    console.error("Error getting payout settings:", error);
+    throw new Error(error.message || "Failed to get payout settings");
+  }
+};
+
+/**
+ * Update payout schedule for Connected Account
+ * @param {string} connectedAccountId - Stripe connected account ID
+ * @param {object} scheduleData - Schedule configuration
+ * @param {string} scheduleData.interval - 'manual' | 'daily' | 'weekly' | 'monthly'
+ * @param {number} scheduleData.delay_days - Days to hold before payout (1-14)
+ * @param {string} scheduleData.weekly_anchor - Day of week if weekly
+ * @returns {object} Updated schedule
+ */
+exports.updatePayoutSchedule = async (connectedAccountId, scheduleData) => {
+  try {
+    const { interval, delay_days, weekly_anchor } = scheduleData;
+
+    const schedule = { interval };
+    if (delay_days !== undefined) schedule.delay_days = delay_days;
+    if (weekly_anchor && interval === "weekly") schedule.weekly_anchor = weekly_anchor;
+
+    const account = await stripe.accounts.update(connectedAccountId, {
+      settings: {
+        payouts: { schedule }
+      }
+    });
+
+    return {
+      schedule: account.settings.payouts.schedule,
+      instantPayouts: {
+        eligible: account.capabilities?.instant_payouts === "active",
+        fee_percent: 1.5
+      }
+    };
+  } catch (error) {
+    console.error("Error updating payout schedule:", error);
+    throw new Error(error.message || "Failed to update payout schedule");
   }
 };

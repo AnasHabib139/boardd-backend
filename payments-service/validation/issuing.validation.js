@@ -550,3 +550,59 @@ exports.validateFundCard = (req, res, next) => {
 exports.validateGetBalance = (req, res, next) => {
   next();
 };
+
+// ==================== Banking: Payout Settings ====================
+
+// No validation needed for GET
+exports.validateGetPayoutSettings = (req, res, next) => {
+  next();
+};
+
+const updatePayoutSettingsSchema = Joi.object({
+  interval: Joi.string()
+    .valid("manual", "daily", "weekly", "monthly")
+    .required()
+    .messages({
+      "any.only": "Interval must be one of: manual, daily, weekly, monthly",
+      "any.required": "Interval is required"
+    }),
+
+  delay_days: Joi.number()
+    .integer()
+    .min(1)
+    .max(14)
+    .optional()
+    .messages({
+      "number.base": "Delay days must be a number",
+      "number.integer": "Delay days must be an integer",
+      "number.min": "Delay days must be at least 1",
+      "number.max": "Delay days cannot exceed 14"
+    }),
+
+  weekly_anchor: Joi.string()
+    .valid("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+    .optional()
+    .messages({
+      "any.only": "Weekly anchor must be a valid day of the week"
+    })
+});
+
+exports.validateUpdatePayoutSettings = (req, res, next) => {
+  const { error } = updatePayoutSettingsSchema.validate(req.body, { abortEarly: false });
+
+  if (error) {
+    const errors = error.details.map(detail => ({
+      field: detail.path.join("."),
+      message: detail.message
+    }));
+
+    return generateResponse(
+      { errors },
+      "Validation error",
+      res,
+      STATUS_CODES.BAD_REQUEST
+    );
+  }
+
+  next();
+};
