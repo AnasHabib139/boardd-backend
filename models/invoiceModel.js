@@ -160,6 +160,13 @@ const invoiceSchema = new Schema({
   // Line items count (for quick display, full items stored in Stripe)
   lineItemsCount: { type: Number, default: 0 },
 
+  // ==================== Custom Labels ====================
+
+  labels: {
+    type: [String],
+    default: []
+  },
+
   // ==================== Payment Attempt Tracking ====================
 
   // Whether a payment attempt was made (customer clicked "Pay Now")
@@ -194,6 +201,7 @@ invoiceSchema.index({ invoiceType: 1, status: 1 });
 invoiceSchema.index({ 'recurring.nextBillingDate': 1 }); // For finding upcoming renewals
 invoiceSchema.index({ tabId: 1, attempted: 1 }); // For transaction queries
 invoiceSchema.index({ clientId: 1, attempted: 1 }); // For transaction queries
+invoiceSchema.index({ companyId: 1, attempted: 1, createdAt: -1 }); // For company-wide transaction queries
 
 // Register pagination plugins
 invoiceSchema.plugin(mongoosePaginate);
@@ -474,6 +482,106 @@ exports.countTransactionsByTab = async (tabId, status = null) => {
   }
 
   return InvoiceModel.countDocuments(query);
+};
+
+/**
+ * Find transactions (attempted invoices) by company - for company-wide dashboard
+ */
+exports.findTransactionsByCompany = async (companyId, options = {}) => {
+  const { status, limit = 100, skip = 0, startDate, endDate, search } = options;
+
+  const query = {
+    companyId,
+    attempted: true
+  };
+
+  if (status && status !== "all") {
+    query.status = status;
+  }
+
+  if (startDate || endDate) {
+    query.createdAt = {};
+    if (startDate) query.createdAt.$gte = new Date(startDate);
+    if (endDate) query.createdAt.$lte = new Date(endDate);
+  }
+
+  // Search across text fields and amount
+  if (search) {
+    const searchRegex = { $regex: search, $options: "i" };
+    const searchConditions = [
+      { invoiceNumber: searchRegex },
+      { "billTo.name": searchRegex },
+      { "billTo.email": searchRegex },
+      { labels: searchRegex }
+    ];
+    // If numeric, also match amount (convert to cents)
+    const numericValue = parseFloat(search);
+    if (!isNaN(numericValue)) {
+      const amountInCents = Math.round(numericValue * 100);
+      searchConditions.push({ amountPaid: amountInCents });
+    }
+    query.$or = searchConditions;
+  }
+
+  return InvoiceModel.find(query)
+    .populate("tabId", "name")
+    .populate("clientId", "businessName")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .exec();
+};
+
+/**
+ * Count transactions (attempted invoices) by company
+ */
+exports.countTransactionsByCompany = async (companyId, options = {}) => {
+  const { status, startDate, endDate, search } = options;
+
+  const query = {
+    companyId,
+    attempted: true
+  };
+
+  if (status && status !== "all") {
+    query.status = status;
+  }
+
+  if (startDate || endDate) {
+    query.createdAt = {};
+    if (startDate) query.createdAt.$gte = new Date(startDate);
+    if (endDate) query.createdAt.$lte = new Date(endDate);
+  }
+
+  // Search across text fields and amount
+  if (search) {
+    const searchRegex = { $regex: search, $options: "i" };
+    const searchConditions = [
+      { invoiceNumber: searchRegex },
+      { "billTo.name": searchRegex },
+      { "billTo.email": searchRegex },
+      { labels: searchRegex }
+    ];
+    const numericValue = parseFloat(search);
+    if (!isNaN(numericValue)) {
+      const amountInCents = Math.round(numericValue * 100);
+      searchConditions.push({ amountPaid: amountInCents });
+    }
+    query.$or = searchConditions;
+  }
+
+  return InvoiceModel.countDocuments(query);
+};
+
+/**
+ * Update invoice labels
+ */
+exports.updateInvoiceLabels = async (invoiceId, labels) => {
+  return InvoiceModel.findByIdAndUpdate(
+    invoiceId,
+    { $set: { labels } },
+    { new: true }
+  );
 };
 
 // Export the model

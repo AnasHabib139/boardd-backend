@@ -1,6 +1,10 @@
 "use strict";
 
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const {
+  createBankingTransaction,
+  updateBankingTransaction
+} = require("../../models/paymentsBankingTransactionModel");
 
 /**
  * Stripe Issuing Service
@@ -921,13 +925,14 @@ exports.createFinancialAccount = async (connectedAccountId, options = {}) => {
 /**
  * Create payout from Connected Account to linked external bank
  * @param {string} connectedAccountId - Stripe connected account ID
+ * @param {string} companyId - Company MongoDB ID (for local storage)
  * @param {object} data - Payout details
  * @param {number} data.amount - Amount in cents
  * @param {string} data.description - Payout description (optional)
  * @param {string} data.method - 'standard' (2-3 days) or 'instant' (minutes)
  * @returns {object} Created payout
  */
-exports.createPayout = async (connectedAccountId, data) => {
+exports.createPayout = async (connectedAccountId, companyId, data) => {
   try {
     const { amount, description, method = "standard" } = data;
 
@@ -953,12 +958,34 @@ exports.createPayout = async (connectedAccountId, data) => {
         );
         destination = {
           last4: bankAccount.last4,
-          bank_name: bankAccount.bank_name,
-          routing_number: bankAccount.routing_number
+          bankName: bankAccount.bank_name,
+          routingNumber: bankAccount.routing_number
         };
       } catch (err) {
         // Bank details not retrievable, continue without them
         console.log("Could not retrieve bank account details:", err.message);
+      }
+    }
+
+    // Save transaction locally for company-wide transaction history
+    if (companyId) {
+      try {
+        await createBankingTransaction({
+          companyId,
+          stripeTransactionId: payout.id,
+          stripeAccountId: connectedAccountId,
+          type: "payout",
+          amount: payout.amount,
+          currency: payout.currency,
+          status: payout.status,
+          description: payout.description,
+          method: payout.method,
+          destination,
+          arrivalDate: payout.arrival_date ? new Date(payout.arrival_date * 1000) : null
+        });
+      } catch (dbErr) {
+        console.error("Error saving payout to local DB:", dbErr.message);
+        // Don't throw - payout was created successfully in Stripe
       }
     }
 
@@ -979,41 +1006,111 @@ exports.createPayout = async (connectedAccountId, data) => {
 };
 
 /**
- * Fund card balance by transferring from Payments Balance to Issuing Balance
- * Uses Stripe Balance Transfers API for instant internal transfers
+ * Fund card balance by transferring funds to the Financial Account (Issuing Balance)
+ * Uses Treasury receivedCredits test helper in test mode, raw API in production
+ * Note: Balance Transfers API is in private beta, so we use Treasury testHelpers for test mode
  * @param {string} connectedAccountId - Stripe connected account ID
+ * @param {string} companyId - Company MongoDB ID (for local storage)
  * @param {object} data - Transfer details
  * @param {number} data.amount - Amount in cents
  * @param {string} data.description - Transfer description (optional)
  * @returns {object} Created balance transfer
  */
-exports.fundCardBalance = async (connectedAccountId, data) => {
+exports.fundCardBalance = async (connectedAccountId, companyId, data) => {
   try {
     const { amount, description } = data;
 
-    // Use Balance Transfers API to move from Payments → Issuing balance
-    // This is instant - no bank transfer delays
-    const balanceTransfer = await stripe.balanceTransfers.create(
-      {
+    // Get Financial Account ID from database (required for Treasury operations)
+    const {
+      findFinancialAccountByCompany
+    } = require("../../models/paymentsFinancialAccountModel");
+    const faRecord = await findFinancialAccountByCompany(companyId);
+
+    if (!faRecord || !faRecord.stripeFinancialAccountId) {
+      throw new Error(
+        "Financial Account not found. Treasury must be enabled first."
+      );
+    }
+
+    const financialAccountId = faRecord.stripeFinancialAccountId;
+
+    let transfer;
+
+    // Check if we're in test mode
+    const isTestMode = process.env.STRIPE_SECRET_KEY?.startsWith("sk_test");
+
+    if (isTestMode) {
+      // Use Treasury test helper to simulate funding
+      // This is the same pattern used in scripts/simulate-transactions.js
+      const receivedCredit =
+        await stripe.testHelpers.treasury.receivedCredits.create(
+          {
+            financial_account: financialAccountId,
+            amount,
+            currency: "usd",
+            network: "us_domestic_wire",
+            description: description || "Fund card balance"
+          },
+          { stripeAccount: connectedAccountId }
+        );
+
+      transfer = {
+        id: receivedCredit.id,
+        amount: receivedCredit.amount,
+        currency: receivedCredit.currency,
+        source_balance: { type: "external" },
+        destination_balance: { type: "issuing" },
+        status: receivedCredit.status === "succeeded" ? "succeeded" : "pending",
+        created: receivedCredit.created
+      };
+    } else {
+      // Production: Use raw API request for beta Balance Transfers endpoint
+      // Note: This requires the account to have access to the Balance Transfer API beta
+      const response = await stripe.rawRequest("POST", "/v1/balance_transfers", {
         amount,
         currency: "usd",
-        source_balance: { type: "payments" },
-        destination_balance: { type: "issuing" },
-        description: description || "Fund card balance"
-      },
-      {
-        stripeAccount: connectedAccountId
+        "source_balance[type]": "payments",
+        "destination_balance[type]": "issuing"
+      }, { stripeAccount: connectedAccountId });
+
+      transfer = {
+        id: response.id,
+        amount: response.amount,
+        currency: response.currency,
+        source_balance: response.source_balance || { type: "payments" },
+        destination_balance: response.destination_balance || { type: "issuing" },
+        status: response.status || "succeeded",
+        created: response.created
+      };
+    }
+
+    // Save transaction locally for company-wide transaction history
+    if (companyId) {
+      try {
+        await createBankingTransaction({
+          companyId,
+          stripeTransactionId: transfer.id,
+          stripeAccountId: connectedAccountId,
+          type: "fund_card",
+          amount: transfer.amount,
+          currency: transfer.currency,
+          status: transfer.status,
+          description: description || "Fund card balance"
+        });
+      } catch (dbErr) {
+        console.error("Error saving fund-card transfer to local DB:", dbErr.message);
+        // Don't throw - transfer was created successfully in Stripe
       }
-    );
+    }
 
     return {
-      id: balanceTransfer.id,
-      amount: balanceTransfer.amount,
-      currency: balanceTransfer.currency,
-      source_balance: balanceTransfer.source_balance,
-      destination_balance: balanceTransfer.destination_balance,
-      status: balanceTransfer.status,
-      created: balanceTransfer.created
+      id: transfer.id,
+      amount: transfer.amount,
+      currency: transfer.currency,
+      source_balance: transfer.source_balance,
+      destination_balance: transfer.destination_balance,
+      status: transfer.status,
+      created: transfer.created
     };
   } catch (error) {
     console.error("Error funding card balance:", error);
@@ -1159,3 +1256,214 @@ exports.updatePayoutSchedule = async (connectedAccountId, scheduleData) => {
     throw new Error(error.message || "Failed to update payout schedule");
   }
 };
+
+// ==================== Company-Wide Transactions ====================
+
+/**
+ * Get all transactions for a company (invoices + banking transactions)
+ * @param {string} companyId - Company MongoDB ID
+ * @param {string} companyName - Company name (for recipient field)
+ * @param {object} options - Query options
+ * @param {string} options.type - Transaction type: 'invoice', 'payout', 'fund_card', 'all'
+ * @param {string} options.status - Status filter: 'paid', 'pending', 'failed', 'all'
+ * @param {number} options.limit - Max results (default: 20)
+ * @param {number} options.page - Page number (default: 1)
+ * @param {string} options.startDate - Start date filter (ISO)
+ * @param {string} options.endDate - End date filter (ISO)
+ * @returns {object} Unified transaction list with pagination
+ */
+exports.getAllCompanyTransactions = async (companyId, companyName, options = {}) => {
+  const {
+    type = "all",
+    status = "all",
+    limit = 20,
+    page = 1,
+    startDate,
+    endDate,
+    search
+  } = options;
+
+  const skip = (page - 1) * limit;
+  const queryOptions = { status, limit, skip, startDate, endDate, search };
+
+  // Import models lazily to avoid circular dependencies
+  const {
+    findTransactionsByCompany,
+    countTransactionsByCompany
+  } = require("../../models/invoiceModel");
+
+  const {
+    findBankingTransactionsByCompany,
+    countBankingTransactionsByCompany
+  } = require("../../models/paymentsBankingTransactionModel");
+
+  let invoiceTransactions = [];
+  let bankingTransactions = [];
+  let invoiceCount = 0;
+  let bankingCount = 0;
+
+  // Fetch based on type filter
+  if (type === "all" || type === "invoice") {
+    // Map status for invoices (paid = paid, pending = open)
+    const invoiceStatus = status === "pending" ? "open" : status;
+    const invoiceQueryOptions = { ...queryOptions, status: invoiceStatus };
+
+    const [invoices, count] = await Promise.all([
+      findTransactionsByCompany(companyId, invoiceQueryOptions),
+      countTransactionsByCompany(companyId, { status: invoiceStatus, startDate, endDate, search })
+    ]);
+
+    invoiceTransactions = invoices.map(inv => formatInvoiceTransaction(inv, companyName));
+    invoiceCount = count;
+  }
+
+  if (type === "all" || type === "payout" || type === "fund_card") {
+    const bankingType = type === "all" ? "all" : type;
+    // Map status for banking (paid = succeeded, pending = pending)
+    const bankingStatus = status === "paid" ? "succeeded" : status;
+    const bankingQueryOptions = { ...queryOptions, type: bankingType, status: bankingStatus };
+
+    const [banking, count] = await Promise.all([
+      findBankingTransactionsByCompany(companyId, bankingQueryOptions),
+      countBankingTransactionsByCompany(companyId, { type: bankingType, status: bankingStatus, startDate, endDate, search })
+    ]);
+
+    bankingTransactions = banking.map(txn => formatBankingTransactionForDashboard(txn, companyName));
+    bankingCount = count;
+  }
+
+  // Merge and sort by date
+  const allTransactions = [...invoiceTransactions, ...bankingTransactions]
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  // Apply pagination to merged results
+  const paginatedTransactions = allTransactions.slice(0, limit);
+  const total = invoiceCount + bankingCount;
+
+  return {
+    transactions: paginatedTransactions,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit)
+    }
+  };
+};
+
+/**
+ * Get all company transactions for CSV export (no pagination)
+ * @param {string} companyId - Company ID
+ * @param {string} companyName - Company name for display
+ * @param {object} options - Filter options
+ * @returns {array} All transactions matching filters
+ */
+exports.getAllCompanyTransactionsForExport = async (companyId, companyName, options = {}) => {
+  const {
+    type = "all",
+    status = "all",
+    startDate,
+    endDate,
+    search
+  } = options;
+
+  // High limit to get all transactions
+  const queryOptions = { status, limit: 10000, skip: 0, startDate, endDate, search };
+
+  const {
+    findTransactionsByCompany
+  } = require("../../models/invoiceModel");
+
+  const {
+    findBankingTransactionsByCompany
+  } = require("../../models/paymentsBankingTransactionModel");
+
+  let invoiceTransactions = [];
+  let bankingTransactions = [];
+
+  // Fetch based on type filter
+  if (type === "all" || type === "invoice") {
+    const invoiceStatus = status === "pending" ? "open" : status;
+    const invoiceQueryOptions = { ...queryOptions, status: invoiceStatus };
+    const invoices = await findTransactionsByCompany(companyId, invoiceQueryOptions);
+    invoiceTransactions = invoices.map(inv => formatInvoiceTransaction(inv, companyName));
+  }
+
+  if (type === "all" || type === "payout" || type === "fund_card") {
+    const bankingType = type === "all" ? "all" : type;
+    const bankingStatus = status === "paid" ? "succeeded" : status;
+    const bankingQueryOptions = { ...queryOptions, type: bankingType, status: bankingStatus };
+    const banking = await findBankingTransactionsByCompany(companyId, bankingQueryOptions);
+    bankingTransactions = banking.map(txn => formatBankingTransactionForDashboard(txn, companyName));
+  }
+
+  // Merge and sort by date
+  return [...invoiceTransactions, ...bankingTransactions]
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+};
+
+/**
+ * Format invoice transaction for unified response
+ */
+function formatInvoiceTransaction(invoice, companyName) {
+  // Determine status display
+  let displayStatus = "pending";
+  if (invoice.status === "paid") displayStatus = "settled";
+  else if (invoice.status === "void" || invoice.status === "uncollectible") displayStatus = "failed";
+
+  return {
+    id: invoice._id.toString(),
+    date: invoice.paidAt || invoice.createdAt,
+    amount: invoice.amountDue || 0,
+    currency: invoice.currency || "usd",
+    sender: invoice.billTo?.name || invoice.billTo?.email || "Unknown",
+    recipient: companyName,
+    type: "Invoice Payment", // Could be enhanced with payment method detection
+    status: displayStatus,
+    labels: invoice.labels || [],
+    source: "invoice",
+    metadata: {
+      invoiceNumber: invoice.invoiceNumber,
+      channelName: invoice.tabId?.name || null,
+      clientName: invoice.clientId?.businessName || null,
+      paymentIntentId: invoice.paymentIntentId
+    }
+  };
+}
+
+/**
+ * Format banking transaction for unified response
+ */
+function formatBankingTransactionForDashboard(txn, companyName) {
+  // Determine status display
+  let displayStatus = "pending";
+  if (txn.status === "paid" || txn.status === "succeeded") displayStatus = "settled";
+  else if (txn.status === "failed" || txn.status === "canceled") displayStatus = "failed";
+  else if (txn.status === "in_transit") displayStatus = "pending";
+
+  // Determine type display
+  let typeDisplay = "Bank Transfer";
+  if (txn.type === "fund_card") typeDisplay = "Card Funding";
+  else if (txn.method === "instant") typeDisplay = "Instant Transfer";
+
+  return {
+    id: txn._id.toString(),
+    date: txn.createdAt,
+    amount: txn.amount,
+    currency: txn.currency,
+    sender: companyName, // Company is sending money out
+    recipient: txn.type === "payout"
+      ? `Bank ****${txn.destination?.last4 || "****"}`
+      : "Virtual Card Balance",
+    type: typeDisplay,
+    status: displayStatus,
+    labels: txn.labels || [],
+    source: txn.type,
+    metadata: {
+      stripeId: txn.stripeTransactionId,
+      method: txn.method,
+      arrivalDate: txn.arrivalDate,
+      bankName: txn.destination?.bankName
+    }
+  };
+}

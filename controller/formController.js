@@ -415,13 +415,32 @@ exports.updateForm = async (req, res, next) => {
       });
     }
 
-    // Validate user has access
-    const tab = await findChannelTab({ _id: form.tabId });
-    if (!tab || !tab?.members?.includes(userId)) {
-      return next({
-        statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You don't have permission to update this form",
-      });
+    // Validate user has access based on form context
+    if (form.isFolder) {
+      // For folder forms, check if user is in same company as form creator
+      const user = await findUser({ _id: userId });
+      const formCreator = await findUser({ _id: form.createdBy });
+      if (
+        !user ||
+        !formCreator ||
+        !user.companyId ||
+        !formCreator.companyId ||
+        user.companyId.toString() !== formCreator.companyId.toString()
+      ) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You don't have permission to update this form",
+        });
+      }
+    } else {
+      // For channel forms, check tab membership
+      const tab = await findChannelTab({ _id: form.tabId });
+      if (!tab || !tab?.members?.includes(userId)) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You don't have permission to update this form",
+        });
+      }
     }
 
     // If updating fields, validate field names are unique

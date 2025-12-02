@@ -75,6 +75,9 @@ const {
   getBalance,
   getPayoutSettings,
   updatePayoutSettings,
+  getAllTransactions,
+  updateTransactionLabels,
+  exportTransactions,
 } = require("../controllers/issuing.controller");
 
 const {
@@ -101,6 +104,8 @@ const {
   validateGetBalance,
   validateGetPayoutSettings,
   validateUpdatePayoutSettings,
+  validateGetAllTransactions,
+  validateUpdateTransactionLabels,
 } = require("../validation/issuing.validation");
 
 const {
@@ -585,6 +590,50 @@ class PaymentsAPI {
       checkPermission("accessBilling"),
       validateUpdatePayoutSettings,
       updatePayoutSettings
+    );
+
+    /**
+     * GET /api/payments/banking/transactions
+     * Get all company transactions (invoices + banking)
+     * Auth: Admin only
+     * Query: type?, status?, limit?, page?, startDate?, endDate?
+     * Returns: Unified transaction list with pagination
+     */
+    router.get(
+      "/banking/transactions",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateGetAllTransactions,
+      getAllTransactions
+    );
+
+    /**
+     * GET /api/payments/banking/transactions/export
+     * Export all transactions as CSV
+     * Auth: Admin only
+     * Query: type?, status?, startDate?, endDate?, search?
+     * Returns: CSV file download
+     */
+    router.get(
+      "/banking/transactions/export",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      exportTransactions
+    );
+
+    /**
+     * PUT /api/payments/banking/transactions/:id/labels
+     * Update labels for a transaction
+     * Auth: Admin only
+     * Body: { labels: string[], source: 'invoice' | 'payout' | 'fund_card' }
+     * Returns: Updated transaction labels
+     */
+    router.put(
+      "/banking/transactions/:id/labels",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessBilling"),
+      validateUpdateTransactionLabels,
+      updateTransactionLabels
     );
 
     // ==================== Client Payment Routes ====================

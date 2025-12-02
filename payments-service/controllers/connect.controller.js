@@ -1060,6 +1060,60 @@ exports.handleWebhook = async (req, res, next) => {
         }
         break;
 
+      // ==================== Payout Events ====================
+
+      case "payout.paid":
+        {
+          const payout = event.data.object;
+          console.log(`Payout paid: ${payout.id} - ${payout.amount/100} ${payout.currency.toUpperCase()}`);
+
+          const { updateBankingTransaction } = require("../../models/paymentsBankingTransactionModel");
+
+          await updateBankingTransaction(
+            { stripeTransactionId: payout.id },
+            {
+              status: "paid",
+              arrivalDate: payout.arrival_date ? new Date(payout.arrival_date * 1000) : null
+            }
+          );
+          console.log(`Payout ${payout.id} marked as paid`);
+        }
+        break;
+
+      case "payout.failed":
+        {
+          const payout = event.data.object;
+          console.log(`Payout failed: ${payout.id} - Reason: ${payout.failure_message || payout.failure_code || 'Unknown'}`);
+
+          const { updateBankingTransaction } = require("../../models/paymentsBankingTransactionModel");
+
+          await updateBankingTransaction(
+            { stripeTransactionId: payout.id },
+            {
+              status: "failed",
+              failureCode: payout.failure_code,
+              failureMessage: payout.failure_message
+            }
+          );
+          console.log(`Payout ${payout.id} marked as failed`);
+        }
+        break;
+
+      case "payout.canceled":
+        {
+          const payout = event.data.object;
+          console.log(`Payout canceled: ${payout.id}`);
+
+          const { updateBankingTransaction } = require("../../models/paymentsBankingTransactionModel");
+
+          await updateBankingTransaction(
+            { stripeTransactionId: payout.id },
+            { status: "canceled" }
+          );
+          console.log(`Payout ${payout.id} marked as canceled`);
+        }
+        break;
+
       default:
         console.log(`Unhandled webhook event type: ${event.type}`);
     }

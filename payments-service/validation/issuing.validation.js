@@ -606,3 +606,140 @@ exports.validateUpdatePayoutSettings = (req, res, next) => {
 
   next();
 };
+
+// ==================== Company-Wide Transactions ====================
+
+const getAllTransactionsSchema = Joi.object({
+  type: Joi.string()
+    .valid("invoice", "payout", "fund_card", "all")
+    .optional()
+    .messages({
+      "any.only": "Type must be one of: invoice, payout, fund_card, all"
+    }),
+
+  status: Joi.string()
+    .valid("paid", "pending", "failed", "all")
+    .optional()
+    .messages({
+      "any.only": "Status must be one of: paid, pending, failed, all"
+    }),
+
+  limit: Joi.number()
+    .integer()
+    .min(1)
+    .max(100)
+    .optional()
+    .messages({
+      "number.base": "Limit must be a number",
+      "number.integer": "Limit must be an integer",
+      "number.min": "Limit must be at least 1",
+      "number.max": "Limit cannot exceed 100"
+    }),
+
+  page: Joi.number()
+    .integer()
+    .min(1)
+    .optional()
+    .messages({
+      "number.base": "Page must be a number",
+      "number.integer": "Page must be an integer",
+      "number.min": "Page must be at least 1"
+    }),
+
+  startDate: Joi.date()
+    .iso()
+    .optional()
+    .messages({
+      "date.base": "Start date must be a valid date",
+      "date.format": "Start date must be in ISO 8601 format"
+    }),
+
+  endDate: Joi.date()
+    .iso()
+    .greater(Joi.ref("startDate"))
+    .optional()
+    .messages({
+      "date.base": "End date must be a valid date",
+      "date.format": "End date must be in ISO 8601 format",
+      "date.greater": "End date must be after start date"
+    }),
+
+  search: Joi.string()
+    .trim()
+    .max(100)
+    .optional()
+    .messages({
+      "string.base": "Search must be a string",
+      "string.max": "Search query cannot exceed 100 characters"
+    })
+});
+
+exports.validateGetAllTransactions = (req, res, next) => {
+  const { error } = getAllTransactionsSchema.validate(req.query, { abortEarly: false });
+
+  if (error) {
+    const errors = error.details.map(detail => ({
+      field: detail.path.join("."),
+      message: detail.message
+    }));
+
+    return generateResponse(
+      { errors },
+      "Validation error",
+      res,
+      STATUS_CODES.BAD_REQUEST
+    );
+  }
+
+  next();
+};
+
+const updateTransactionLabelsSchema = Joi.object({
+  labels: Joi.array()
+    .items(Joi.string().max(50))
+    .required()
+    .messages({
+      "array.base": "Labels must be an array",
+      "any.required": "Labels are required",
+      "string.max": "Each label cannot exceed 50 characters"
+    }),
+
+  source: Joi.string()
+    .valid("invoice", "payout", "fund_card")
+    .required()
+    .messages({
+      "any.only": "Source must be one of: invoice, payout, fund_card",
+      "any.required": "Source is required"
+    })
+});
+
+exports.validateUpdateTransactionLabels = (req, res, next) => {
+  const { error } = updateTransactionLabelsSchema.validate(req.body, { abortEarly: false });
+
+  if (error) {
+    const errors = error.details.map(detail => ({
+      field: detail.path.join("."),
+      message: detail.message
+    }));
+
+    return generateResponse(
+      { errors },
+      "Validation error",
+      res,
+      STATUS_CODES.BAD_REQUEST
+    );
+  }
+
+  // Validate id param
+  const { id } = req.params;
+  if (!id || id.trim() === "") {
+    return generateResponse(
+      { error: "Transaction ID is required" },
+      "Transaction ID is required",
+      res,
+      STATUS_CODES.BAD_REQUEST
+    );
+  }
+
+  next();
+};

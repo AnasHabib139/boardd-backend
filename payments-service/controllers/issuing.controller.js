@@ -1171,9 +1171,10 @@ exports.payout = async (req, res, next) => {
 
     const connectedAccountId = accountRecord.stripeAccountId;
 
-    // Create payout via Stripe
+    // Create payout via Stripe and save to local DB
     const payoutResult = await issuingService.createPayout(
       connectedAccountId,
+      companyId,
       { amount, description, method }
     );
 
@@ -1246,9 +1247,10 @@ exports.fundCard = async (req, res, next) => {
 
     const connectedAccountId = accountRecord.stripeAccountId;
 
-    // Fund card balance via Stripe Balance Transfers API
+    // Fund card balance via Stripe Balance Transfers API and save to local DB
     const transferResult = await issuingService.fundCardBalance(
       connectedAccountId,
+      companyId,
       { amount, description }
     );
 
@@ -1479,6 +1481,272 @@ exports.updatePayoutSettings = async (req, res, next) => {
     } else if (error.message === "STRIPE_ACCOUNT_NOT_FOUND") {
       message = "Stripe account not found for this company. Please complete account setup first.";
       statusCode = STATUS_CODES.NOT_FOUND;
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      statusCode
+    );
+  }
+};
+
+// ==================== Company-Wide Transactions ====================
+
+/**
+ * Get all transactions for company dashboard
+ * GET /api/payments/banking/transactions
+ */
+exports.getAllTransactions = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { type, status, limit, page, startDate, endDate, search } = req.query;
+
+    // Fetch user to get companyId
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const CompanyModel = model("Company");
+
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const companyId = user.companyId;
+
+    // Get company name for recipient field
+    const company = await CompanyModel.findById(companyId).select("name");
+    const companyName = company?.name || "Company";
+
+    // Get all transactions
+    const result = await issuingService.getAllCompanyTransactions(
+      companyId,
+      companyName,
+      {
+        type,
+        status,
+        limit: limit ? parseInt(limit) : 20,
+        page: page ? parseInt(page) : 1,
+        startDate,
+        endDate,
+        search
+      }
+    );
+
+    return generateResponse(
+      result,
+      "Transactions retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error getting all transactions:", error);
+
+    let message = "Failed to get transactions";
+    let statusCode = STATUS_CODES.BAD_REQUEST;
+
+    if (error.message === "USER_NOT_FOUND") {
+      message = "User not found";
+      statusCode = STATUS_CODES.UNAUTHORIZED;
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      statusCode
+    );
+  }
+};
+
+/**
+ * Update transaction labels
+ * PUT /api/payments/banking/transactions/:id/labels
+ */
+exports.updateTransactionLabels = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { labels, source } = req.body;
+
+    // Fetch user to get companyId
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const companyId = user.companyId;
+
+    let updatedTransaction = null;
+
+    // Update based on source type
+    if (source === "invoice") {
+      const { updateInvoiceLabels, findInvoiceById } = require("../../models/invoiceModel");
+
+      // Verify invoice belongs to this company
+      const invoice = await findInvoiceById(id);
+      if (!invoice || invoice.companyId.toString() !== companyId.toString()) {
+        throw new Error("TRANSACTION_NOT_FOUND");
+      }
+
+      updatedTransaction = await updateInvoiceLabels(id, labels);
+    } else if (source === "payout" || source === "fund_card") {
+      const {
+        updateBankingTransactionLabels,
+        findBankingTransactionById
+      } = require("../../models/paymentsBankingTransactionModel");
+
+      // Verify banking transaction belongs to this company
+      const bankingTxn = await findBankingTransactionById(id);
+      if (!bankingTxn || bankingTxn.companyId.toString() !== companyId.toString()) {
+        throw new Error("TRANSACTION_NOT_FOUND");
+      }
+
+      updatedTransaction = await updateBankingTransactionLabels(id, labels);
+    } else {
+      throw new Error("INVALID_SOURCE");
+    }
+
+    return generateResponse(
+      { id, labels: updatedTransaction.labels, source },
+      "Labels updated successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error updating transaction labels:", error);
+
+    let message = "Failed to update labels";
+    let statusCode = STATUS_CODES.BAD_REQUEST;
+
+    if (error.message === "USER_NOT_FOUND") {
+      message = "User not found";
+      statusCode = STATUS_CODES.UNAUTHORIZED;
+    } else if (error.message === "TRANSACTION_NOT_FOUND") {
+      message = "Transaction not found or access denied";
+      statusCode = STATUS_CODES.NOT_FOUND;
+    } else if (error.message === "INVALID_SOURCE") {
+      message = "Invalid source type. Must be 'invoice', 'payout', or 'fund_card'";
+      statusCode = STATUS_CODES.BAD_REQUEST;
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      statusCode
+    );
+  }
+};
+
+/**
+ * Export transactions as CSV
+ * GET /api/payments/banking/transactions/export
+ */
+exports.exportTransactions = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { type, status, startDate, endDate, search } = req.query;
+
+    // Fetch user to get companyId
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const CompanyModel = model("Company");
+
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const companyId = user.companyId;
+
+    // Get company name for recipient field
+    const company = await CompanyModel.findById(companyId).select("name");
+    const companyName = company?.name || "Company";
+
+    // Get all transactions (no pagination)
+    const transactions = await issuingService.getAllCompanyTransactionsForExport(
+      companyId,
+      companyName,
+      { type, status, startDate, endDate, search }
+    );
+
+    // Generate CSV
+    const csvRows = [];
+
+    // Header row
+    csvRows.push([
+      "Date",
+      "Transaction ID",
+      "Type",
+      "Amount",
+      "Currency",
+      "Sender",
+      "Recipient",
+      "Status",
+      "Labels",
+      "Source"
+    ].join(","));
+
+    // Data rows
+    for (const txn of transactions) {
+      const formattedDate = new Date(txn.date).toISOString().split("T")[0];
+      const formattedAmount = `$${(txn.amount / 100).toFixed(2)}`;
+      const labelsStr = (txn.labels || []).join("; ");
+
+      // Escape fields that might contain commas or quotes
+      const escapeCSV = (str) => {
+        if (str == null) return "";
+        const s = String(str);
+        if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+          return `"${s.replace(/"/g, '""')}"`;
+        }
+        return s;
+      };
+
+      csvRows.push([
+        formattedDate,
+        txn.id,
+        escapeCSV(txn.type),
+        formattedAmount,
+        txn.currency.toUpperCase(),
+        escapeCSV(txn.sender),
+        escapeCSV(txn.recipient),
+        txn.status,
+        escapeCSV(labelsStr),
+        txn.source
+      ].join(","));
+    }
+
+    const csvContent = csvRows.join("\n");
+    const filename = `transactions-${new Date().toISOString().split("T")[0]}.csv`;
+
+    // Set headers for file download
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    return res.send(csvContent);
+  } catch (error) {
+    console.error("Error exporting transactions:", error);
+
+    let message = "Failed to export transactions";
+    let statusCode = STATUS_CODES.BAD_REQUEST;
+
+    if (error.message === "USER_NOT_FOUND") {
+      message = "User not found";
+      statusCode = STATUS_CODES.UNAUTHORIZED;
     } else if (error.message) {
       message = error.message;
     }
