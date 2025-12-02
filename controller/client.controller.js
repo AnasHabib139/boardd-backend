@@ -322,7 +322,7 @@ exports.updateClientData = async (req, res, next) => {
     }
 
     return generateResponse(
-      { client: updatedClient, activities },
+      { client: simplifyClientResponse(updatedClient), activities },
       `Client ${type} updated successfully`,
       res,
       STATUS_CODES.SUCCESS
@@ -475,7 +475,7 @@ exports.deleteClientData = async (req, res, next) => {
     }
 
     return generateResponse(
-      { client: updatedClient, activities },
+      { client: simplifyClientResponse(updatedClient), activities },
       `Client ${type} deleted successfully`,
       res,
       STATUS_CODES.SUCCESS
