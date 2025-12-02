@@ -508,3 +508,78 @@ exports.getClientForTab = async (req, res, next) => {
     });
   }
 };
+
+/**
+ * Get revenue stats for client tab (for graph display)
+ * Returns monthly totals, largest payments, and all-time total
+ */
+exports.getRevenueStats = async (req, res, next) => {
+  try {
+    const { tabId } = req.params;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+
+    // Validate tab exists
+    const tab = await findChannelTab({ _id: tabId });
+    if (!tab) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Tab not found",
+      });
+    }
+
+    // Check if user is member of the tab
+    const userId = req.user.id;
+    if (!tab?.members?.includes(userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this tab",
+      });
+    }
+
+    // Get revenue data from invoice model
+    const {
+      getRevenueStatsByTab,
+      getTotalRevenueByTab,
+    } = require("../models/invoiceModel");
+
+    const [monthlyData, total] = await Promise.all([
+      getRevenueStatsByTab(tabId, year),
+      getTotalRevenueByTab(tabId),
+    ]);
+
+    // Month names for display
+    const monthNames = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ];
+
+    // Build full 12-month array with zeros for missing months
+    const monthly = monthNames.map((month, index) => {
+      const monthNumber = index + 1;
+      const found = monthlyData.find((m) => m._id === monthNumber);
+      return {
+        month,
+        totalAmount: found ? found.totalAmount : 0,
+        largestPayment: found ? found.largestPayment : 0,
+      };
+    });
+
+    return generateResponse(
+      {
+        total,
+        currency: "usd",
+        year,
+        monthly,
+      },
+      "Revenue stats retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getRevenueStats:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to get revenue stats",
+    });
+  }
+};

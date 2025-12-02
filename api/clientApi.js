@@ -6,6 +6,7 @@ const {
   getClientForTab,
   updateClientData,
   deleteClientData,
+  getRevenueStats,
 } = require("../controller/client.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -46,6 +47,13 @@ class ClientApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateDeleteClientData,
       deleteClientData
+    );
+
+    // Get revenue stats for client tab (graph data)
+    router.get(
+      "/:tabId/revenue-stats",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getRevenueStats
     );
 
     // Get client for tab
