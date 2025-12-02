@@ -127,7 +127,7 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
               pipeline: [
                 {
                   $project: {
-                    personalDetails: 1
+                    clientDetails: 1
                   }
                 }
               ]
@@ -141,7 +141,7 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
           },
           {
             $project: {
-              personalDetails: { $ifNull: ["$clientData.personalDetails", []] }
+              clientDetails: { $ifNull: ["$clientData.clientDetails", []] }
             }
           }
         ],
@@ -327,12 +327,12 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
             then: {
               $let: {
                 vars: {
-                  clientPersonalDetails: {
+                  clientDetailsData: {
                     $let: {
                       vars: {
                         firstClient: { $arrayElemAt: ["$clientDetails", 0] }
                       },
-                      in: { $ifNull: ["$$firstClient.personalDetails", []] }
+                      in: { $ifNull: ["$$firstClient.clientDetails", []] }
                     }
                   },
                   conversationContact: { $ifNull: ["$conversationDetails.clientContact", {}] }
@@ -348,7 +348,7 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
                             $map: {
                               input: {
                                 $filter: {
-                                  input: "$$clientPersonalDetails",
+                                  input: "$$clientDetailsData",
                                   as: "detail",
                                   cond: {
                                     $and: [
@@ -419,7 +419,7 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
                             $map: {
                               input: {
                                 $filter: {
-                                  input: "$$clientPersonalDetails",
+                                  input: "$$clientDetailsData",
                                   as: "detail",
                                   cond: { $ne: ["$$detail.email", null] }
                                 }
@@ -868,7 +868,7 @@ exports.getClientContactInfoQuery = (channelId, companyId, conversationId) => {
         pipeline: [
           {
             $project: {
-              personalDetails: 1
+              clientDetails: 1
             }
           }
         ]
@@ -883,7 +883,7 @@ exports.getClientContactInfoQuery = (channelId, companyId, conversationId) => {
       }
     },
 
-    // Transform personalDetails, conversation contact, and company config to response format
+    // Transform clientDetails, conversation contact, and company config to response format
     {
       $project: {
         messagingChannels: {
@@ -925,7 +925,7 @@ exports.getClientContactInfoQuery = (channelId, companyId, conversationId) => {
         clientContactInfo: {
           $let: {
             vars: {
-              clientPersonalDetails: { $ifNull: ["$clientData.personalDetails", []] },
+              clientDetailsData: { $ifNull: ["$clientData.clientDetails", []] },
               conversationContact: {
                 $let: {
                   vars: {
@@ -946,7 +946,7 @@ exports.getClientContactInfoQuery = (channelId, companyId, conversationId) => {
                         $map: {
                           input: {
                             $filter: {
-                              input: "$$clientPersonalDetails",
+                              input: "$$clientDetailsData",
                               as: "detail",
                               cond: {
                                 $and: [
@@ -1017,7 +1017,7 @@ exports.getClientContactInfoQuery = (channelId, companyId, conversationId) => {
                         $map: {
                           input: {
                             $filter: {
-                              input: "$$clientPersonalDetails",
+                              input: "$$clientDetailsData",
                               as: "detail",
                               cond: { $ne: ["$$detail.email", null] }
                             }

@@ -3,30 +3,32 @@ const {
   updateClient,
   createClient,
 } = require("../models/clientModel");
-const { parseBody, generateResponse, deleteFileFromDisk } = require("../utils");
+const { parseBody, generateResponse } = require("../utils");
 const { STATUS_CODES, ACTION_TYPE } = require("../utils/constants");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { findUser } = require("../models/userModel");
 const { createActivity } = require("../models/activityModel");
 const {
   createClientCreationActivity,
-  createPersonalDetailsActivity,
-  createAttachmentActivity,
+  createClientDetailsActivity,
   createProjectActivity,
 } = require("./helpers/clients/client.helper");
 
+// Helper to simplify client response (exclude stripe, internal fields)
+const simplifyClientResponse = (client) => {
+  const { stripe, __v, ...rest } = client.toObject ? client.toObject() : client;
+  return rest;
+};
+
 exports.createOrUpdateClient = async (req, res, next) => {
   try {
-    const { tabId, personalDetails, attachments, projects } = parseBody(
-      req.body
-    );
+    const { tabId, clientDetails, projects } = parseBody(req.body);
 
     // Validate that at least one optional field is provided
-    if (!personalDetails && !attachments && !projects) {
+    if (!clientDetails && !projects) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message:
-          "At least one field (personalDetails, attachments, or projects) is required",
+        message: "At least one field (clientDetails or projects) is required",
       });
     }
 
@@ -69,39 +71,22 @@ exports.createOrUpdateClient = async (req, res, next) => {
       // Update existing client by adding new data
       const updateOperations = {};
 
-      if (personalDetails) {
+      if (clientDetails) {
         updateOperations.$push = {
           ...updateOperations.$push,
-          personalDetails: personalDetails,
+          clientDetails: clientDetails,
         };
 
-        // Create activity for personal details update
-        const personalDetailsActivity = await createPersonalDetailsActivity({
+        // Create activity for client details update
+        const clientDetailsActivity = await createClientDetailsActivity({
           tabId,
           userId,
           userName,
           client: existingClient,
-          personalDetails,
+          clientDetails,
           isUpdate: true,
         });
-        activities.push(personalDetailsActivity);
-      }
-
-      if (attachments && attachments.length > 0) {
-        updateOperations.$push = {
-          ...updateOperations.$push,
-          attachments: { $each: attachments }, // Push array of attachments
-        };
-
-        // Create activity for attachments upload
-        const attachmentActivity = await createAttachmentActivity({
-          tabId,
-          userId,
-          userName,
-          client: existingClient,
-          attachments, // Pass array of attachments
-        });
-        activities.push(attachmentActivity);
+        activities.push(clientDetailsActivity);
       }
 
       if (projects) {
@@ -128,7 +113,7 @@ exports.createOrUpdateClient = async (req, res, next) => {
       client = await updateClient({ tabId }, updateOperations);
 
       return generateResponse(
-        { client, activities },
+        { client: simplifyClientResponse(client), activities },
         "Client updated successfully",
         res,
         STATUS_CODES.SUCCESS
@@ -137,8 +122,7 @@ exports.createOrUpdateClient = async (req, res, next) => {
       // Create new client
       const newClientData = {
         tabId,
-        personalDetails: personalDetails ? [personalDetails] : [],
-        attachments: attachments || [], // Use attachments array directly
+        clientDetails: clientDetails ? [clientDetails] : [],
         projects: projects ? [projects] : [],
         companyId: tab.companyId, // Link to company for payment processing
       };
@@ -155,27 +139,16 @@ exports.createOrUpdateClient = async (req, res, next) => {
       activities.push(clientCreationActivity);
 
       // Create activities for initial data
-      if (personalDetails) {
-        const personalDetailsActivity = await createPersonalDetailsActivity({
+      if (clientDetails) {
+        const clientDetailsActivity = await createClientDetailsActivity({
           tabId,
           userId,
           userName,
           client,
-          personalDetails,
+          clientDetails,
           isUpdate: false,
         });
-        activities.push(personalDetailsActivity);
-      }
-
-      if (attachments && attachments.length > 0) {
-        const attachmentActivity = await createAttachmentActivity({
-          tabId,
-          userId,
-          userName,
-          client,
-          attachments, // Pass array of attachments
-        });
-        activities.push(attachmentActivity);
+        activities.push(clientDetailsActivity);
       }
 
       if (projects) {
@@ -191,7 +164,7 @@ exports.createOrUpdateClient = async (req, res, next) => {
       }
 
       return generateResponse(
-        { client, activities },
+        { client: simplifyClientResponse(client), activities },
         "Client created successfully",
         res,
         STATUS_CODES.CREATED
@@ -207,7 +180,7 @@ exports.createOrUpdateClient = async (req, res, next) => {
 };
 
 /**
- * Update specific client data (personal details OR projects)
+ * Update specific client data (client details OR projects)
  */
 exports.updateClientData = async (req, res, next) => {
   try {
@@ -223,10 +196,10 @@ exports.updateClientData = async (req, res, next) => {
     }
 
     // Validate type
-    if (!["personalDetails", "projects"].includes(type)) {
+    if (!["clientDetails", "projects"].includes(type)) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "type must be either 'personalDetails' or 'projects'",
+        message: "type must be either 'clientDetails' or 'projects'",
       });
     }
 
@@ -272,43 +245,43 @@ exports.updateClientData = async (req, res, next) => {
     let updatedClient;
     let activities = [];
 
-    if (type === "personalDetails") {
-      // Find and update specific personal details
-      const personalDetailsIndex = client.personalDetails.findIndex(
-        (pd) => pd._id.toString() === id
+    if (type === "clientDetails") {
+      // Find and update specific client details
+      const clientDetailsIndex = client.clientDetails.findIndex(
+        (cd) => cd._id.toString() === id
       );
 
-      if (personalDetailsIndex === -1) {
+      if (clientDetailsIndex === -1) {
         return next({
           statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Personal details not found",
+          message: "Client details not found",
         });
       }
 
-      // Update the specific personal details
+      // Update the specific client details
       updatedClient = await updateClient(
         { tabId },
         {
           $set: {
-            [`personalDetails.${personalDetailsIndex}`]: {
+            [`clientDetails.${clientDetailsIndex}`]: {
               ...data,
-              _id: client.personalDetails[personalDetailsIndex]._id, // Keep the original ID
+              _id: client.clientDetails[clientDetailsIndex]._id, // Keep the original ID
             },
             updatedAt: new Date(),
           },
         }
       );
 
-      // Create activity for personal details update
-      const personalDetailsActivity = await createPersonalDetailsActivity({
+      // Create activity for client details update
+      const clientDetailsActivity = await createClientDetailsActivity({
         tabId,
         userId,
         userName,
         client: updatedClient,
-        personalDetails: data,
+        clientDetails: data,
         isUpdate: true,
       });
-      activities.push(personalDetailsActivity);
+      activities.push(clientDetailsActivity);
     } else if (type === "projects") {
       // Find and update specific project
       const projectIndex = client.projects.findIndex(
@@ -364,7 +337,7 @@ exports.updateClientData = async (req, res, next) => {
 };
 
 /**
- * Delete specific client data (personal details, projects, or attachments)
+ * Delete specific client data (client details or projects)
  */
 exports.deleteClientData = async (req, res, next) => {
   try {
@@ -380,10 +353,10 @@ exports.deleteClientData = async (req, res, next) => {
     }
 
     // Validate type
-    if (!["personalDetails", "projects", "attachments"].includes(type)) {
+    if (!["clientDetails", "projects"].includes(type)) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "type must be 'personalDetails', 'projects', or 'attachments'",
+        message: "type must be 'clientDetails' or 'projects'",
       });
     }
 
@@ -429,38 +402,38 @@ exports.deleteClientData = async (req, res, next) => {
     let updatedClient;
     let activities = [];
 
-    if (type === "personalDetails") {
-      // Check if personal details exists
-      const personalDetailsExists = client.personalDetails.some(
-        (pd) => pd._id.toString() === id
+    if (type === "clientDetails") {
+      // Check if client details exists
+      const clientDetailsExists = client.clientDetails.some(
+        (cd) => cd._id.toString() === id
       );
 
-      if (!personalDetailsExists) {
+      if (!clientDetailsExists) {
         return next({
           statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Personal details not found",
+          message: "Client details not found",
         });
       }
 
-      // Remove the specific personal details
+      // Remove the specific client details
       updatedClient = await updateClient(
         { tabId },
         {
-          $pull: { personalDetails: { _id: id } },
+          $pull: { clientDetails: { _id: id } },
           $set: { updatedAt: new Date() },
         }
       );
 
-      // Create activity for personal details deletion
+      // Create activity for client details deletion
       const deleteActivity = await createActivity({
         tabId,
         clientId: client._id,
         userId,
-        actionType: ACTION_TYPE.DELETE_CLIENT_PERSONAL_DETAILS,
+        actionType: ACTION_TYPE.DELETE_CLIENT_DETAILS,
         timestamp: new Date(),
         message: {
-          forCreator: `You deleted client personal details`,
-          forOthers: `${userName} deleted client personal details`,
+          forCreator: `You deleted client details`,
+          forOthers: `${userName} deleted client details`,
         },
       });
       activities.push(deleteActivity);
@@ -496,49 +469,6 @@ exports.deleteClientData = async (req, res, next) => {
         message: {
           forCreator: `You deleted client project`,
           forOthers: `${userName} deleted client project`,
-        },
-      });
-      activities.push(deleteActivity);
-    } else if (type === "attachments") {
-      // For attachments, id is the attachment string itself
-      const attachmentExists = client.attachments.includes(id);
-
-      if (!attachmentExists) {
-        return next({
-          statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Attachment not found",
-        });
-      }
-
-      // First, try to delete the file from disk
-      const fileDeleteResult = deleteFileFromDisk(id);
-      if (!fileDeleteResult.success) {
-        console.warn(
-          `Failed to delete file from disk: ${fileDeleteResult.error}. Proceeding with database removal.`
-        );
-        // Continue with database removal even if file deletion fails
-        // This handles cases where file might already be deleted or path changed
-      }
-
-      // Remove the specific attachment from database
-      updatedClient = await updateClient(
-        { tabId },
-        {
-          $pull: { attachments: id },
-          $set: { updatedAt: new Date() },
-        }
-      );
-
-      // Create activity for attachment deletion
-      const deleteActivity = await createActivity({
-        tabId,
-        clientId: client._id,
-        userId,
-        actionType: ACTION_TYPE.DELETE_CLIENT_ATTACHMENT,
-        timestamp: new Date(),
-        message: {
-          forCreator: `You removed client attachment`,
-          forOthers: `${userName} removed client attachment`,
         },
       });
       activities.push(deleteActivity);

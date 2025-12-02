@@ -1,53 +1,69 @@
 const Joi = require("joi");
 const { STATUS_CODES } = require("../utils/constants");
 
-// Personal details validation schema
-const personalDetailsSchema = Joi.object({
-  name: Joi.string().trim().min(2).max(100).required().messages({
-    "string.empty": "Name is required",
-    "string.min": "Name must be at least 2 characters long",
-    "string.max": "Name cannot exceed 100 characters",
+// Client details validation schema (all fields optional)
+const clientDetailsSchema = Joi.object({
+  firstName: Joi.string().trim().min(1).max(100).optional().allow("").messages({
+    "string.min": "First name must be at least 1 character long",
+    "string.max": "First name cannot exceed 100 characters",
   }),
 
-  email: Joi.string().email().trim().required().messages({
+  lastName: Joi.string().trim().min(1).max(100).optional().allow("").messages({
+    "string.min": "Last name must be at least 1 character long",
+    "string.max": "Last name cannot exceed 100 characters",
+  }),
+
+  email: Joi.string().email().trim().optional().allow("").messages({
     "string.email": "Please provide a valid email address",
-    "string.empty": "Email is required",
   }),
 
   phone: Joi.object({
-    countryCode: Joi.string().trim().required().messages({
-      "string.empty": "Country code is required",
+    countryCode: Joi.string().trim().optional().allow("").messages({
+      "string.base": "Country code must be a string",
     }),
     number: Joi.string()
       .trim()
-      .pattern(/^[0-9+\-\s()]+$/)
-      .min(7)
+      .pattern(/^[0-9+\-\s()]*$/)
       .max(15)
-      .required()
+      .optional()
+      .allow("")
       .messages({
         "string.pattern.base": "Please provide a valid phone number",
-        "string.min": "Phone number must be at least 7 characters",
         "string.max": "Phone number cannot exceed 15 characters",
-        "string.empty": "Phone number is required",
       }),
-  }).required(),
+  }).optional(),
 
   address: Joi.object({
-    line_1: Joi.string().trim().min(5).max(200).required().messages({
-      "string.min": "Address line 1 must be at least 5 characters",
+    line_1: Joi.string().trim().max(200).optional().allow("").messages({
       "string.max": "Address line 1 cannot exceed 200 characters",
-      "string.empty": "Address line 1 is required",
     }),
-    line_2: Joi.string().trim().min(3).max(200).required().messages({
-      "string.min": "Address line 2 must be at least 3 characters",
+    line_2: Joi.string().trim().max(200).optional().allow("").messages({
       "string.max": "Address line 2 cannot exceed 200 characters",
-      "string.empty": "Address line 2 is required",
     }),
-  }).required(),
+    country: Joi.string().trim().max(100).optional().allow("").messages({
+      "string.max": "Country cannot exceed 100 characters",
+    }),
+    zipCode: Joi.string().trim().max(20).optional().allow("").messages({
+      "string.max": "Zip code cannot exceed 20 characters",
+    }),
+  }).optional(),
 
-  company: Joi.string().trim().max(100).optional().allow("").messages({
+  companyName: Joi.string().trim().max(100).optional().allow("").messages({
     "string.max": "Company name cannot exceed 100 characters",
   }),
+
+  attachments: Joi.array()
+    .items(
+      Joi.string().trim().min(1).max(500).messages({
+        "string.min": "Attachment cannot be empty",
+        "string.max": "Attachment path cannot exceed 500 characters",
+      })
+    )
+    .max(10)
+    .optional()
+    .messages({
+      "array.max": "Cannot have more than 10 attachments",
+    }),
 });
 
 // Project validation schema
@@ -61,23 +77,20 @@ const projectSchema = Joi.object({
   description: Joi.string().trim().max(1000).optional().allow("").messages({
     "string.max": "Project description cannot exceed 1000 characters",
   }),
-});
 
-// Attachment validation schema (URL or file path) - array of attachments
-const attachmentsSchema = Joi.array()
-  .items(
-    Joi.string().trim().min(1).max(500).required().messages({
-      "string.min": "Attachment cannot be empty",
-      "string.max": "Attachment path cannot exceed 500 characters",
-      "string.empty": "Attachment is required",
-    })
-  )
-  .min(1)
-  .max(10)
-  .messages({
-    "array.min": "At least one attachment is required",
-    "array.max": "Cannot upload more than 10 attachments at once",
-  });
+  attachments: Joi.array()
+    .items(
+      Joi.string().trim().min(1).max(500).messages({
+        "string.min": "Attachment cannot be empty",
+        "string.max": "Attachment path cannot exceed 500 characters",
+      })
+    )
+    .max(10)
+    .optional()
+    .messages({
+      "array.max": "Cannot have more than 10 attachments",
+    }),
+});
 
 // Main validation schema for createOrUpdateClient
 const createOrUpdateClientSchema = Joi.object({
@@ -90,16 +103,14 @@ const createOrUpdateClientSchema = Joi.object({
       "string.empty": "Tab ID is required",
     }),
 
-  personalDetails: personalDetailsSchema.optional(),
-
-  attachments: attachmentsSchema.optional(), // Changed from attachment to attachments
+  clientDetails: clientDetailsSchema.optional(),
 
   projects: projectSchema.optional(),
 })
-  .or("personalDetails", "attachments", "projects") // Updated reference
+  .or("clientDetails", "projects")
   .messages({
     "object.missing":
-      "At least one field (personalDetails, attachments, or projects) is required",
+      "At least one field (clientDetails or projects) is required",
   });
 
 // Validation middleware
@@ -127,8 +138,8 @@ exports.validateCreateOrUpdateClient = (req, res, next) => {
 
 // Update client data validation schema
 const updateClientDataSchema = Joi.object({
-  type: Joi.string().valid("personalDetails", "projects").required().messages({
-    "any.only": "Type must be either 'personalDetails' or 'projects'",
+  type: Joi.string().valid("clientDetails", "projects").required().messages({
+    "any.only": "Type must be either 'clientDetails' or 'projects'",
     "any.required": "Type is required",
   }),
 
@@ -142,8 +153,8 @@ const updateClientDataSchema = Joi.object({
     }),
 
   data: Joi.when("type", {
-    is: "personalDetails",
-    then: personalDetailsSchema.required(),
+    is: "clientDetails",
+    then: clientDetailsSchema.required(),
     otherwise: Joi.when("type", {
       is: "projects",
       then: projectSchema.required(),
@@ -157,30 +168,21 @@ const updateClientDataSchema = Joi.object({
 // Delete client data validation schema
 const deleteClientDataSchema = Joi.object({
   type: Joi.string()
-    .valid("personalDetails", "projects", "attachments")
+    .valid("clientDetails", "projects")
     .required()
     .messages({
-      "any.only":
-        "Type must be 'personalDetails', 'projects', or 'attachments'",
+      "any.only": "Type must be 'clientDetails' or 'projects'",
       "any.required": "Type is required",
     }),
 
-  id: Joi.alternatives().conditional("type", {
-    is: "attachments",
-    then: Joi.string().trim().min(1).max(500).required().messages({
-      "string.min": "Attachment ID cannot be empty",
-      "string.max": "Attachment ID cannot exceed 500 characters",
-      "any.required": "Attachment ID is required",
+  id: Joi.string()
+    .trim()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "ID must be a valid MongoDB ObjectId",
+      "any.required": "ID is required",
     }),
-    otherwise: Joi.string()
-      .trim()
-      .pattern(/^[0-9a-fA-F]{24}$/)
-      .required()
-      .messages({
-        "string.pattern.base": "ID must be a valid MongoDB ObjectId",
-        "any.required": "ID is required",
-      }),
-  }),
 });
 
 // Validation middleware for update client data

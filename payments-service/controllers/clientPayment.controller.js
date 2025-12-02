@@ -91,13 +91,17 @@ exports.createClientSetupIntent = async (req, res, next) => {
     if (!customerId) {
       console.log("No Stripe customer exists for client, creating one...");
 
-      // Get customer info from personal details or request body
-      const personalDetails = client.personalDetails?.[0];
+      // Get customer info from client details or request body
+      const clientDetails = client.clientDetails?.[0];
+      // Build name from firstName and lastName
+      const clientName = clientDetails
+        ? [clientDetails.firstName, clientDetails.lastName].filter(Boolean).join(" ")
+        : undefined;
       const customerData = {
-        name: name || personalDetails?.name,
-        email: email || personalDetails?.email,
-        phone: phone || (personalDetails?.phone
-          ? `${personalDetails.phone.countryCode}${personalDetails.phone.number}`
+        name: name || clientName,
+        email: email || clientDetails?.email,
+        phone: phone || (clientDetails?.phone
+          ? `${clientDetails.phone.countryCode}${clientDetails.phone.number}`
           : undefined),
       };
 
@@ -105,7 +109,7 @@ exports.createClientSetupIntent = async (req, res, next) => {
         return next({
           statusCode: STATUS_CODES.BAD_REQUEST,
           message:
-            "Customer name and email are required. Provide them in request body or add personal details first.",
+            "Customer name and email are required. Provide them in request body or add client details first.",
         });
       }
 

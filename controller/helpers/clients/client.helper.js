@@ -26,26 +26,30 @@ exports.createClientCreationActivity = async ({
 };
 
 /**
- * Create personal details activity
+ * Create client details activity
  */
-exports.createPersonalDetailsActivity = async ({
+exports.createClientDetailsActivity = async ({
   tabId,
   userId,
   userName,
   client,
-  personalDetails,
+  clientDetails,
   isUpdate = false,
 }) => {
   const actionType = isUpdate
-    ? ACTION_TYPE.UPDATE_CLIENT_PERSONAL_DETAILS
-    : ACTION_TYPE.ADD_CLIENT_PERSONAL_DETAILS;
+    ? ACTION_TYPE.UPDATE_CLIENT_DETAILS
+    : ACTION_TYPE.ADD_CLIENT_DETAILS;
 
   const action = isUpdate ? "updated" : "added";
-  const clientName = personalDetails?.name || "client";
 
-  const personalDetailsMessage = {
-    forCreator: `You ${action} personal details for ${clientName}`,
-    forOthers: `${userName} ${action} personal details for ${clientName}`,
+  // Build client name from firstName and lastName
+  const firstName = clientDetails?.firstName || "";
+  const lastName = clientDetails?.lastName || "";
+  const clientName = [firstName, lastName].filter(Boolean).join(" ") || "client";
+
+  const clientDetailsMessage = {
+    forCreator: `You ${action} client details for ${clientName}`,
+    forOthers: `${userName} ${action} client details for ${clientName}`,
   };
 
   return createActivity({
@@ -53,40 +57,10 @@ exports.createPersonalDetailsActivity = async ({
     clientId: client._id,
     userId,
     actionType,
-    field: "personalDetails",
-    newValue: personalDetails,
+    field: "clientDetails",
+    newValue: clientDetails,
     timestamp: new Date(),
-    message: personalDetailsMessage,
-  });
-};
-
-/**
- * Create attachment activity
- */
-exports.createAttachmentActivity = async ({
-  tabId,
-  userId,
-  userName,
-  client,
-  attachments, // This will be an array of attachments
-}) => {
-  const count = Array.isArray(attachments) ? attachments.length : 1;
-  const attachmentMessage = {
-    forCreator: `You uploaded ${count} attachment${count > 1 ? "s" : ""}`,
-    forOthers: `${userName} uploaded ${count} attachment${
-      count > 1 ? "s" : ""
-    }`,
-  };
-
-  return createActivity({
-    tabId,
-    clientId: client._id,
-    userId,
-    actionType: ACTION_TYPE.ADD_CLIENT_ATTACHMENT,
-    field: "attachments",
-    newValue: attachments, // Array of attachments
-    timestamp: new Date(),
-    message: attachmentMessage,
+    message: clientDetailsMessage,
   });
 };
 

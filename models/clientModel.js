@@ -4,19 +4,23 @@ const mongoosePaginate = require("mongoose-paginate-v2");
 const aggregatePaginate = require("mongoose-aggregate-paginate-v2");
 const { getMongooseAggregatePaginatedData } = require("../utils");
 
-//personal details schema
-const personalDetailsSchema = new Schema({
-  name: { type: String, required: true },
-  email: { type: String, required: true },
+// Client details schema
+const clientDetailsSchema = new Schema({
+  firstName: { type: String },
+  lastName: { type: String },
+  email: { type: String },
   phone: {
-    countryCode: { type: String, required: true },
-    number: { type: String, required: true },
+    countryCode: { type: String },
+    number: { type: String },
   },
   address: {
-    line_1: { type: String, required: true },
-    line_2: { type: String, required: true },
+    line_1: { type: String },
+    line_2: { type: String },
+    country: { type: String },
+    zipCode: { type: String },
   },
-  company: { type: String },
+  companyName: { type: String },
+  attachments: [{ type: String }],
 });
 
 // Simple project schema for client data
@@ -24,6 +28,7 @@ const projectSchema = new Schema(
   {
     title: { type: String, required: true },
     description: { type: String },
+    attachments: [{ type: String }],
   },
   {
     _id: true,
@@ -33,8 +38,7 @@ const projectSchema = new Schema(
 
 //client schema
 const clientSchema = new Schema({
-  personalDetails: [{ type: personalDetailsSchema }],
-  attachments: [{ type: String }],
+  clientDetails: [{ type: clientDetailsSchema }],
   tabId: { type: Types.ObjectId, ref: "ChannelTab", required: true },
   projects: [projectSchema],
 
