@@ -28,7 +28,7 @@ function config() {
 const fileFilter = (req, file, cb) => {
   try {
     // Allowed file types
-    const allowedDocTypes = /pdf|docx?|xlsx?|pptx?/;
+    const allowedDocTypes = /pdf|docx?|xlsx?|pptx?|zip/;
     const allowedImageTypes = /jpeg|jpg|png|gif/;
     const allowedVideoTypes = /mp4|mov|avi|mkv|wmv|flv|webm|m4v|3gp/;
     const allowedAudioTypes = /mp3|wav|ogg|m4a|aac|flac|wma/;
@@ -69,14 +69,14 @@ const fileFilter = (req, file, cb) => {
       // Check document types
       const isValidExt = allowedDocTypes.test(ext.substring(1));
       const isValidMime =
-        /application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|application\/vnd\.ms-excel|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-powerpoint|application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation/.test(
+        /application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|application\/vnd\.ms-excel|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-powerpoint|application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation|application\/zip|application\/x-zip-compressed/.test(
           file.mimetype
         );
 
       if (isValidExt && isValidMime) {
         cb(null, true);
       } else {
-        cb(new Error("Only PDF, PPT, Excel, and Word documents are allowed!"));
+        cb(new Error("Only PDF, PPT, Excel, Word documents, and ZIP archives are allowed!"));
       }
     }
   } catch (e) {
