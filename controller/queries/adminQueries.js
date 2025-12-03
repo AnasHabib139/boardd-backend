@@ -171,6 +171,19 @@ exports.getCompanyUsersAdminQuery = (companyId, searchTerm = null, excludeUserId
         name: 1,
         email: 1,
         role: 1,
+
+        // Profile fields
+        image: 1,
+        coverImage: 1,
+        title: 1,
+        designation: 1,
+        description: 1,
+        dob: 1,
+        gender: 1,
+        nickname: 1,
+        isDemo: 1,
+
+        // Status and activity fields
         status: 1,
         lastActiveStatus: 1,
         lastLoginAt: 1,
