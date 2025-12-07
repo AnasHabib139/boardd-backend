@@ -33,6 +33,7 @@ const {
 } = require("./helpers/tasks/task.helper");
 const {
   processTaskColumnValues,
+  transformStatusColumnValuesToColumnData,
 } = require("./helpers/tasks/statusColumns.helper");
 const {
   getTaskByIdQuery,
@@ -409,8 +410,20 @@ exports.createTask = async (req, res, next) => {
       // Continue even if socket fails
     }
 
+    // Transform task response to use columnData instead of statusColumnValues
+    const columnData = await transformStatusColumnValuesToColumnData(
+      tab?._id,
+      task.statusColumnValues
+    );
+    const taskObj = task.toObject();
+    delete taskObj.statusColumnValues;
+    const taskWithColumnData = {
+      ...taskObj,
+      columnData,
+    };
+
     return generateResponse(
-      { task },
+      { task: taskWithColumnData },
       "Task created successfully",
       res,
       STATUS_CODES.CREATED
@@ -790,8 +803,20 @@ exports.batchUpdateTask = async (req, res, next) => {
       // Continue even if socket fails
     }
 
+    // Transform task response to use columnData instead of statusColumnValues
+    const columnData = await transformStatusColumnValuesToColumnData(
+      task.tabId,
+      updatedTask.statusColumnValues
+    );
+    const taskObj = updatedTask.toObject();
+    delete taskObj.statusColumnValues;
+    const taskWithColumnData = {
+      ...taskObj,
+      columnData,
+    };
+
     return generateResponse(
-      { task: updatedTask, activities },
+      { task: taskWithColumnData, activities },
       "Task updated successfully",
       res,
       STATUS_CODES.SUCCESS

@@ -17,9 +17,9 @@ const Stripe = require("stripe");
 const CONFIG = {
   stripeSecretKey:
     process.env.STRIPE_SECRET_KEY,
-  connectedAccountId: "acct_1SWLSVRg4n3bbRuZ",
-  issuedCardId: "ic_1SWMVsRg4n3bbRuZ0bSZvE5F",
-  financialAccountId: "fa_1SWLkHRg4n3bbRuZERiR2ElN",
+  connectedAccountId: "acct_1SaamCRYtzucCUBr",
+  issuedCardId: "ic_1SbIptRYtzucCUBrmMe26C1h",
+  financialAccountId: "fa_1SbInRRYtzucCUBrRLWaooYM",
 
   // Card spending controls (must match card configuration)
   // Update these to match your card's actual spending controls
@@ -27,7 +27,7 @@ const CONFIG = {
     allowedMerchants: ["accounting_bookkeeping_services"],
     spendingLimit: {
       amount: 50000, // $500.00 in cents
-      interval: "monthly",
+      interval: "daily",
     },
   },
 };
@@ -191,13 +191,21 @@ async function simulatePurchase(paymentMethodId) {
     // Check if authorization was declined
     if (!authorization.approved || authorization.status !== "pending") {
       log(`Authorization was declined!`, "error");
-      if (authorization.request_history && authorization.request_history.length > 0) {
-        const lastRequest = authorization.request_history[authorization.request_history.length - 1];
+      if (
+        authorization.request_history &&
+        authorization.request_history.length > 0
+      ) {
+        const lastRequest =
+          authorization.request_history[
+            authorization.request_history.length - 1
+          ];
         log(`  Decline reason: ${lastRequest.reason}`, "error");
         log(`  Amount: ${lastRequest.amount}`, "info");
         log(`  Merchant category: ${lastRequest.merchant_category}`, "info");
       }
-      throw new Error(`Authorization declined: ${authorization.status} - Check card spending controls or status`);
+      throw new Error(
+        `Authorization declined: ${authorization.status} - Check card spending controls or status`
+      );
     }
 
     // Capture the authorization to create a transaction

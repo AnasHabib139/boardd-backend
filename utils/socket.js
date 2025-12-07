@@ -21,7 +21,7 @@ const { createNotification } = require("../models/notificationModel");
 const { findUserMutePreferences } = require("../models/userMutePreferencesModel");
 const { generateActivityMessage, deleteFileFromDisk } = require("../utils");
 const { ACTION_TYPE, TASK_STATUS, TASK_PRIORITY } = require("./constants");
-const { processTaskColumnValues } = require("../controller/helpers/tasks/statusColumns.helper");
+const { processTaskColumnValues, transformStatusColumnValuesToColumnData } = require("../controller/helpers/tasks/statusColumns.helper");
 
 let io;
 
@@ -624,36 +624,14 @@ const processTaskUpdate = async (socket, data) => {
         }
 
         if (tabIdForColumns) {
-          // Fetch column definitions for this tab
-          const { findManyProjectStatusColumns } = require("../models/projectStatusColumnModel");
-          const columns = await findManyProjectStatusColumns({
-            tabId: tabIdForColumns,
-            isActive: true
-          });
-
-          // Transform statusColumnValues Map to columnData array
-          const statusColumnValuesMap = updatedTask.statusColumnValues instanceof Map
-            ? updatedTask.statusColumnValues
-            : new Map(Object.entries(updatedTask.statusColumnValues));
-
-          const columnData = [];
-          for (const column of columns) {
-            const value = statusColumnValuesMap.get(column.columnKey);
-            if (value !== undefined) {
-              columnData.push({
-                _id: column._id,
-                key: column.columnKey,
-                value: value,
-                type: column.columnType,
-                columnName: column.columnName,
-                dropdownOptions: column.dropdownOptions || [],
-              });
-            }
-          }
-
-          // Add columnData to task object for emission
+          const columnData = await transformStatusColumnValuesToColumnData(
+            tabIdForColumns,
+            updatedTask.statusColumnValues
+          );
+          const taskObj = updatedTask.toObject ? updatedTask.toObject() : { ...updatedTask };
+          delete taskObj.statusColumnValues;
           taskWithColumnData = {
-            ...updatedTask.toObject ? updatedTask.toObject() : updatedTask,
+            ...taskObj,
             columnData,
           };
         }

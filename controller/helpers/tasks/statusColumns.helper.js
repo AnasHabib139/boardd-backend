@@ -368,9 +368,48 @@ exports.getDefaultColumnValues = async (tabId) => {
   }
 };
 
+/**
+ * Transform statusColumnValues Map to columnData array with full metadata
+ * @param {ObjectId|string} tabId - Tab ID to fetch column definitions
+ * @param {Map|Object} statusColumnValues - The raw statusColumnValues from the task
+ * @returns {Promise<Array>} columnData array with enriched column information
+ */
+exports.transformStatusColumnValuesToColumnData = async (tabId, statusColumnValues) => {
+  if (!tabId || !statusColumnValues) return [];
+
+  try {
+    const columns = await findManyProjectStatusColumns({ tabId, isActive: true });
+
+    const statusColumnValuesMap = statusColumnValues instanceof Map
+      ? statusColumnValues
+      : new Map(Object.entries(statusColumnValues));
+
+    const columnData = [];
+    for (const column of columns) {
+      const value = statusColumnValuesMap.get(column.columnKey);
+      if (value !== undefined) {
+        columnData.push({
+          _id: column._id,
+          key: column.columnKey,
+          value: value,
+          type: column.columnType,
+          columnName: column.columnName,
+          dropdownOptions: column.dropdownOptions || [],
+        });
+      }
+    }
+
+    return columnData;
+  } catch (error) {
+    console.error('Error transforming statusColumnValues to columnData:', error);
+    return [];
+  }
+};
+
 module.exports = {
   processTaskColumnValues: exports.processTaskColumnValues,
   getDefaultColumnValues: exports.getDefaultColumnValues,
+  transformStatusColumnValuesToColumnData: exports.transformStatusColumnValuesToColumnData,
   validateColumnValue,
   getDefaultValue
 };
