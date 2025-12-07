@@ -14,7 +14,7 @@ const {
 const { createChatConversation, addChannelParticipant } = require("../models/chatConversationModel");
 const { createNotification } = require("../models/notificationModel");
 const { generateResponse } = require("../utils");
-const { STATUS_CODES } = require("../utils/constants");
+const { STATUS_CODES, ROLES } = require("../utils/constants");
 const { getIO, emitUnreadCountsUpdate } = require("../utils/socket");
 const {
   createChannelTab,
@@ -1568,6 +1568,138 @@ exports.deleteChannelFile = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message || "Failed to delete file",
+    });
+  }
+};
+
+/**
+ * Remove a user from channel (by creator or company admin)
+ * Also removes user from all channel tabs and chat conversation
+ */
+exports.removeUserFromChannel = async (req, res, next) => {
+  try {
+    const { userId: targetUserId, channelId } = parseBody(req.body);
+    const requestingUserId = req.user.id;
+    const requestingUserRole = req.user.role;
+
+    // 1. Validate target user exists
+    const targetUser = await findUser({ _id: targetUserId });
+    if (!targetUser) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // 2. Validate channel exists
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // 3. Verify requesting user has access to this channel's company
+    const requestingUser = await findUser({ _id: requestingUserId });
+    if (channel.companyId.toString() !== requestingUser.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You don't have access to this channel",
+      });
+    }
+
+    // 4. Check permission: Only channel creator or company admin can remove
+    const isChannelCreator = channel.createdBy.toString() === requestingUserId;
+    const isCompanyAdmin = requestingUserRole === ROLES.ADMIN;
+
+    if (!isChannelCreator && !isCompanyAdmin) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "Only channel creator or company admin can remove members",
+      });
+    }
+
+    // 5. Cannot remove the channel creator
+    if (channel.createdBy.toString() === targetUserId) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "Cannot remove the channel creator",
+      });
+    }
+
+    // 6. Check if target user is a member
+    if (!channel.members.some(m => m.toString() === targetUserId)) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "User is not a member of this channel",
+      });
+    }
+
+    // 7. Remove from channel members
+    const updatedChannel = await updateChannel(
+      { _id: channelId },
+      {
+        $pull: { members: targetUserId },
+        updatedAt: new Date(),
+      }
+    );
+
+    if (!updatedChannel) {
+      return next({
+        statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+        message: "Failed to remove user from channel",
+      });
+    }
+
+    // 8. Remove from chat conversation participants
+    const { removeChannelParticipant } = require("../models/chatConversationModel");
+    await removeChannelParticipant(channelId, targetUserId);
+
+    // 9. Get all tabs for this channel and remove user from their members arrays
+    const channelTabsQuery = [
+      {
+        $match: {
+          channelId: require("mongoose").Types.ObjectId.createFromHexString(channelId),
+        },
+      },
+    ];
+
+    const channelTabsResult = await getAllTabs({
+      query: channelTabsQuery,
+      page: 1,
+      limit: 100,
+      responseKey: "tabs",
+    });
+
+    if (channelTabsResult.tabs && channelTabsResult.tabs.length > 0) {
+      const tabUpdatePromises = channelTabsResult.tabs.map((tab) =>
+        updateChannelTab(
+          { _id: tab._id },
+          {
+            $pull: { members: targetUserId },
+            updatedAt: new Date(),
+          }
+        )
+      );
+      await Promise.all(tabUpdatePromises);
+    }
+
+    return generateResponse(
+      {
+        channel: updatedChannel,
+        removedUserId: targetUserId,
+        tabsUpdated: channelTabsResult.tabs ? channelTabsResult.tabs.length : 0,
+      },
+      "User removed from channel successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in removeUserFromChannel:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "Failed to remove user from channel",
     });
   }
 };

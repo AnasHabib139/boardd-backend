@@ -4,6 +4,7 @@ const { Router } = require("express");
 const {
   createChannel,
   addUserToChannel,
+  removeUserFromChannel,
   getChannelJoiningLink,
   getAllMembersInChannel,
   getAllChannelsOfUser,
@@ -23,6 +24,7 @@ const { ROLES } = require("../utils/constants");
 const {
   validateCreateChannel,
   validateAddUserToChannel,
+  validateRemoveUserFromChannel,
   validateGetChannelJoiningLinkQuery,
   validateGetAllMembersInChannelQuery,
   validateGetAllChannelsOfUserQuery,
@@ -61,6 +63,15 @@ class ChannelApi {
       checkPermission("addRemoveChannelMembers"),
       validateAddUserToChannel,
       addUserToChannel
+    );
+
+    // Remove user from channel (by creator or admin)
+    router.delete(
+      "/remove-member",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("addRemoveChannelMembers"),
+      validateRemoveUserFromChannel,
+      removeUserFromChannel
     );
 
     // Get channel joining link with query validation
