@@ -649,6 +649,78 @@ exports.getUserConversationsQuery = (userId, companyId, page = 1, limit = 20) =>
       },
     },
 
+    // Lookup last message to get attachment info for empty lastMessageText
+    {
+      $lookup: {
+        from: "chatmessages",
+        let: { convId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$conversationId", "$$convId"] },
+                  { $eq: ["$parentMessageId", null] },
+                  { $eq: ["$deletedAt", null] }
+                ]
+              }
+            }
+          },
+          { $sort: { createdAt: -1 } },
+          { $limit: 1 },
+          {
+            $project: {
+              contentText: 1,
+              attachmentsMeta: 1
+            }
+          }
+        ],
+        as: "lastMessageData"
+      }
+    },
+
+    // Compute lastMessageText from attachments if empty
+    {
+      $addFields: {
+        lastMessageText: {
+          $cond: {
+            if: {
+              $and: [
+                { $or: [{ $eq: ["$lastMessageText", ""] }, { $eq: ["$lastMessageText", null] }] },
+                { $gt: [{ $size: { $ifNull: [{ $arrayElemAt: ["$lastMessageData.attachmentsMeta", 0] }, []] } }, 0] }
+              ]
+            },
+            then: {
+              $let: {
+                vars: {
+                  firstAttachment: { $arrayElemAt: [{ $arrayElemAt: ["$lastMessageData.attachmentsMeta", 0] }, 0] },
+                  attachmentCount: { $size: { $ifNull: [{ $arrayElemAt: ["$lastMessageData.attachmentsMeta", 0] }, []] } }
+                },
+                in: {
+                  $cond: {
+                    if: { $gt: ["$$attachmentCount", 1] },
+                    then: { $concat: ["📎 ", { $toString: "$$attachmentCount" }, " attachments"] },
+                    else: {
+                      $switch: {
+                        branches: [
+                          { case: { $eq: ["$$firstAttachment.type", "audio"] }, then: "🎵 Audio message" },
+                          { case: { $eq: ["$$firstAttachment.type", "video"] }, then: "🎬 Video" },
+                          { case: { $eq: ["$$firstAttachment.type", "image"] }, then: "📷 Photo" },
+                          { case: { $eq: ["$$firstAttachment.type", "gif"] }, then: "🎭 GIF" }
+                        ],
+                        default: "📎 File"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            else: "$lastMessageText"
+          }
+        }
+      }
+    },
+
     // Project final fields
     {
       $project: {

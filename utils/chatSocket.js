@@ -249,14 +249,79 @@ const processChatMessageSend = async (socket, data, io) => {
 
     // Update conversation last message (only for root messages)
     if (!parentMessageId) {
-      const preview = generatePreview(validation.sanitized, 100);
+      let preview = generatePreview(validation.sanitized, 100);
+
+      // If no text content but has attachments, show attachment type
+      if (!preview && attachmentsMeta && attachmentsMeta.length > 0) {
+        const firstAttachment = attachmentsMeta[0];
+        switch (firstAttachment.type) {
+          case 'audio':
+            preview = '🎵 Audio message';
+            break;
+          case 'video':
+            preview = '🎬 Video';
+            break;
+          case 'image':
+            preview = '📷 Photo';
+            break;
+          case 'gif':
+            preview = '🎭 GIF';
+            break;
+          case 'document':
+          default:
+            preview = '📎 File';
+            break;
+        }
+        // If multiple attachments of same type
+        if (attachmentsMeta.length > 1) {
+          const sameType = attachmentsMeta.every(a => a.type === firstAttachment.type);
+          if (sameType) {
+            preview = `${preview} (${attachmentsMeta.length})`;
+          } else {
+            preview = `📎 ${attachmentsMeta.length} attachments`;
+          }
+        }
+      }
+
       await updateLastMessage(conversationId, preview, message.createdAt);
     }
 
     // Handle thread reply
     if (parentMessageId) {
       // Update thread aggregates on root message
-      const replyPreview = generatePreview(validation.sanitized, 200);
+      let replyPreview = generatePreview(validation.sanitized, 200);
+
+      // If no text content but has attachments, show attachment type
+      if (!replyPreview && attachmentsMeta && attachmentsMeta.length > 0) {
+        const firstAttachment = attachmentsMeta[0];
+        switch (firstAttachment.type) {
+          case 'audio':
+            replyPreview = '🎵 Audio message';
+            break;
+          case 'video':
+            replyPreview = '🎬 Video';
+            break;
+          case 'image':
+            replyPreview = '📷 Photo';
+            break;
+          case 'gif':
+            replyPreview = '🎭 GIF';
+            break;
+          case 'document':
+          default:
+            replyPreview = '📎 File';
+            break;
+        }
+        if (attachmentsMeta.length > 1) {
+          const sameType = attachmentsMeta.every(a => a.type === firstAttachment.type);
+          if (sameType) {
+            replyPreview = `${replyPreview} (${attachmentsMeta.length})`;
+          } else {
+            replyPreview = `📎 ${attachmentsMeta.length} attachments`;
+          }
+        }
+      }
+
       await incrementThreadCount(parentMessageId, {
         replyText: replyPreview,
         replyAuthorId: userId,
