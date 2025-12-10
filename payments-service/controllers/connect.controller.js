@@ -1114,6 +1114,48 @@ exports.handleWebhook = async (req, res, next) => {
         }
         break;
 
+      // ==================== Charge Events ====================
+
+      case "charge.succeeded":
+        {
+          const charge = event.data.object;
+          console.log(`Charge succeeded: ${charge.id}, amount: ${charge.amount}`);
+
+          // If charge has associated invoice, update it
+          if (charge.invoice) {
+            const { findInvoice, updateInvoiceStatus } = require("../../models/invoiceModel");
+            const invoiceRecord = await findInvoice({ stripeInvoiceId: charge.invoice });
+
+            if (invoiceRecord && invoiceRecord.status !== 'paid') {
+              await updateInvoiceStatus(invoiceRecord._id, 'paid', {
+                amountPaid: charge.amount,
+                amountRemaining: 0,
+                paidAt: new Date(),
+                attempted: true,
+                attemptCount: (invoiceRecord.attemptCount || 0) + 1,
+                paymentIntentId: charge.payment_intent
+              });
+
+              // Create activity for payment
+              const { createInvoicePaidActivity } = require("../../controller/helpers/invoices/invoiceActivityHelpers");
+              await createInvoicePaidActivity({
+                tabId: invoiceRecord.tabId,
+                invoiceId: invoiceRecord._id,
+                invoiceNumber: invoiceRecord.invoiceNumber,
+                amount: charge.amount,
+                currency: charge.currency
+              });
+
+              console.log(`Invoice ${charge.invoice} marked as paid via charge.succeeded`);
+            } else if (invoiceRecord) {
+              console.log(`Invoice ${charge.invoice} already marked as paid, skipping`);
+            }
+          } else {
+            console.log(`Charge ${charge.id} has no associated invoice`);
+          }
+        }
+        break;
+
       default:
         console.log(`Unhandled webhook event type: ${event.type}`);
     }
