@@ -200,6 +200,7 @@ exports.getUserTimeEntriesQuery = (userId, weekRange = null) => {
           _id: "$_id",
           title: "$title",
           description: "$description",
+          tags: "$tags",
           startTime: "$startTime",
           endTime: "$endTime",
           totalTime: "$totalTime",
