@@ -1008,7 +1008,7 @@ exports.listInvoices = async (req, res, next) => {
   try {
     const { tabId } = req.params;
     const userId = req.user.id;
-    const { status, limit = 10, page = 1 } = req.query;
+    const { status, limit = 10, page = 1, days = 60 } = req.query;
 
     // Validate tab access
     await validateTabAccess(tabId, userId);
@@ -1021,15 +1021,16 @@ exports.listInvoices = async (req, res, next) => {
 
     // Find invoices
     const skip = (page - 1) * limit;
-    const { countInvoicesByTab } = require("../../models/invoiceModel");
+    const { countInvoicesByTab, getInvoiceSummaryStats } = require("../../models/invoiceModel");
 
-    const [invoices, totalCount] = await Promise.all([
+    const [invoices, totalCount, summary] = await Promise.all([
       findInvoicesByTab(tabId, {
         status,
         limit: parseInt(limit),
         skip
       }),
-      countInvoicesByTab(tabId, status)
+      countInvoicesByTab(tabId, status),
+      getInvoiceSummaryStats(tabId, parseInt(days))
     ]);
 
     // Get connected account for fetching payment details
@@ -1083,7 +1084,8 @@ exports.listInvoices = async (req, res, next) => {
           limit: parseInt(limit),
           total: totalCount,
           totalPages: Math.ceil(totalCount / parseInt(limit))
-        }
+        },
+        summary
       },
       "Invoices retrieved successfully",
       res,

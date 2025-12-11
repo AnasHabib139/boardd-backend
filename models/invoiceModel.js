@@ -480,6 +480,62 @@ exports.countInvoicesByTab = async (tabId, status = null) => {
 };
 
 /**
+ * Get invoice summary stats for dashboard cards
+ * Returns: outstanding, overdue, totalBilled, totalReceived
+ */
+exports.getInvoiceSummaryStats = async (tabId, days = 60) => {
+  const now = new Date();
+  const pastDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const tabObjectId = new Types.ObjectId(tabId);
+
+  // Run all aggregations in parallel
+  const [outstanding, overdue, totalBilled, totalReceived] = await Promise.all([
+    // Outstanding: open invoices (no date filter)
+    InvoiceModel.aggregate([
+      { $match: { tabId: tabObjectId, status: 'open' } },
+      { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: '$amountDue' } } }
+    ]),
+
+    // Overdue: open invoices with dueDate < now
+    InvoiceModel.aggregate([
+      { $match: {
+        tabId: tabObjectId,
+        status: 'open',
+        dueDate: { $lt: now }
+      }},
+      { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: '$amountDue' } } }
+    ]),
+
+    // Total billed in past X days (all non-draft invoices created)
+    InvoiceModel.aggregate([
+      { $match: {
+        tabId: tabObjectId,
+        createdAt: { $gte: pastDate },
+        status: { $ne: 'draft' }
+      }},
+      { $group: { _id: null, amount: { $sum: '$amountDue' } } }
+    ]),
+
+    // Total received in past X days (paid invoices)
+    InvoiceModel.aggregate([
+      { $match: {
+        tabId: tabObjectId,
+        status: 'paid',
+        paidAt: { $gte: pastDate }
+      }},
+      { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: '$amountPaid' } } }
+    ])
+  ]);
+
+  return {
+    outstanding: { count: outstanding[0]?.count || 0, amount: outstanding[0]?.amount || 0 },
+    overdue: { count: overdue[0]?.count || 0, amount: overdue[0]?.amount || 0 },
+    totalBilled: { amount: totalBilled[0]?.amount || 0, days },
+    totalReceived: { count: totalReceived[0]?.count || 0, amount: totalReceived[0]?.amount || 0, days }
+  };
+};
+
+/**
  * Count transactions (attempted invoices) by tab
  */
 exports.countTransactionsByTab = async (tabId, status = null) => {
