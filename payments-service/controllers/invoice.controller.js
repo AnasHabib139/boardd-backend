@@ -1021,11 +1021,16 @@ exports.listInvoices = async (req, res, next) => {
 
     // Find invoices
     const skip = (page - 1) * limit;
-    const invoices = await findInvoicesByTab(tabId, {
-      status,
-      limit: parseInt(limit),
-      skip
-    });
+    const { countInvoicesByTab } = require("../../models/invoiceModel");
+
+    const [invoices, totalCount] = await Promise.all([
+      findInvoicesByTab(tabId, {
+        status,
+        limit: parseInt(limit),
+        skip
+      }),
+      countInvoicesByTab(tabId, status)
+    ]);
 
     // Get connected account for fetching payment details
     const accountRecord = await findAccountByCompany(client.companyId);
@@ -1076,7 +1081,8 @@ exports.listInvoices = async (req, res, next) => {
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
-          total: invoices.length
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / parseInt(limit))
         }
       },
       "Invoices retrieved successfully",

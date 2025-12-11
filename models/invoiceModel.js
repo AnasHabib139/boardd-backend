@@ -469,6 +469,17 @@ exports.findTransactionsByTab = async (tabId, options = {}) => {
 };
 
 /**
+ * Count invoices by tab (for pagination)
+ */
+exports.countInvoicesByTab = async (tabId, status = null) => {
+  const query = { tabId };
+  if (status) {
+    query.status = status;
+  }
+  return InvoiceModel.countDocuments(query);
+};
+
+/**
  * Count transactions (attempted invoices) by tab
  */
 exports.countTransactionsByTab = async (tabId, status = null) => {
