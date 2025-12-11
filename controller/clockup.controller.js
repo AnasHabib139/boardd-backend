@@ -502,9 +502,33 @@ exports.getUserTimeEntries = async (req, res, next) => {
       responseKey: "timeEntries",
     });
 
+    // Calculate total week time (sum all entry totalTime values)
+    let totalWeekTimeMinutes = 0;
+    if (result.timeEntries && result.timeEntries.length > 0) {
+      for (const day of result.timeEntries) {
+        if (day.entries && day.entries.length > 0) {
+          for (const entry of day.entries) {
+            if (entry.totalTime) {
+              const [hours, minutes, seconds] = entry.totalTime.split(':').map(Number);
+              totalWeekTimeMinutes += (hours * 60) + minutes + (seconds / 60);
+            }
+          }
+        }
+      }
+    }
+
+    // Format total week time as "H:MM:SS"
+    const formatTotalTime = (totalMinutes) => {
+      const hours = Math.floor(totalMinutes / 60);
+      const mins = Math.floor(totalMinutes % 60);
+      const secs = Math.floor((totalMinutes % 1) * 60);
+      return `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    };
+
     // Add filter context to response
     const responseData = {
       ...result,
+      totalWeekTime: formatTotalTime(totalWeekTimeMinutes),
       filterApplied: filter || "all",
     };
 
