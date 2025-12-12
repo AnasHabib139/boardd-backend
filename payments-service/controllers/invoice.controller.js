@@ -1571,3 +1571,85 @@ exports.deleteInvoice = async (req, res, next) => {
     );
   }
 };
+
+/**
+ * Get company-wide revenue stats (for graph display)
+ * GET /api/payments/revenue-stats?year=2025
+ * Returns monthly totals, largest payments, and all-time total
+ */
+exports.getCompanyRevenueStats = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+
+    // Get user's company
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const companyId = user.companyId;
+
+    // Get revenue data from invoice model
+    const {
+      getRevenueStatsByCompany,
+      getTotalRevenueByCompany,
+    } = require("../../models/invoiceModel");
+
+    const [monthlyData, total] = await Promise.all([
+      getRevenueStatsByCompany(companyId, year),
+      getTotalRevenueByCompany(companyId),
+    ]);
+
+    // Month names for display
+    const monthNames = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ];
+
+    // Build full 12-month array with zeros for missing months
+    const monthly = monthNames.map((month, index) => {
+      const monthNumber = index + 1;
+      const found = monthlyData.find((m) => m._id === monthNumber);
+      return {
+        month,
+        totalAmount: found ? found.totalAmount : 0,
+        largestPayment: found ? found.largestPayment : 0,
+      };
+    });
+
+    return generateResponse(
+      {
+        total,
+        currency: "usd",
+        year,
+        monthly,
+      },
+      "Company revenue stats retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getCompanyRevenueStats:", error);
+
+    let message = "Failed to get company revenue stats";
+    let statusCode = STATUS_CODES.BAD_REQUEST;
+
+    if (error.message === "USER_NOT_FOUND") {
+      message = "User not found";
+      statusCode = STATUS_CODES.UNAUTHORIZED;
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      statusCode
+    );
+  }
+};

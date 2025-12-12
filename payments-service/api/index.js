@@ -49,6 +49,7 @@ const {
   deleteInvoice,
   getTransactions,
   getAllTransactions: getAllClientTransactions,
+  getCompanyRevenueStats,
 } = require("../controllers/invoice.controller");
 
 const {
@@ -801,6 +802,19 @@ class PaymentsAPI {
       "/transactions",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       getAllClientTransactions
+    );
+
+    /**
+     * GET /api/payments/revenue-stats
+     * Get company-wide revenue stats for graph display
+     * Query: ?year=2025
+     * Auth: Admin or Employee
+     * Returns: Monthly totals, largest payments, all-time total
+     */
+    router.get(
+      "/revenue-stats",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getCompanyRevenueStats
     );
 
     /**

@@ -799,5 +799,61 @@ exports.getTotalRevenueByTab = async (tabId) => {
   return result.length > 0 ? result[0].total : 0;
 };
 
+/**
+ * Get monthly revenue stats for a company (for graph display)
+ * Returns monthly totals and largest payments for the specified year
+ */
+exports.getRevenueStatsByCompany = async (companyId, year) => {
+  const startOfYear = new Date(year, 0, 1);
+  const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
+  const companyObjectId = new Types.ObjectId(companyId);
+
+  const result = await InvoiceModel.aggregate([
+    {
+      $match: {
+        companyId: companyObjectId,
+        status: "paid",
+        paidAt: { $gte: startOfYear, $lte: endOfYear }
+      }
+    },
+    {
+      $group: {
+        _id: { $month: "$paidAt" },
+        totalAmount: { $sum: "$amountPaid" },
+        largestPayment: { $max: "$amountPaid" }
+      }
+    },
+    {
+      $sort: { _id: 1 }
+    }
+  ]);
+
+  return result;
+};
+
+/**
+ * Get all-time total revenue for a company
+ */
+exports.getTotalRevenueByCompany = async (companyId) => {
+  const companyObjectId = new Types.ObjectId(companyId);
+
+  const result = await InvoiceModel.aggregate([
+    {
+      $match: {
+        companyId: companyObjectId,
+        status: "paid"
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$amountPaid" }
+      }
+    }
+  ]);
+
+  return result.length > 0 ? result[0].total : 0;
+};
+
 // Export the model
 exports.InvoiceModel = InvoiceModel;
