@@ -1055,9 +1055,10 @@ exports.listInvoices = async (req, res, next) => {
           sentTo: inv.billTo?.email || null,
           createdBy: inv.createdBy ? {
             id: inv.createdBy._id,
-            firstName: inv.createdBy.firstName,
-            lastName: inv.createdBy.lastName,
-            profilePicture: inv.createdBy.profilePicture
+            name: inv.createdBy.name,
+            firstName: inv.createdBy.completeName?.firstName,
+            lastName: inv.createdBy.completeName?.lastName,
+            image: inv.createdBy.image
           } : null
         };
 
@@ -1181,9 +1182,10 @@ exports.listAllInvoices = async (req, res, next) => {
           } : null,
           createdBy: inv.createdBy ? {
             id: inv.createdBy._id,
-            firstName: inv.createdBy.firstName,
-            lastName: inv.createdBy.lastName,
-            profilePicture: inv.createdBy.profilePicture
+            name: inv.createdBy.name,
+            firstName: inv.createdBy.completeName?.firstName,
+            lastName: inv.createdBy.completeName?.lastName,
+            image: inv.createdBy.image
           } : null
         };
 
@@ -1294,7 +1296,14 @@ exports.getTransactions = async (req, res, next) => {
           description: inv.paymentIntentId || inv.stripeInvoiceId, // Payment Intent ID (the "long numbers")
           attemptCount: inv.attemptCount || 0,
           hostedInvoiceUrl: inv.hostedInvoiceUrl,
-          invoicePdf: inv.invoicePdf
+          invoicePdf: inv.invoicePdf,
+          createdBy: inv.createdBy ? {
+            id: inv.createdBy._id,
+            name: inv.createdBy.name,
+            firstName: inv.createdBy.completeName?.firstName,
+            lastName: inv.createdBy.completeName?.lastName,
+            image: inv.createdBy.image
+          } : null
         };
 
         // Add payment method details if invoice was paid
