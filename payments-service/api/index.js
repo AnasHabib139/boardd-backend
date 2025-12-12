@@ -45,6 +45,7 @@ const {
   voidInvoice,
   getInvoice,
   listInvoices,
+  listAllInvoices,
   deleteInvoice,
   getTransactions,
 } = require("../controllers/invoice.controller");
@@ -774,6 +775,18 @@ class PaymentsAPI {
       "/clients/:tabId/invoices/:invoiceId",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       getInvoice
+    );
+
+    /**
+     * GET /api/payments/invoices
+     * List all invoices for company (across all clients/tabs)
+     * Query: ?status=draft|open|paid|void&limit=10&page=1&days=60
+     * Auth: Admin or Employee
+     */
+    router.get(
+      "/invoices",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      listAllInvoices
     );
 
     /**

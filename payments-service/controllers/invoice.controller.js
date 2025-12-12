@@ -1106,6 +1106,133 @@ exports.listInvoices = async (req, res, next) => {
 };
 
 /**
+ * List all invoices for company (across all clients/tabs)
+ * GET /api/payments/invoices
+ * Query: ?status=draft|open|paid|void&limit=10&page=1&days=60
+ */
+exports.listAllInvoices = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { status, limit = 10, page = 1, days = 60 } = req.query;
+
+    // Fetch user to get companyId
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const companyId = user.companyId;
+
+    // Find invoices
+    const skip = (page - 1) * limit;
+    const {
+      findInvoicesByCompany,
+      countInvoicesByCompany,
+      getInvoiceSummaryStatsByCompany
+    } = require("../../models/invoiceModel");
+
+    const [invoices, totalCount, summary] = await Promise.all([
+      findInvoicesByCompany(companyId, {
+        status,
+        limit: parseInt(limit),
+        skip
+      }),
+      countInvoicesByCompany(companyId, status),
+      getInvoiceSummaryStatsByCompany(companyId, parseInt(days))
+    ]);
+
+    // Get connected account for fetching payment details
+    const accountRecord = await findAccountByCompany(companyId);
+    const connectedAccountId = accountRecord?.stripeAccountId;
+
+    // Build invoice response with client/tab info
+    const invoicesWithDetails = await Promise.all(
+      invoices.map(async (inv) => {
+        const invoiceData = {
+          id: inv._id,
+          stripeInvoiceId: inv.stripeInvoiceId,
+          invoiceNumber: inv.invoiceNumber,
+          status: inv.status,
+          invoiceType: inv.invoiceType,
+          amountDue: inv.amountDue,
+          amountPaid: inv.amountPaid,
+          currency: inv.currency,
+          dueDate: inv.dueDate,
+          createdAt: inv.createdAt,
+          hostedInvoiceUrl: inv.hostedInvoiceUrl,
+          sentTo: inv.billTo?.email || null,
+          // Include client and tab info
+          client: inv.clientId ? {
+            id: inv.clientId._id,
+            businessName: inv.clientId.businessName
+          } : null,
+          tab: inv.tabId ? {
+            id: inv.tabId._id,
+            name: inv.tabId.name
+          } : null
+        };
+
+        // Add payment method details for paid invoices
+        if (inv.status === 'paid' && inv.stripeInvoiceId && connectedAccountId) {
+          try {
+            const paymentDetails = await stripeService.getInvoicePaymentDetails(
+              inv.stripeInvoiceId,
+              connectedAccountId
+            );
+            invoiceData.paymentMethod = paymentDetails || null;
+          } catch (error) {
+            console.error(`Error fetching payment details for invoice ${inv._id}:`, error);
+            invoiceData.paymentMethod = null;
+          }
+        } else {
+          invoiceData.paymentMethod = null;
+        }
+
+        return invoiceData;
+      })
+    );
+
+    return generateResponse(
+      {
+        invoices: invoicesWithDetails,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / parseInt(limit))
+        },
+        summary
+      },
+      "Invoices retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error listing all invoices:", error);
+
+    let message = "Failed to list invoices";
+    let statusCode = STATUS_CODES.BAD_REQUEST;
+
+    if (error.message === "USER_NOT_FOUND") {
+      message = "User not found";
+      statusCode = STATUS_CODES.UNAUTHORIZED;
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      statusCode
+    );
+  }
+};
+
+/**
  * Get transactions (invoices where payment was attempted)
  * GET /api/payments/clients/:tabId/transactions
  */

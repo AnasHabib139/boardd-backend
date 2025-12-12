@@ -536,6 +536,92 @@ exports.getInvoiceSummaryStats = async (tabId, days = 60) => {
 };
 
 /**
+ * Find invoices by company (for company-wide invoices list)
+ */
+exports.findInvoicesByCompany = async (companyId, options = {}) => {
+  const { status, limit = 10, skip = 0 } = options;
+
+  const query = { companyId: new Types.ObjectId(companyId) };
+
+  if (status) {
+    query.status = status;
+  }
+
+  return InvoiceModel.find(query)
+    .populate("tabId", "name")
+    .populate("clientId", "businessName")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .exec();
+};
+
+/**
+ * Count invoices by company (for pagination)
+ */
+exports.countInvoicesByCompany = async (companyId, status = null) => {
+  const query = { companyId: new Types.ObjectId(companyId) };
+  if (status) {
+    query.status = status;
+  }
+  return InvoiceModel.countDocuments(query);
+};
+
+/**
+ * Get invoice summary stats by company (for dashboard cards)
+ */
+exports.getInvoiceSummaryStatsByCompany = async (companyId, days = 60) => {
+  const now = new Date();
+  const pastDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const companyObjectId = new Types.ObjectId(companyId);
+
+  const [outstanding, overdue, totalBilled, totalReceived] = await Promise.all([
+    // Outstanding: open invoices
+    InvoiceModel.aggregate([
+      { $match: { companyId: companyObjectId, status: 'open' } },
+      { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: '$amountDue' } } }
+    ]),
+
+    // Overdue: open invoices with dueDate < now
+    InvoiceModel.aggregate([
+      { $match: {
+        companyId: companyObjectId,
+        status: 'open',
+        dueDate: { $lt: now }
+      }},
+      { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: '$amountDue' } } }
+    ]),
+
+    // Total billed in past X days
+    InvoiceModel.aggregate([
+      { $match: {
+        companyId: companyObjectId,
+        createdAt: { $gte: pastDate },
+        status: { $ne: 'draft' }
+      }},
+      { $group: { _id: null, amount: { $sum: '$amountDue' } } }
+    ]),
+
+    // Total received in past X days
+    InvoiceModel.aggregate([
+      { $match: {
+        companyId: companyObjectId,
+        status: 'paid',
+        paidAt: { $gte: pastDate }
+      }},
+      { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: '$amountPaid' } } }
+    ])
+  ]);
+
+  return {
+    outstanding: { count: outstanding[0]?.count || 0, amount: outstanding[0]?.amount || 0 },
+    overdue: { count: overdue[0]?.count || 0, amount: overdue[0]?.amount || 0 },
+    totalBilled: { amount: totalBilled[0]?.amount || 0, days },
+    totalReceived: { count: totalReceived[0]?.count || 0, amount: totalReceived[0]?.amount || 0, days }
+  };
+};
+
+/**
  * Count transactions (attempted invoices) by tab
  */
 exports.countTransactionsByTab = async (tabId, status = null) => {
