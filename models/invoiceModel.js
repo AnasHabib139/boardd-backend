@@ -351,7 +351,9 @@ exports.findInvoicesByTab = async (tabId, options = {}) => {
   if (status) query.status = status;
   if (invoiceType) query.invoiceType = invoiceType;
 
-  let queryBuilder = InvoiceModel.find(query).sort({ createdAt: -1 });
+  let queryBuilder = InvoiceModel.find(query)
+    .populate("createdBy", "firstName lastName profilePicture")
+    .sort({ createdAt: -1 });
 
   if (limit) queryBuilder = queryBuilder.limit(limit);
   if (skip) queryBuilder = queryBuilder.skip(skip);
@@ -550,6 +552,7 @@ exports.findInvoicesByCompany = async (companyId, options = {}) => {
   return InvoiceModel.find(query)
     .populate("tabId", "name")
     .populate("clientId", "businessName")
+    .populate("createdBy", "firstName lastName profilePicture")
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit)

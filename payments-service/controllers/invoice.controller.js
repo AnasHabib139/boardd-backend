@@ -1052,7 +1052,13 @@ exports.listInvoices = async (req, res, next) => {
           dueDate: inv.dueDate,
           createdAt: inv.createdAt,
           hostedInvoiceUrl: inv.hostedInvoiceUrl,
-          sentTo: inv.billTo?.email || null
+          sentTo: inv.billTo?.email || null,
+          createdBy: inv.createdBy ? {
+            id: inv.createdBy._id,
+            firstName: inv.createdBy.firstName,
+            lastName: inv.createdBy.lastName,
+            profilePicture: inv.createdBy.profilePicture
+          } : null
         };
 
         // Add payment method details for paid invoices
@@ -1172,6 +1178,12 @@ exports.listAllInvoices = async (req, res, next) => {
           tab: inv.tabId ? {
             id: inv.tabId._id,
             name: inv.tabId.name
+          } : null,
+          createdBy: inv.createdBy ? {
+            id: inv.createdBy._id,
+            firstName: inv.createdBy.firstName,
+            lastName: inv.createdBy.lastName,
+            profilePicture: inv.createdBy.profilePicture
           } : null
         };
 
