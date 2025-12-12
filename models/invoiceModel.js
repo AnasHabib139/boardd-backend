@@ -684,6 +684,7 @@ exports.findTransactionsByCompany = async (companyId, options = {}) => {
   return InvoiceModel.find(query)
     .populate("tabId", "name")
     .populate("clientId", "businessName")
+    .populate("createdBy", "name completeName image")
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit)

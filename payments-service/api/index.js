@@ -48,6 +48,7 @@ const {
   listAllInvoices,
   deleteInvoice,
   getTransactions,
+  getAllTransactions: getAllClientTransactions,
 } = require("../controllers/invoice.controller");
 
 const {
@@ -787,6 +788,19 @@ class PaymentsAPI {
       "/invoices",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       listAllInvoices
+    );
+
+    /**
+     * GET /api/payments/transactions
+     * List all transactions for company (across all clients/tabs)
+     * Query: ?status=paid|open|void|uncollectible&limit=10&page=1
+     * Auth: Admin or Employee
+     * Returns: Transaction history with payment details, client info
+     */
+    router.get(
+      "/transactions",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getAllClientTransactions
     );
 
     /**

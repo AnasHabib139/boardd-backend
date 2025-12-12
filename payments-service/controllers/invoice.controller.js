@@ -1355,6 +1355,137 @@ exports.getTransactions = async (req, res, next) => {
 };
 
 /**
+ * Get all transactions for company (across all clients/tabs)
+ * GET /api/payments/transactions
+ * Query: ?status=paid|open|void|uncollectible&limit=10&page=1
+ */
+exports.getAllTransactions = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { status, limit = 10, page = 1 } = req.query;
+
+    // Fetch user to get companyId
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const companyId = user.companyId;
+
+    // Find transactions
+    const skip = (page - 1) * limit;
+    const {
+      findTransactionsByCompany,
+      countTransactionsByCompany
+    } = require("../../models/invoiceModel");
+
+    const [transactions, totalCount] = await Promise.all([
+      findTransactionsByCompany(companyId, {
+        status,
+        limit: parseInt(limit),
+        skip
+      }),
+      countTransactionsByCompany(companyId, { status })
+    ]);
+
+    // Get connected account for fetching payment details
+    const accountRecord = await findAccountByCompany(companyId);
+    const connectedAccountId = accountRecord?.stripeAccountId;
+
+    // Enrich transactions with payment details
+    const transactionsWithDetails = await Promise.all(
+      transactions.map(async (inv) => {
+        const transactionData = {
+          id: inv._id,
+          invoiceNumber: inv.invoiceNumber,
+          stripeInvoiceId: inv.stripeInvoiceId,
+          amount: inv.amountDue,
+          currency: inv.currency,
+          status: inv.status,
+          date: inv.paidAt || inv.createdAt,
+          customerEmail: inv.billTo?.email || null,
+          description: inv.paymentIntentId || inv.stripeInvoiceId,
+          attemptCount: inv.attemptCount || 0,
+          hostedInvoiceUrl: inv.hostedInvoiceUrl,
+          invoicePdf: inv.invoicePdf,
+          // Include client and tab info
+          client: inv.clientId ? {
+            id: inv.clientId._id,
+            businessName: inv.clientId.businessName
+          } : null,
+          tab: inv.tabId ? {
+            id: inv.tabId._id,
+            name: inv.tabId.name
+          } : null,
+          createdBy: inv.createdBy ? {
+            id: inv.createdBy._id,
+            name: inv.createdBy.name,
+            firstName: inv.createdBy.completeName?.firstName,
+            lastName: inv.createdBy.completeName?.lastName,
+            image: inv.createdBy.image
+          } : null
+        };
+
+        // Add payment method details if invoice was paid
+        if (inv.status === 'paid' && inv.stripeInvoiceId && connectedAccountId) {
+          try {
+            const paymentDetails = await stripeService.getInvoicePaymentDetails(
+              inv.stripeInvoiceId,
+              connectedAccountId
+            );
+            transactionData.paymentMethod = paymentDetails || null;
+          } catch (error) {
+            console.error(`Error fetching payment details for transaction ${inv._id}:`, error);
+            transactionData.paymentMethod = null;
+          }
+        } else {
+          transactionData.paymentMethod = null;
+        }
+
+        return transactionData;
+      })
+    );
+
+    return generateResponse(
+      {
+        transactions: transactionsWithDetails,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / parseInt(limit))
+        }
+      },
+      "Transactions retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error retrieving all transactions:", error);
+
+    let message = "Failed to retrieve transactions";
+    let statusCode = STATUS_CODES.BAD_REQUEST;
+
+    if (error.message === "USER_NOT_FOUND") {
+      message = "User not found";
+      statusCode = STATUS_CODES.UNAUTHORIZED;
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      statusCode
+    );
+  }
+};
+
+/**
  * Delete draft invoice
  * DELETE /api/payments/clients/:tabId/invoices/:invoiceId
  */
