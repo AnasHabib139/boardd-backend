@@ -1653,3 +1653,85 @@ exports.getCompanyRevenueStats = async (req, res, next) => {
     );
   }
 };
+
+/**
+ * Get all client details for company (across all tabs)
+ * GET /api/payments/clients?limit=10&page=1
+ * Returns flattened list of all clientDetails entries with tab info
+ */
+exports.getAllClients = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { limit = 10, page = 1 } = req.query;
+
+    // Get user's company
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+    const user = await UserModel.findById(userId).select("companyId");
+
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const companyId = user.companyId;
+    const skip = (page - 1) * limit;
+
+    const {
+      findAllClientDetailsByCompany,
+      countAllClientDetailsByCompany,
+    } = require("../../models/clientModel");
+
+    const [clients, totalCount] = await Promise.all([
+      findAllClientDetailsByCompany(companyId, { limit: parseInt(limit), skip }),
+      countAllClientDetailsByCompany(companyId),
+    ]);
+
+    // Format response
+    const formattedClients = clients.map((client) => ({
+      id: client._id,
+      firstName: client.firstName || null,
+      lastName: client.lastName || null,
+      email: client.email || null,
+      phone: client.phone || null,
+      address: client.address || null,
+      companyName: client.companyName || null,
+      attachments: client.attachments || [],
+      tab: client.tab,
+      client: client.client,
+    }));
+
+    return generateResponse(
+      {
+        clients: formattedClients,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / parseInt(limit)),
+        },
+      },
+      "Clients retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getAllClients:", error);
+
+    let message = "Failed to retrieve clients";
+    let statusCode = STATUS_CODES.BAD_REQUEST;
+
+    if (error.message === "USER_NOT_FOUND") {
+      message = "User not found";
+      statusCode = STATUS_CODES.UNAUTHORIZED;
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    return generateResponse(
+      { error: message },
+      message,
+      res,
+      statusCode
+    );
+  }
+};

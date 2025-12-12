@@ -197,3 +197,84 @@ exports.updateClientStripeCustomer = async (clientId, customerId) => {
     { new: true }
   );
 };
+
+/**
+ * Find all client details for a company (flattened from all tabs)
+ * Returns each clientDetails entry as a separate document with tab info
+ */
+exports.findAllClientDetailsByCompany = async (companyId, { limit = 10, skip = 0 }) => {
+  const companyObjectId = new Types.ObjectId(companyId);
+
+  const result = await ClientModel.aggregate([
+    {
+      $match: { companyId: companyObjectId }
+    },
+    {
+      $unwind: {
+        path: "$clientDetails",
+        preserveNullAndEmptyArrays: false
+      }
+    },
+    {
+      $lookup: {
+        from: "channeltabs",
+        localField: "tabId",
+        foreignField: "_id",
+        as: "tabInfo"
+      }
+    },
+    {
+      $unwind: {
+        path: "$tabInfo",
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
+      $project: {
+        _id: "$clientDetails._id",
+        firstName: "$clientDetails.firstName",
+        lastName: "$clientDetails.lastName",
+        email: "$clientDetails.email",
+        phone: "$clientDetails.phone",
+        address: "$clientDetails.address",
+        companyName: "$clientDetails.companyName",
+        attachments: "$clientDetails.attachments",
+        tab: {
+          id: "$tabId",
+          name: "$tabInfo.name"
+        },
+        client: {
+          id: "$_id"
+        }
+      }
+    },
+    { $skip: skip },
+    { $limit: limit }
+  ]);
+
+  return result;
+};
+
+/**
+ * Count all client details entries for a company
+ */
+exports.countAllClientDetailsByCompany = async (companyId) => {
+  const companyObjectId = new Types.ObjectId(companyId);
+
+  const result = await ClientModel.aggregate([
+    {
+      $match: { companyId: companyObjectId }
+    },
+    {
+      $unwind: {
+        path: "$clientDetails",
+        preserveNullAndEmptyArrays: false
+      }
+    },
+    {
+      $count: "total"
+    }
+  ]);
+
+  return result.length > 0 ? result[0].total : 0;
+};

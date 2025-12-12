@@ -50,6 +50,7 @@ const {
   getTransactions,
   getAllTransactions: getAllClientTransactions,
   getCompanyRevenueStats,
+  getAllClients,
 } = require("../controllers/invoice.controller");
 
 const {
@@ -815,6 +816,19 @@ class PaymentsAPI {
       "/revenue-stats",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       getCompanyRevenueStats
+    );
+
+    /**
+     * GET /api/payments/clients
+     * List all client details for company (across all tabs)
+     * Query: ?limit=10&page=1
+     * Auth: Admin or Employee
+     * Returns: Flattened list of all clientDetails entries with tab info
+     */
+    router.get(
+      "/clients",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getAllClients
     );
 
     /**
