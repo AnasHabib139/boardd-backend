@@ -29,6 +29,13 @@ const {
   deleteFormFavorite,
   findFormFavorite,
 } = require("../models/favoriteModel");
+const {
+  findChatConversation,
+  updateLastMessage,
+} = require("../models/chatConversationModel");
+const { createChatMessage } = require("../models/chatMessageModel");
+const { findTask, updateTask } = require("../models/taskModel");
+const { getIO } = require("../utils/socket");
 const { upsertFormView } = require("../models/formViewModel");
 const {
   buildFolderFormsQuery,
@@ -2131,6 +2138,277 @@ exports.submitFormResponse = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,
+    });
+  }
+};
+
+/**
+ * Share form to channel chats or task
+ * POST /api/forms/:formId/share-to-channel
+ */
+exports.shareFormToChannelChat = async (req, res, next) => {
+  try {
+    const { formId } = req.params;
+    const { channelId, shareToClientChat, shareToTeamChat, taskId, message } =
+      parseBody(req.body);
+    const userId = req.user.id;
+
+    // 1. Verify form exists and is a channel form (not folder form)
+    const form = await findForm({ _id: formId, isActive: true });
+    if (!form) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Form not found",
+      });
+    }
+
+    if (form.isFolder) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Only channel forms can be shared. Folder forms cannot be shared to chats.",
+      });
+    }
+
+    // 2. Verify user has access to the form (member of form's tab)
+    const formTab = await findChannelTab({ _id: form.tabId, isActive: true });
+    if (!formTab) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Form's tab not found",
+      });
+    }
+
+    if (!formTab.members.some((m) => m.toString() === userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You don't have access to this form",
+      });
+    }
+
+    // 3. Verify destination channel exists and user is a member
+    const destinationChannel = await findChannel({ _id: channelId, isActive: true });
+    if (!destinationChannel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Destination channel not found",
+      });
+    }
+
+    if (!destinationChannel.members.some((m) => m.toString() === userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of the destination channel",
+      });
+    }
+
+    // 4. Get user details for message creation
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    const io = getIO();
+    const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    const formLink = `${baseUrl}/form/${formId}`;
+
+    const results = {
+      clientChat: null,
+      teamChat: null,
+      task: null,
+    };
+
+    // Build chat message content and attachment metadata for form preview card
+    const buildFormMessage = () => {
+      let contentDoc;
+      if (message && message.trim()) {
+        contentDoc = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: message.trim() }],
+            },
+          ],
+        };
+      } else {
+        contentDoc = {
+          type: "doc",
+          content: [{ type: "paragraph" }],
+        };
+      }
+
+      const attachmentMeta = {
+        url: formLink,
+        type: "form",
+        formId: form._id.toString(),
+        formTitle: form.title,
+        formDescription: form.description || "",
+        fileName: form.title,
+      };
+
+      return { contentDoc, attachmentMeta };
+    };
+
+    // Helper to create and emit chat message
+    const createFormChatMessage = async (conversation) => {
+      const { contentDoc, attachmentMeta } = buildFormMessage();
+
+      const chatMessage = await createChatMessage({
+        companyId: conversation.companyId,
+        conversationId: conversation._id,
+        authorId: userId,
+        contentDoc,
+        contentText: message?.trim() || "",
+        attachmentsUrls: [formLink],
+        attachmentsMeta: [attachmentMeta],
+        links: [formLink],
+      });
+
+      // Update conversation last message
+      const previewText = message?.trim() || `📋 ${form.title}`;
+      await updateLastMessage(conversation._id, previewText, chatMessage.createdAt);
+
+      // Emit to conversation room
+      const populatedMessage = {
+        ...chatMessage.toObject(),
+        author: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          image: user.image,
+        },
+      };
+
+      io.to(`conversation:${conversation._id}`).emit("chat:message:new", {
+        message: populatedMessage,
+      });
+
+      return chatMessage;
+    };
+
+    // 5. Share to Client Chat
+    if (shareToClientChat) {
+      const clientConvo = await findChatConversation({
+        channelId: destinationChannel._id,
+        type: "client",
+      });
+
+      if (clientConvo) {
+        const chatMessage = await createFormChatMessage(clientConvo);
+        results.clientChat = {
+          conversationId: clientConvo._id,
+          messageId: chatMessage._id,
+        };
+      }
+    }
+
+    // 6. Share to Team Chat
+    if (shareToTeamChat) {
+      const teamConvo = await findChatConversation({
+        channelId: destinationChannel._id,
+        type: "channel",
+      });
+
+      if (teamConvo) {
+        const chatMessage = await createFormChatMessage(teamConvo);
+        results.teamChat = {
+          conversationId: teamConvo._id,
+          messageId: chatMessage._id,
+        };
+      }
+    }
+
+    // 7. Add to Task Attachments
+    if (taskId) {
+      const task = await findTask({ _id: taskId, isActive: true });
+
+      if (!task) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Task not found",
+        });
+      }
+
+      // Verify task belongs to destination channel
+      if (task.channelId?.toString() !== channelId) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "Task does not belong to the selected channel",
+        });
+      }
+
+      // Add form as attachment
+      const formAttachment = {
+        url: formLink,
+        fileName: form.title,
+        mimeType: "application/form",
+        type: "form",
+        formId: form._id,
+        uploadedBy: userId,
+        uploadedAt: new Date(),
+        source: "form_share",
+      };
+
+      const updatedTask = await updateTask(
+        { _id: taskId },
+        {
+          $push: { attachments: formAttachment },
+          updatedAt: new Date(),
+          $inc: { version: 1 },
+        },
+        { new: true }
+      );
+
+      // Emit real-time update to task room
+      io.to(`task:${taskId}`).emit("task-update-response", {
+        success: true,
+        taskId,
+        field: "attachments",
+        newValue: updatedTask.attachments,
+        version: updatedTask.version,
+      });
+
+      // Emit to channel room for activity feed
+      io.to(`channel:${channelId}`).emit("tab-activity", {
+        type: "TASK_UPDATED",
+        task: updatedTask,
+        field: "attachments",
+        updatedBy: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+        },
+        timestamp: new Date(),
+      });
+
+      results.task = {
+        taskId: task._id,
+        attachmentIndex: updatedTask.attachments.length - 1,
+      };
+    }
+
+    return generateResponse(
+      {
+        sharedTo: results,
+        form: {
+          formId: form._id,
+          title: form.title,
+          description: form.description,
+          link: formLink,
+        },
+      },
+      "Form shared successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in shareFormToChannelChat:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to share form",
     });
   }
 };

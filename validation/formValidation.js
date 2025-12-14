@@ -150,6 +150,33 @@ const getFormsQuerySchema = Joi.object({
   type: Joi.string().valid(...Object.values(FORM_TYPE)),
 }).unknown(false);
 
+// Share form to channel validation (chat/task sharing)
+const shareFormToChannelSchema = Joi.object({
+  channelId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "Invalid channel ID format",
+      "any.required": "Channel ID is required",
+    }),
+  shareToClientChat: Joi.boolean().optional().default(false),
+  shareToTeamChat: Joi.boolean().optional().default(false),
+  taskId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .optional()
+    .messages({
+      "string.pattern.base": "Invalid task ID format",
+    }),
+  message: Joi.string().trim().max(2000).optional().allow(""),
+}).custom((value, helpers) => {
+  if (!value.shareToClientChat && !value.shareToTeamChat && !value.taskId) {
+    return helpers.error("custom.atLeastOneTarget");
+  }
+  return value;
+}).messages({
+  "custom.atLeastOneTarget": "At least one share target must be specified (client chat, team chat, or task)",
+});
+
 // Share form validation (like task sharing)
 const shareFormSchema = Joi.object({
   emails: Joi.array()
@@ -288,6 +315,24 @@ const validateShareForm = (req, res, next) => {
   next();
 };
 
+// Share form to channel validation middleware
+const validateShareFormToChannel = (req, res, next) => {
+  const { error, value } = shareFormToChannelSchema.validate(req.body);
+
+  if (error) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json({
+      message: "Validation error",
+      errors: error.details.map((detail) => ({
+        field: detail.path.join("."),
+        message: detail.message,
+      })),
+    });
+  }
+
+  Object.assign(req.body, value);
+  next();
+};
+
 // Get folder forms query validation (reuse existing with type filter)
 const validateGetFolderFormsQuery = (req, res, next) => {
   const folderQuerySchema = Joi.object({
@@ -322,5 +367,6 @@ module.exports = {
   validateFormId,
   validateTabId,
   validateShareForm,
+  validateShareFormToChannel,
   validateGetFolderFormsQuery,
 };

@@ -12,6 +12,7 @@ const {
   getFormsByFolder,
   submitFormResponse,
   generateFormToken,
+  shareFormToChannelChat,
 } = require("../controller/formController");
 const Auth = require("../middlewares/Auth");
 const OptionalAuth = require("../middlewares/OptionalAuth");
@@ -24,6 +25,7 @@ const {
   validateFormId,
   validateTabId,
   validateShareForm,
+  validateShareFormToChannel,
   validateGetFolderFormsQuery,
 } = require("../validation/formValidation");
 
@@ -137,6 +139,15 @@ class FormApi {
       validateFormId,
       validateShareForm,
       shareForm
+    );
+
+    // Share form to channel chat or task
+    router.post(
+      "/:formId/share-to-channel",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateFormId,
+      validateShareFormToChannel,
+      shareFormToChannelChat
     );
 
     // Generate anonymous token for link access (public access - no auth required)
