@@ -453,6 +453,39 @@ const deleteChannelFileParamsValidation = Joi.object({
   }),
 });
 
+// Share channel file validation schema
+const shareChannelFileValidation = Joi.object({
+  fileId: helpers.objectIdValidation.required().messages({
+    "any.required": "File ID is required",
+    "string.pattern.base": "File ID must be a valid ObjectId",
+  }),
+
+  shareToClientChat: Joi.boolean().optional().default(false).messages({
+    "boolean.base": "shareToClientChat must be a boolean value",
+  }),
+
+  shareToTeamChat: Joi.boolean().optional().default(false).messages({
+    "boolean.base": "shareToTeamChat must be a boolean value",
+  }),
+
+  taskId: helpers.objectIdValidation.optional().messages({
+    "string.pattern.base": "Task ID must be a valid ObjectId",
+  }),
+
+  message: Joi.string().trim().max(2000).optional().allow("").messages({
+    "string.max": "Message cannot exceed 2000 characters",
+  }),
+}).custom((value, helpers) => {
+  // At least one share target must be specified
+  if (!value.shareToClientChat && !value.shareToTeamChat && !value.taskId) {
+    return helpers.error("custom.atLeastOneTarget");
+  }
+  return value;
+}).messages({
+  "custom.atLeastOneTarget":
+    "At least one share target must be specified (shareToClientChat, shareToTeamChat, or taskId)",
+});
+
 // Validation middleware function
 const validateRequest = (schema, source = "body") => {
   return (req, res, next) => {
@@ -547,6 +580,7 @@ module.exports = {
     deleteChannelFileParamsValidation,
     "params"
   ),
+  validateShareChannelFile: validateRequest(shareChannelFileValidation),
 
   // Export schemas for testing or custom usage
   schemas: {

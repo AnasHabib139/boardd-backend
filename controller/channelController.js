@@ -11,7 +11,11 @@ const {
   removeFileFromChannel,
   findManyChannels,
 } = require("../models/channelModel");
-const { createChatConversation, addChannelParticipant } = require("../models/chatConversationModel");
+const { createChatConversation, addChannelParticipant, findChatConversation, updateLastMessage } = require("../models/chatConversationModel");
+const { createChatMessage } = require("../models/chatMessageModel");
+const { findTask, updateTask } = require("../models/taskModel");
+const { findProject } = require("../models/projectModel");
+const { handleAttachmentsActivity } = require("./helpers/tasks/task.helper");
 const { createNotification } = require("../models/notificationModel");
 const { generateResponse } = require("../utils");
 const { STATUS_CODES, ROLES } = require("../utils/constants");
@@ -1700,6 +1704,311 @@ exports.removeUserFromChannel = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to remove user from channel",
+    });
+  }
+};
+
+/**
+ * Determine attachment type from MIME type for chat messages
+ */
+const determineAttachmentType = (mimeType) => {
+  if (!mimeType) return "document";
+
+  if (mimeType.startsWith("image/")) {
+    return mimeType === "image/gif" ? "gif" : "image";
+  }
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("audio/")) return "audio";
+  return "document";
+};
+
+/**
+ * Create a chat message with shared file attachment
+ */
+const createSharedFileMessage = async ({
+  conversation,
+  file,
+  attachmentMeta,
+  message,
+  userId,
+  user,
+  io,
+}) => {
+  // Build TipTap contentDoc
+  let contentDoc;
+  if (message && message.trim()) {
+    contentDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: message.trim() }],
+        },
+      ],
+    };
+  } else {
+    // Empty message with just attachment
+    contentDoc = {
+      type: "doc",
+      content: [{ type: "paragraph" }],
+    };
+  }
+
+  // Create the message
+  const chatMessage = await createChatMessage({
+    companyId: conversation.companyId,
+    conversationId: conversation._id,
+    authorId: userId,
+    contentDoc,
+    contentText: message?.trim() || "",
+    attachmentsUrls: [file.url],
+    attachmentsMeta: [attachmentMeta],
+    links: [],
+  });
+
+  // Update conversation last message
+  const previewText = message?.trim() || `📎 ${file.fileName || "File"}`;
+  await updateLastMessage(conversation._id, previewText, chatMessage.createdAt);
+
+  // Populate author for socket emission
+  const populatedMessage = {
+    ...chatMessage.toObject(),
+    author: {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      image: user.image,
+    },
+  };
+
+  // Emit to conversation room
+  io.to(`conversation:${conversation._id}`).emit("chat:message:new", {
+    message: populatedMessage,
+  });
+
+  return chatMessage;
+};
+
+/**
+ * Share a channel file to chats or task
+ * POST /api/channels/:channelId/files/share
+ */
+exports.shareChannelFile = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const { fileId, shareToClientChat, shareToTeamChat, taskId, message } =
+      parseBody(req.body);
+    const userId = req.user.id;
+
+    // 1. Verify channel exists
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // 2. Verify user is a member of the channel
+    const isMember = channel.members.some(
+      (memberId) => memberId.toString() === userId
+    );
+    if (!isMember) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this channel",
+      });
+    }
+
+    // 3. Find the file in channel.files
+    const file = channel.files.find((f) => f._id.toString() === fileId);
+    if (!file) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "File not found in this channel",
+      });
+    }
+
+    // 4. Get user details for message creation
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    const io = getIO();
+    const results = {
+      clientChat: null,
+      teamChat: null,
+      task: null,
+    };
+
+    // 5. Build attachment metadata for chat messages
+    const attachmentMeta = {
+      url: file.url,
+      type: determineAttachmentType(file.mimeType),
+      fileName: file.fileName,
+      fileSize: file.fileSize,
+      mimeType: file.mimeType,
+    };
+
+    // 6. Share to Client Chat
+    if (shareToClientChat) {
+      const clientConvo = await findChatConversation({
+        channelId: channel._id,
+        type: "client",
+      });
+
+      if (clientConvo) {
+        const chatMessage = await createSharedFileMessage({
+          conversation: clientConvo,
+          file,
+          attachmentMeta,
+          message,
+          userId,
+          user,
+          io,
+        });
+
+        results.clientChat = {
+          conversationId: clientConvo._id,
+          messageId: chatMessage._id,
+        };
+      }
+    }
+
+    // 7. Share to Team Chat
+    if (shareToTeamChat) {
+      const teamConvo = await findChatConversation({
+        channelId: channel._id,
+        type: "channel",
+      });
+
+      if (teamConvo) {
+        const chatMessage = await createSharedFileMessage({
+          conversation: teamConvo,
+          file,
+          attachmentMeta,
+          message,
+          userId,
+          user,
+          io,
+        });
+
+        results.teamChat = {
+          conversationId: teamConvo._id,
+          messageId: chatMessage._id,
+        };
+      }
+    }
+
+    // 8. Add to Task Attachments
+    if (taskId) {
+      const task = await findTask({ _id: taskId });
+
+      if (!task) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Task not found",
+        });
+      }
+
+      // Verify task belongs to this channel
+      let taskChannelId = task.channelId?.toString();
+      if (task.projectId) {
+        const project = await findProject({ _id: task.projectId });
+        if (project) {
+          taskChannelId = project.channelId?.toString();
+        }
+      }
+
+      if (taskChannelId !== channelId) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "Task does not belong to this channel",
+        });
+      }
+
+      // Add attachment to task
+      const taskAttachment = {
+        url: file.url,
+        fileName: file.fileName,
+        fileSize: file.fileSize,
+        mimeType: file.mimeType,
+        uploadedBy: userId,
+        uploadedAt: new Date(),
+        source: "channel_file",
+      };
+
+      const updatedTask = await updateTask(
+        { _id: taskId },
+        {
+          $push: { attachments: taskAttachment },
+          updatedAt: new Date(),
+          $inc: { version: 1 },
+        },
+        { new: true }
+      );
+
+      // Create activity for task attachment
+      await handleAttachmentsActivity({
+        attachments: updatedTask.attachments,
+        userName: user.name || user.email,
+        task: updatedTask,
+        projectId: task.projectId,
+        channelId: task.channelId || channelId,
+        userId,
+      });
+
+      // Emit real-time update to task room
+      io.to(`task:${taskId}`).emit("task-update-response", {
+        success: true,
+        taskId,
+        field: "attachments",
+        newValue: updatedTask.attachments,
+        version: updatedTask.version,
+      });
+
+      // Emit to channel room for activity feed
+      io.to(`channel:${channelId}`).emit("tab-activity", {
+        type: "TASK_UPDATED",
+        task: updatedTask,
+        field: "attachments",
+        updatedBy: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+        },
+        timestamp: new Date(),
+      });
+
+      results.task = {
+        taskId: task._id,
+        attachmentIndex: updatedTask.attachments.length - 1,
+      };
+    }
+
+    return generateResponse(
+      {
+        sharedTo: results,
+        file: {
+          url: file.url,
+          fileName: file.fileName,
+          fileSize: file.fileSize,
+          mimeType: file.mimeType,
+        },
+      },
+      "File shared successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in shareChannelFile:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to share file",
     });
   }
 };

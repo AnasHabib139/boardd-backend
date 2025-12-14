@@ -17,6 +17,7 @@ const {
   uploadFilesToChannel,
   getChannelFiles,
   deleteChannelFile,
+  shareChannelFile,
 } = require("../controller/channelController");
 const Auth = require("../middlewares/Auth");
 const { checkPermission, checkAnyPermission } = require("../middlewares/checkPermission");
@@ -36,6 +37,7 @@ const {
   validateLeaveChannel,
   validateGetChannelFilesQuery,
   validateDeleteChannelFile,
+  validateShareChannelFile,
 } = require("../validation/channelValidation");
 
 class ChannelApi {
@@ -171,6 +173,15 @@ class ChannelApi {
       checkPermission("deleteFiles"),
       validateDeleteChannelFile,
       deleteChannelFile
+    );
+
+    // Share file from channel to chat or task
+    router.post(
+      "/:channelId/files/share",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("uploadFiles"),
+      validateShareChannelFile,
+      shareChannelFile
     );
   }
 
