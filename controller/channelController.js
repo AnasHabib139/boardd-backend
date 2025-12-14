@@ -13,7 +13,8 @@ const {
 } = require("../models/channelModel");
 const { createChatConversation, addChannelParticipant, findChatConversation, updateLastMessage } = require("../models/chatConversationModel");
 const { createChatMessage } = require("../models/chatMessageModel");
-const { findTask, updateTask } = require("../models/taskModel");
+const { findTask, updateTask, aggregateTasks } = require("../models/taskModel");
+const mongoose = require("mongoose");
 const { findProject } = require("../models/projectModel");
 const { handleAttachmentsActivity } = require("./helpers/tasks/task.helper");
 const { createNotification } = require("../models/notificationModel");
@@ -2009,6 +2010,67 @@ exports.shareChannelFile = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message || "Failed to share file",
+    });
+  }
+};
+
+/**
+ * Get all tasks for a channel (for dropdown)
+ * Returns only _id and title, regardless of project or status
+ * GET /api/channels/:channelId/tasks/dropdown
+ */
+exports.getChannelTasksDropdown = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const userId = req.user.id;
+
+    // Verify channel exists
+    const channel = await findChannel({ _id: channelId, isActive: true });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Verify user is a member of the channel
+    if (!channel.members.some((m) => m.toString() === userId)) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You are not a member of this channel",
+      });
+    }
+
+    // Get all active tasks for this channel (regardless of project/status)
+    const tasks = await aggregateTasks([
+      {
+        $match: {
+          channelId: new mongoose.Types.ObjectId(channelId),
+          isActive: true,
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          title: 1,
+        },
+      },
+      {
+        $sort: { title: 1 },
+      },
+    ]);
+
+    return generateResponse(
+      { tasks },
+      "Tasks retrieved successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getChannelTasksDropdown:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to retrieve tasks",
     });
   }
 };

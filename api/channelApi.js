@@ -18,6 +18,7 @@ const {
   getChannelFiles,
   deleteChannelFile,
   shareChannelFile,
+  getChannelTasksDropdown,
 } = require("../controller/channelController");
 const Auth = require("../middlewares/Auth");
 const { checkPermission, checkAnyPermission } = require("../middlewares/checkPermission");
@@ -182,6 +183,13 @@ class ChannelApi {
       checkPermission("uploadFiles"),
       validateShareChannelFile,
       shareChannelFile
+    );
+
+    // Get all tasks for a channel (for dropdown)
+    router.get(
+      "/:channelId/tasks/dropdown",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getChannelTasksDropdown
     );
   }
 
