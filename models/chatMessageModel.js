@@ -14,7 +14,7 @@ const attachmentMetaSchema = new Schema(
     },
     type: {
       type: String,
-      enum: ["image", "document", "audio", "video", "gif"],
+      enum: ["image", "document", "audio", "video", "gif", "form"],
       required: true,
     },
     fileName: {
