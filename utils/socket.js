@@ -22,6 +22,7 @@ const { findUserMutePreferences } = require("../models/userMutePreferencesModel"
 const { generateActivityMessage, deleteFileFromDisk } = require("../utils");
 const { ACTION_TYPE, TASK_STATUS, TASK_PRIORITY } = require("./constants");
 const { processTaskColumnValues, transformStatusColumnValuesToColumnData } = require("../controller/helpers/tasks/statusColumns.helper");
+const { getProjectStatusKeys } = require("../models/tabTaskStatusModel");
 
 let io;
 
@@ -147,11 +148,13 @@ const getEssentialTaskDetails = async (taskId, userId = null) => {
   }
 };
 
-// Validate field values
+// Validate field values (basic sync validation)
+// Note: status is validated dynamically against tab's statuses in processTaskUpdate
 const validateFieldValue = (field, value) => {
   switch (field) {
     case "status":
-      return Object.values(TASK_STATUS).includes(value);
+      // Basic validation - must be a string. Dynamic validation happens later
+      return typeof value === "string" && value.trim().length > 0;
     case "priority":
       return typeof value === "string";
     case "assignedTo":
@@ -365,6 +368,22 @@ const processTaskUpdate = async (socket, data) => {
       });
       pendingUpdates.delete(updateKey);
       return;
+    }
+
+    // Dynamic status validation - check against project's valid statuses
+    if (field === "status" && task.projectId) {
+      const validStatuses = await getProjectStatusKeys(task.projectId);
+      if (validStatuses.length > 0 && !validStatuses.includes(value)) {
+        socket.emit("task-update-response", {
+          success: false,
+          error: `Invalid status "${value}". Valid statuses: ${validStatuses.join(", ")}`,
+          taskId,
+          field,
+          value,
+        });
+        pendingUpdates.delete(updateKey);
+        return;
+      }
     }
 
     const previousValue = task[field];
@@ -703,11 +722,11 @@ const processTaskReorder = async (socket, data) => {
       return;
     }
 
-    // Validate status
-    if (!Object.values(TASK_STATUS).includes(newStatus)) {
+    // Basic status format validation (dynamic validation happens after we get the task)
+    if (typeof newStatus !== "string" || !newStatus.trim()) {
       socket.emit("task-reorder-response", {
         success: false,
-        error: "Invalid status value",
+        error: "Invalid status value - must be a non-empty string",
         taskId,
       });
       return;
@@ -820,6 +839,20 @@ const processTaskReorder = async (socket, data) => {
       });
       pendingUpdates.delete(updateKey);
       return;
+    }
+
+    // Dynamic status validation - check against project's valid statuses
+    if (task.projectId) {
+      const validStatuses = await getProjectStatusKeys(task.projectId);
+      if (validStatuses.length > 0 && !validStatuses.includes(newStatus)) {
+        socket.emit("task-reorder-response", {
+          success: false,
+          error: `Invalid status "${newStatus}". Valid statuses: ${validStatuses.join(", ")}`,
+          taskId,
+        });
+        pendingUpdates.delete(updateKey);
+        return;
+      }
     }
 
     // Calculate order index if not provided (append to end)
@@ -992,11 +1025,11 @@ const processTaskMove = async (socket, data) => {
       return;
     }
 
-    // Validate status
-    if (!Object.values(TASK_STATUS).includes(newStatus)) {
+    // Basic status format validation (dynamic validation happens after we get the target tab)
+    if (typeof newStatus !== "string" || !newStatus.trim()) {
       socket.emit("task-move-response", {
         success: false,
-        error: "Invalid status value",
+        error: "Invalid status value - must be a non-empty string",
         taskId,
       });
       return;
@@ -1113,6 +1146,20 @@ const processTaskMove = async (socket, data) => {
       });
       pendingUpdates.delete(updateKey);
       return;
+    }
+
+    // Dynamic status validation - check against target project's valid statuses
+    if (newProjectId) {
+      const validStatuses = await getProjectStatusKeys(newProjectId);
+      if (!validStatuses.includes(newStatus)) {
+        socket.emit("task-move-response", {
+          success: false,
+          error: `Invalid status "${newStatus}". Valid statuses for target project: ${validStatuses.join(", ")}`,
+          taskId,
+        });
+        pendingUpdates.delete(updateKey);
+        return;
+      }
     }
 
     // Calculate order index if not provided (append to end)

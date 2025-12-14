@@ -98,11 +98,11 @@ const createTaskValidation = Joi.object({
   }),
 
   status: Joi.string()
-    .valid(...Object.values(TASK_STATUS))
+    .pattern(/^(todo|in_progress|completed|status_\d+)$/)
     .optional()
     .default(TASK_STATUS.TODO)
     .messages({
-      "any.only": `Status must be one of: ${Object.values(TASK_STATUS).join(", ")}`,
+      "string.pattern.base": "Status must be a valid system status (todo, in_progress, completed) or custom status key (status_<timestamp>)",
     }),
 
   assignedTo: Joi.array()
@@ -207,12 +207,10 @@ const batchUpdateTaskValidation = Joi.object({
     }),
 
   status: Joi.string()
-    .valid(...Object.values(TASK_STATUS))
+    .pattern(/^(todo|in_progress|completed|status_\d+)$/)
     .optional()
     .messages({
-      "any.only": `Status must be one of: ${Object.values(TASK_STATUS).join(
-        ", "
-      )}`,
+      "string.pattern.base": "Status must be a valid system status (todo, in_progress, completed) or custom status key (status_<timestamp>)",
     }),
 
   priority: Joi.string()

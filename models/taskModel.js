@@ -49,8 +49,7 @@ const taskSchema = new Schema({
   assignedTo: [{ type: Types.ObjectId, ref: "User" }],
   status: {
     type: String,
-    enum: Object.values(TASK_STATUS),
-    default: TASK_STATUS.TODO,
+    default: "todo", // statusKey - validated dynamically against TabTaskStatus
   },
   priority: {
     type: String,
@@ -93,10 +92,11 @@ const taskSchema = new Schema({
   },
 
   // Order indexes for drag and drop within project categories
+  // Map allows dynamic status keys (custom statuses)
   orderIndex: {
-    todo: { type: Number, default: 1000 },
-    in_progress: { type: Number, default: 1000 },
-    completed: { type: Number, default: 1000 },
+    type: Map,
+    of: Number,
+    default: () => new Map([["todo", 1000]]),
   },
 
   version: { type: Number, default: 0 }, // For optimistic locking and conflict resolution

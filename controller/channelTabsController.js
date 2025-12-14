@@ -416,6 +416,7 @@ exports.createNewChannelTab = async (req, res, next) => {
       isPrivate,
     };
     const newChannelTab = await createChannelTab(channelTabBody);
+
     return generateResponse(
       newChannelTab,
       "New channel tab successfully created",
@@ -555,6 +556,7 @@ exports.createSelectedChannelTabs = async (req, res, next) => {
 
         // Create the tab
         const newTab = await createChannelTab(channelTabBody);
+
         createdTabs.push(newTab);
       } catch (tabError) {
         console.error(`Error creating tab ${tabData?.tabName}:`, tabError);

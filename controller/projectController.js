@@ -15,6 +15,7 @@ const {
   getOpenTasksQuery,
   getSingleProjectListQuery,
 } = require("./queries/projectQueries");
+const { initializeSystemStatuses } = require("../models/tabTaskStatusModel");
 
 // Helper function to parse date strings
 const parseDate = (dateString) => {
@@ -86,6 +87,14 @@ exports.CreateProject = async (req, res, next) => {
       color,
       priority,
     });
+
+    // Initialize system statuses for the new project (todo, in_progress, completed)
+    try {
+      await initializeSystemStatuses(project._id);
+    } catch (statusError) {
+      console.error("Error initializing system statuses for project:", statusError);
+      // Non-fatal - project was created successfully, statuses will be initialized on first access
+    }
 
     // Emit project creation notification (no activity tracking for projects)
     const userName = user.name || user.email;
@@ -1521,6 +1530,14 @@ exports.duplicateProject = async (req, res, next) => {
     };
 
     const newProject = await createProject(newProjectData);
+
+    // Initialize system statuses for the new project (todo, in_progress, completed)
+    try {
+      await initializeSystemStatuses(newProject._id);
+    } catch (statusError) {
+      console.error("Error initializing system statuses for duplicated project:", statusError);
+      // Non-fatal - statuses will be initialized on first access
+    }
 
     // Get all tasks from original project
     const originalTasks = await findManyTasks({

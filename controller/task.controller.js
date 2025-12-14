@@ -47,6 +47,7 @@ const Mailer = require("../utils/mailer");
 const { generateTaskShareEmail } = require("../utils/emailTemplates");
 const { upsertTaskView, getTrendingTasks } = require("../models/taskViewModel");
 const { deleteSubtask } = require("../models/subtaskModel");
+const { getProjectStatusKeys } = require("../models/tabTaskStatusModel");
 
 // Helper function to parse date strings
 const parseDate = (dateString) => {
@@ -141,6 +142,17 @@ exports.createTask = async (req, res, next) => {
           message: "Channel not found",
         });
       }
+
+      // Validate status against project's valid statuses
+      if (status) {
+        const validStatuses = await getProjectStatusKeys(projectId);
+        if (!validStatuses.includes(status)) {
+          return next({
+            statusCode: STATUS_CODES.BAD_REQUEST,
+            message: `Invalid status "${status}". Valid statuses: ${validStatuses.join(", ")}`,
+          });
+        }
+      }
     } else {
       // New flow for channel-based tasks without project (Open tasks)
       // Validate tabId is provided
@@ -225,11 +237,9 @@ exports.createTask = async (req, res, next) => {
       );
     }
 
-    // Prepare orderIndex object for all statuses
+    // Prepare orderIndex object - use dynamic key to support custom statuses
     const orderIndexes = {
-      todo: taskStatus === "todo" ? orderIndex : 1000,
-      in_progress: taskStatus === "in_progress" ? orderIndex : 1000,
-      completed: taskStatus === "completed" ? orderIndex : 1000,
+      [taskStatus]: orderIndex,
     };
 
     // Process attachments to add uploadedBy and uploadedAt if missing

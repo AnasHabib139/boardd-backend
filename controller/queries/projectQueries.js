@@ -539,6 +539,20 @@ exports.getProjectBoardQuery = (projectId, search = null) => {
       },
     },
 
+    // Lookup project statuses for dynamic status grouping
+    {
+      $lookup: {
+        from: "tabtaskstatuses",
+        localField: "_id",
+        foreignField: "projectId",
+        as: "projectStatuses",
+        pipeline: [
+          { $match: { isActive: true } },
+          { $sort: { order: 1 } },
+        ],
+      },
+    },
+
     // Lookup all tasks for this project
     {
       $lookup: {
@@ -706,25 +720,26 @@ exports.getProjectBoardQuery = (projectId, search = null) => {
       },
     },
 
-    // Separate tasks by status
+    // Dynamic status grouping for custom statuses
     {
       $addFields: {
-        todoTasks: {
-          $filter: {
-            input: "$allTasks",
-            cond: { $eq: ["$$this.status", "todo"] },
-          },
-        },
-        inProgressTasks: {
-          $filter: {
-            input: "$allTasks",
-            cond: { $eq: ["$$this.status", "in_progress"] },
-          },
-        },
-        completedTasks: {
-          $filter: {
-            input: "$allTasks",
-            cond: { $eq: ["$$this.status", "completed"] },
+        tasksByStatus: {
+          $map: {
+            input: "$projectStatuses",
+            as: "status",
+            in: {
+              statusKey: "$$status.statusKey",
+              statusName: "$$status.statusName",
+              color: "$$status.color",
+              order: "$$status.order",
+              isSystem: "$$status.isSystem",
+              tasks: {
+                $filter: {
+                  input: "$allTasks",
+                  cond: { $eq: ["$$this.status", "$$status.statusKey"] },
+                },
+              },
+            },
           },
         },
       },
@@ -735,9 +750,30 @@ exports.getProjectBoardQuery = (projectId, search = null) => {
       $addFields: {
         taskStats: {
           total: { $size: "$allTasks" },
-          todo: { $size: "$todoTasks" },
-          inProgress: { $size: "$inProgressTasks" },
-          completed: { $size: "$completedTasks" },
+          todo: {
+            $size: {
+              $filter: {
+                input: "$allTasks",
+                cond: { $eq: ["$$this.status", "todo"] },
+              },
+            },
+          },
+          inProgress: {
+            $size: {
+              $filter: {
+                input: "$allTasks",
+                cond: { $eq: ["$$this.status", "in_progress"] },
+              },
+            },
+          },
+          completed: {
+            $size: {
+              $filter: {
+                input: "$allTasks",
+                cond: { $eq: ["$$this.status", "completed"] },
+              },
+            },
+          },
           overdue: {
             $size: {
               $filter: {
@@ -756,7 +792,14 @@ exports.getProjectBoardQuery = (projectId, search = null) => {
               $multiply: [
                 {
                   $divide: [
-                    { $size: "$completedTasks" },
+                    {
+                      $size: {
+                        $filter: {
+                          input: "$allTasks",
+                          cond: { $eq: ["$$this.status", "completed"] },
+                        },
+                      },
+                    },
                     { $size: "$allTasks" },
                   ],
                 },
@@ -812,9 +855,7 @@ exports.getProjectBoardQuery = (projectId, search = null) => {
         createdAt: 1,
         updatedAt: 1,
         creator: 1,
-        todoTasks: 1,
-        inProgressTasks: 1,
-        completedTasks: 1,
+        tasksByStatus: 1,  // Dynamic status grouping with all statuses
         taskStats: 1,
         progress: {
           $round: ["$progress", 1], // Round to 1 decimal place
@@ -1045,6 +1086,20 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
   ];
 
   pipeline.push(
+
+    // Lookup project statuses for dynamic status grouping
+    {
+      $lookup: {
+        from: "tabtaskstatuses",
+        localField: "_id",
+        foreignField: "projectId",
+        as: "projectStatuses",
+        pipeline: [
+          { $match: { isActive: true } },
+          { $sort: { order: 1 } },
+        ],
+      },
+    },
 
     // Lookup company details for context path
     {
@@ -1319,158 +1374,94 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
       }
     }] : []),
 
-    // Separate tasks by status for better organization
+    // Dynamic status grouping for custom statuses (with fallback to default statuses)
     {
       $addFields: {
-        todoTasks: {
-          $filter: {
-            input: "$allTasks",
-            cond: { $eq: ["$$this.status", "todo"] },
+        // Use projectStatuses if available, otherwise use default system statuses
+        effectiveStatuses: {
+          $cond: {
+            if: { $gt: [{ $size: "$projectStatuses" }, 0] },
+            then: "$projectStatuses",
+            else: [
+              { _id: null, statusKey: "todo", statusName: "To Do", color: "#6B7280", order: 1, isSystem: true },
+              { _id: null, statusKey: "in_progress", statusName: "In Progress", color: "#3B82F6", order: 2, isSystem: true },
+              { _id: null, statusKey: "completed", statusName: "Completed", color: "#22C55E", order: 3, isSystem: true },
+            ],
           },
         },
-        inProgressTasks: {
-          $filter: {
-            input: "$allTasks",
-            cond: { $eq: ["$$this.status", "in_progress"] },
-          },
-        },
-        completedTasks: {
-          $filter: {
-            input: "$allTasks",
-            cond: { $eq: ["$$this.status", "completed"] },
+      },
+    },
+    {
+      $addFields: {
+        tasksByStatus: {
+          $map: {
+            input: "$effectiveStatuses",
+            as: "status",
+            in: {
+              _id: "$$status._id",
+              statusKey: "$$status.statusKey",
+              statusName: "$$status.statusName",
+              color: "$$status.color",
+              order: "$$status.order",
+              isSystem: "$$status.isSystem",
+              tasks: {
+                $filter: {
+                  input: "$allTasks",
+                  cond: { $eq: ["$$this.status", "$$status.statusKey"] },
+                },
+              },
+            },
           },
         },
       },
     },
 
-    // Enrich task column data with type and dropdown options
+    // Enrich task column data within tasksByStatus
     {
       $addFields: {
-        todoTasks: {
+        tasksByStatus: {
           $map: {
-            input: "$todoTasks",
-            as: "task",
+            input: "$tasksByStatus",
+            as: "statusGroup",
             in: {
-              $mergeObjects: [
-                "$$task",
-                {
-                  columnData: {
-                    $map: {
-                      input: "$columnDefinitions",
-                      as: "colDef",
-                      in: {
-                        _id: "$$colDef._id",
-                        key: "$$colDef.columnKey",
-                        value: {
-                          $ifNull: [
-                            { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$$task.statusColumnValues", {}] } } },
-                            null
-                          ]
-                        },
-                        type: "$$colDef.columnType",
-                        columnName: "$$colDef.columnName",
-                        dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
+              _id: "$$statusGroup._id",
+              statusKey: "$$statusGroup.statusKey",
+              statusName: "$$statusGroup.statusName",
+              color: "$$statusGroup.color",
+              order: "$$statusGroup.order",
+              isSystem: "$$statusGroup.isSystem",
+              tasks: {
+                $map: {
+                  input: "$$statusGroup.tasks",
+                  as: "task",
+                  in: {
+                    $mergeObjects: [
+                      "$$task",
+                      {
+                        columnData: {
+                          $map: {
+                            input: "$columnDefinitions",
+                            as: "colDef",
+                            in: {
+                              _id: "$$colDef._id",
+                              key: "$$colDef.columnKey",
+                              value: {
+                                $ifNull: [
+                                  { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$$task.statusColumnValues", {}] } } },
+                                  null
+                                ]
+                              },
+                              type: "$$colDef.columnType",
+                              columnName: "$$colDef.columnName",
+                              dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
+                            }
+                          }
+                        }
                       }
-                    }
+                    ]
                   }
                 }
-              ]
-            }
-          }
-        },
-        inProgressTasks: {
-          $map: {
-            input: "$inProgressTasks",
-            as: "task",
-            in: {
-              $mergeObjects: [
-                "$$task",
-                {
-                  columnData: {
-                    $map: {
-                      input: "$columnDefinitions",
-                      as: "colDef",
-                      in: {
-                        _id: "$$colDef._id",
-                        key: "$$colDef.columnKey",
-                        value: {
-                          $ifNull: [
-                            { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$$task.statusColumnValues", {}] } } },
-                            null
-                          ]
-                        },
-                        type: "$$colDef.columnType",
-                        columnName: "$$colDef.columnName",
-                        dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        },
-        completedTasks: {
-          $map: {
-            input: "$completedTasks",
-            as: "task",
-            in: {
-              $mergeObjects: [
-                "$$task",
-                {
-                  columnData: {
-                    $map: {
-                      input: "$columnDefinitions",
-                      as: "colDef",
-                      in: {
-                        _id: "$$colDef._id",
-                        key: "$$colDef.columnKey",
-                        value: {
-                          $ifNull: [
-                            { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$$task.statusColumnValues", {}] } } },
-                            null
-                          ]
-                        },
-                        type: "$$colDef.columnType",
-                        columnName: "$$colDef.columnName",
-                        dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        },
-        allTasks: {
-          $map: {
-            input: "$allTasks",
-            as: "task",
-            in: {
-              $mergeObjects: [
-                "$$task",
-                {
-                  columnData: {
-                    $map: {
-                      input: "$columnDefinitions",
-                      as: "colDef",
-                      in: {
-                        _id: "$$colDef._id",
-                        key: "$$colDef.columnKey",
-                        value: {
-                          $ifNull: [
-                            { $getField: { field: "$$colDef.columnKey", input: { $ifNull: ["$$task.statusColumnValues", {}] } } },
-                            null
-                          ]
-                        },
-                        type: "$$colDef.columnType",
-                        columnName: "$$colDef.columnName",
-                        dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
-                      }
-                    }
-                  }
-                }
-              ]
+              }
             }
           }
         }
@@ -1482,9 +1473,30 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
       $addFields: {
         taskStats: {
           total: { $size: "$allTasks" },
-          todo: { $size: "$todoTasks" },
-          inProgress: { $size: "$inProgressTasks" },
-          completed: { $size: "$completedTasks" },
+          todo: {
+            $size: {
+              $filter: {
+                input: "$allTasks",
+                cond: { $eq: ["$$this.status", "todo"] },
+              },
+            },
+          },
+          inProgress: {
+            $size: {
+              $filter: {
+                input: "$allTasks",
+                cond: { $eq: ["$$this.status", "in_progress"] },
+              },
+            },
+          },
+          completed: {
+            $size: {
+              $filter: {
+                input: "$allTasks",
+                cond: { $eq: ["$$this.status", "completed"] },
+              },
+            },
+          },
           overdue: {
             $size: {
               $filter: {
@@ -1969,9 +1981,7 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
         creator: 1,
         channel: 1,
         tab: 1,
-        todoTasks: 1,
-        inProgressTasks: 1,
-        completedTasks: 1,
+        tasksByStatus: 1,  // Dynamic status grouping with all statuses
         taskStats: 1,
         assignedTo: 1, // Combined unique assignees from all tasks
         progress: {
