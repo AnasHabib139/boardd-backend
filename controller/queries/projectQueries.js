@@ -728,6 +728,7 @@ exports.getProjectBoardQuery = (projectId, search = null) => {
             input: "$projectStatuses",
             as: "status",
             in: {
+              _id: "$$status._id",
               statusKey: "$$status.statusKey",
               statusName: "$$status.statusName",
               color: "$$status.color",
