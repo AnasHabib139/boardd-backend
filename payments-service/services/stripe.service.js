@@ -646,6 +646,53 @@ exports.getAccountStatus = async (companyId) => {
       },
       persons: updatedRecord.persons,
       externalAccounts: updatedRecord.externalAccounts,
+
+      // Filled/completed data for display
+      filledData: {
+        businessProfile: stripeAccount.business_profile ? {
+          name: stripeAccount.business_profile.name || null,
+          url: stripeAccount.business_profile.url || null,
+          supportEmail: stripeAccount.business_profile.support_email || null,
+          supportPhone: stripeAccount.business_profile.support_phone || null,
+          supportUrl: stripeAccount.business_profile.support_url || null,
+          mcc: stripeAccount.business_profile.mcc || null,
+          productDescription: stripeAccount.business_profile.product_description || null,
+        } : null,
+        company: stripeAccount.company ? {
+          name: stripeAccount.company.name || null,
+          taxIdProvided: stripeAccount.company.tax_id_provided || false,
+          structure: stripeAccount.company.structure || null,
+          address: stripeAccount.company.address ? {
+            line1: stripeAccount.company.address.line1 || null,
+            line2: stripeAccount.company.address.line2 || null,
+            city: stripeAccount.company.address.city || null,
+            state: stripeAccount.company.address.state || null,
+            postalCode: stripeAccount.company.address.postal_code || null,
+            country: stripeAccount.company.address.country || null,
+          } : null,
+          phone: stripeAccount.company.phone || null,
+          directorsProvided: stripeAccount.company.directors_provided || false,
+          executivesProvided: stripeAccount.company.executives_provided || false,
+          ownersProvided: stripeAccount.company.owners_provided || false,
+        } : null,
+        individual: stripeAccount.individual ? {
+          firstName: stripeAccount.individual.first_name || null,
+          lastName: stripeAccount.individual.last_name || null,
+          email: stripeAccount.individual.email || null,
+          phone: stripeAccount.individual.phone || null,
+          dobProvided: !!stripeAccount.individual.dob,
+          addressProvided: !!stripeAccount.individual.address,
+          ssnLast4Provided: stripeAccount.individual.ssn_last_4_provided || false,
+          idNumberProvided: stripeAccount.individual.id_number_provided || false,
+        } : null,
+        tosAcceptance: stripeAccount.tos_acceptance ? {
+          accepted: !!stripeAccount.tos_acceptance.date,
+          date: stripeAccount.tos_acceptance.date
+            ? new Date(stripeAccount.tos_acceptance.date * 1000).toISOString()
+            : null,
+          ip: stripeAccount.tos_acceptance.ip || null,
+        } : null,
+      },
     };
   } catch (error) {
     console.error("Error fetching account status:", error);
