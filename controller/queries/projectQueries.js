@@ -1457,7 +1457,8 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
                               dropdownOptions: { $ifNull: ["$$colDef.dropdownOptions", []] }
                             }
                           }
-                        }
+                        },
+                        statusColumnValues: "$$REMOVE"
                       }
                     ]
                   }

@@ -643,9 +643,9 @@ const processTaskUpdate = async (socket, data) => {
       activities: [activity],
     });
 
-    // Transform statusColumnValues to columnData array if this is a columnValues update
+    // Transform statusColumnValues to columnData array for ALL updates
     let taskWithColumnData = updatedTask;
-    if (field === "columnValues" && updatedTask.statusColumnValues) {
+    if (updatedTask.statusColumnValues) {
       try {
         // Get tab ID to fetch column definitions
         let tabIdForColumns = null;
@@ -671,6 +671,23 @@ const processTaskUpdate = async (socket, data) => {
       } catch (error) {
         console.error("Error transforming statusColumnValues to columnData:", error);
         // Continue with original task if transformation fails
+      }
+    }
+
+    // Populate assignees with full user objects
+    if (taskWithColumnData.assignedTo && taskWithColumnData.assignedTo.length > 0) {
+      try {
+        const assigneeUsers = await Promise.all(
+          taskWithColumnData.assignedTo.map(id => findUser({ _id: id }))
+        );
+        taskWithColumnData = {
+          ...taskWithColumnData,
+          assignees: assigneeUsers
+            .filter(u => u)
+            .map(u => ({ _id: u._id, name: u.name, email: u.email })),
+        };
+      } catch (error) {
+        console.error("Error populating assignees:", error);
       }
     }
 
