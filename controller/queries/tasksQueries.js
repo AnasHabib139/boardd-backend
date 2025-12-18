@@ -458,6 +458,8 @@ exports.getTaskByIdQuery = (taskId, userId = null) => {
         updatedAt: 1,
         projectId: 1,
         channelId: 1,
+        tabId: 1,
+        statusColumnValues: 1,
         // Creator details
         createdBy: {
           _id: "$creator._id",

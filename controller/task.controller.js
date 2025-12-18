@@ -486,8 +486,19 @@ exports.getTaskById = async (req, res, next) => {
       });
     }
 
+    // Transform statusColumnValues to columnData
+    const columnData = await transformStatusColumnValuesToColumnData(
+      task.tabId,
+      task.statusColumnValues
+    );
+    delete task.statusColumnValues;
+    const taskWithColumnData = {
+      ...task,
+      columnData,
+    };
+
     return generateResponse(
-      task,
+      taskWithColumnData,
       "Task fetched successfully",
       res,
       STATUS_CODES.SUCCESS
@@ -576,6 +587,17 @@ exports.batchUpdateTask = async (req, res, next) => {
     Object.keys(updates).forEach((field) => {
       previousValues[field] = task[field];
     });
+
+    // Validate status against project's valid statuses (if updating status)
+    if (updates.status && task.projectId) {
+      const validStatuses = await getProjectStatusKeys(task.projectId);
+      if (!validStatuses.includes(updates.status)) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: `Invalid status "${updates.status}". Valid statuses: ${validStatuses.join(", ")}`,
+        });
+      }
+    }
 
     // Parse dueDate if present
     if (updates.dueDate !== undefined) {

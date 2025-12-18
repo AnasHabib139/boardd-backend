@@ -100,6 +100,7 @@ const getEssentialTaskDetails = async (taskId, userId = null) => {
           description: 1,
           projectId: 1,
           channelId: 1,
+          tabId: 1,
           status: 1,
           priority: 1,
           dueDate: 1,
@@ -110,6 +111,7 @@ const getEssentialTaskDetails = async (taskId, userId = null) => {
           updatedAt: 1,
           version: 1,
           isOverdue: 1,
+          statusColumnValues: 1,
           createdBy: {
             _id: "$creator._id",
             name: "$creator.name",
@@ -140,8 +142,20 @@ const getEssentialTaskDetails = async (taskId, userId = null) => {
     if (!result.task.length) {
       return null;
     }
-    
-    return result.task[0];
+
+    const task = result.task[0];
+
+    // Transform statusColumnValues to columnData
+    const columnData = await transformStatusColumnValuesToColumnData(
+      task.tabId,
+      task.statusColumnValues
+    );
+    delete task.statusColumnValues;
+
+    return {
+      ...task,
+      columnData,
+    };
   } catch (error) {
     console.error("Error getting essential task details:", error);
     return null;
