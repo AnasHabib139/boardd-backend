@@ -644,7 +644,7 @@ const processTaskUpdate = async (socket, data) => {
     });
 
     // Transform statusColumnValues to columnValues array for ALL updates
-    let taskWithColumnData = updatedTask;
+    let taskWithColumnValues = updatedTask;
     if (updatedTask.statusColumnValues) {
       try {
         // Get tab ID to fetch column definitions
@@ -663,7 +663,7 @@ const processTaskUpdate = async (socket, data) => {
           );
           const taskObj = updatedTask.toObject ? updatedTask.toObject() : { ...updatedTask };
           delete taskObj.statusColumnValues;
-          taskWithColumnData = {
+          taskWithColumnValues = {
             ...taskObj,
             columnValues,
           };
@@ -675,13 +675,13 @@ const processTaskUpdate = async (socket, data) => {
     }
 
     // Populate assignees with full user objects
-    if (taskWithColumnData.assignedTo && taskWithColumnData.assignedTo.length > 0) {
+    if (taskWithColumnValues.assignedTo && taskWithColumnValues.assignedTo.length > 0) {
       try {
         const assigneeUsers = await Promise.all(
-          taskWithColumnData.assignedTo.map(id => findUser({ _id: id }))
+          taskWithColumnValues.assignedTo.map(id => findUser({ _id: id }))
         );
-        taskWithColumnData = {
-          ...taskWithColumnData,
+        taskWithColumnValues = {
+          ...taskWithColumnValues,
           assignees: assigneeUsers
             .filter(u => u)
             .map(u => ({ _id: u._id, name: u.name, email: u.email })),
@@ -694,7 +694,7 @@ const processTaskUpdate = async (socket, data) => {
     // Emit to channel room (covers all tabs and open tasks)
     io.to(`channel:${channel._id}`).emit("tab-activity", {
       type: "TASK_UPDATED",
-      task: taskWithColumnData,
+      task: taskWithColumnValues,
       activities: [activity],
       field,
       previousValue,

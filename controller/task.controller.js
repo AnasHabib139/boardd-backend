@@ -421,19 +421,19 @@ exports.createTask = async (req, res, next) => {
     }
 
     // Transform task response to use columnValues instead of statusColumnValues
-    const columnValues = await transformStatusColumnValuesToColumnValues(
+    const enrichedColumnValues = await transformStatusColumnValuesToColumnValues(
       tab?._id,
       task.statusColumnValues
     );
     const taskObj = task.toObject();
     delete taskObj.statusColumnValues;
-    const taskWithColumnData = {
+    const taskWithColumnValues = {
       ...taskObj,
-      columnValues,
+      columnValues: enrichedColumnValues,
     };
 
     return generateResponse(
-      { task: taskWithColumnData },
+      { task: taskWithColumnValues },
       "Task created successfully",
       res,
       STATUS_CODES.CREATED
@@ -487,18 +487,18 @@ exports.getTaskById = async (req, res, next) => {
     }
 
     // Transform statusColumnValues to columnValues
-    const columnValues = await transformStatusColumnValuesToColumnValues(
+    const enrichedColumnValues = await transformStatusColumnValuesToColumnValues(
       task.tabId,
       task.statusColumnValues
     );
     delete task.statusColumnValues;
-    const taskWithColumnData = {
+    const taskWithColumnValues = {
       ...task,
-      columnValues,
+      columnValues: enrichedColumnValues,
     };
 
     return generateResponse(
-      taskWithColumnData,
+      taskWithColumnValues,
       "Task fetched successfully",
       res,
       STATUS_CODES.SUCCESS
@@ -836,19 +836,19 @@ exports.batchUpdateTask = async (req, res, next) => {
     }
 
     // Transform task response to use columnValues instead of statusColumnValues
-    const columnValues = await transformStatusColumnValuesToColumnValues(
+    const enrichedColumnValues = await transformStatusColumnValuesToColumnValues(
       task.tabId,
       updatedTask.statusColumnValues
     );
     const taskObj = updatedTask.toObject();
     delete taskObj.statusColumnValues;
-    const taskWithColumnData = {
+    const taskWithColumnValues = {
       ...taskObj,
-      columnValues,
+      columnValues: enrichedColumnValues,
     };
 
     return generateResponse(
-      { task: taskWithColumnData, activities },
+      { task: taskWithColumnValues, activities },
       "Task updated successfully",
       res,
       STATUS_CODES.SUCCESS
