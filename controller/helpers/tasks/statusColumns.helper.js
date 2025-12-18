@@ -369,12 +369,12 @@ exports.getDefaultColumnValues = async (tabId) => {
 };
 
 /**
- * Transform statusColumnValues Map to columnData array with full metadata
+ * Transform statusColumnValues Map to columnValues array with full metadata
  * @param {ObjectId|string} tabId - Tab ID to fetch column definitions
  * @param {Map|Object} statusColumnValues - The raw statusColumnValues from the task
- * @returns {Promise<Array>} columnData array with enriched column information
+ * @returns {Promise<Array>} columnValues array with enriched column information
  */
-exports.transformStatusColumnValuesToColumnData = async (tabId, statusColumnValues) => {
+exports.transformStatusColumnValuesToColumnValues = async (tabId, statusColumnValues) => {
   if (!tabId || !statusColumnValues) return [];
 
   try {
@@ -384,11 +384,11 @@ exports.transformStatusColumnValuesToColumnData = async (tabId, statusColumnValu
       ? statusColumnValues
       : new Map(Object.entries(statusColumnValues));
 
-    const columnData = [];
+    const columnValues = [];
     for (const column of columns) {
       const value = statusColumnValuesMap.get(column.columnKey);
       if (value !== undefined) {
-        columnData.push({
+        columnValues.push({
           _id: column._id,
           key: column.columnKey,
           value: value,
@@ -399,9 +399,9 @@ exports.transformStatusColumnValuesToColumnData = async (tabId, statusColumnValu
       }
     }
 
-    return columnData;
+    return columnValues;
   } catch (error) {
-    console.error('Error transforming statusColumnValues to columnData:', error);
+    console.error('Error transforming statusColumnValues to columnValues:', error);
     return [];
   }
 };
@@ -409,7 +409,7 @@ exports.transformStatusColumnValuesToColumnData = async (tabId, statusColumnValu
 module.exports = {
   processTaskColumnValues: exports.processTaskColumnValues,
   getDefaultColumnValues: exports.getDefaultColumnValues,
-  transformStatusColumnValuesToColumnData: exports.transformStatusColumnValuesToColumnData,
+  transformStatusColumnValuesToColumnValues: exports.transformStatusColumnValuesToColumnValues,
   validateColumnValue,
   getDefaultValue
 };

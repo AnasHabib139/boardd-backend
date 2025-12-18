@@ -33,7 +33,7 @@ const {
 } = require("./helpers/tasks/task.helper");
 const {
   processTaskColumnValues,
-  transformStatusColumnValuesToColumnData,
+  transformStatusColumnValuesToColumnValues,
 } = require("./helpers/tasks/statusColumns.helper");
 const {
   getTaskByIdQuery,
@@ -420,8 +420,8 @@ exports.createTask = async (req, res, next) => {
       // Continue even if socket fails
     }
 
-    // Transform task response to use columnData instead of statusColumnValues
-    const columnData = await transformStatusColumnValuesToColumnData(
+    // Transform task response to use columnValues instead of statusColumnValues
+    const columnValues = await transformStatusColumnValuesToColumnValues(
       tab?._id,
       task.statusColumnValues
     );
@@ -429,7 +429,7 @@ exports.createTask = async (req, res, next) => {
     delete taskObj.statusColumnValues;
     const taskWithColumnData = {
       ...taskObj,
-      columnData,
+      columnValues,
     };
 
     return generateResponse(
@@ -486,15 +486,15 @@ exports.getTaskById = async (req, res, next) => {
       });
     }
 
-    // Transform statusColumnValues to columnData
-    const columnData = await transformStatusColumnValuesToColumnData(
+    // Transform statusColumnValues to columnValues
+    const columnValues = await transformStatusColumnValuesToColumnValues(
       task.tabId,
       task.statusColumnValues
     );
     delete task.statusColumnValues;
     const taskWithColumnData = {
       ...task,
-      columnData,
+      columnValues,
     };
 
     return generateResponse(
@@ -835,8 +835,8 @@ exports.batchUpdateTask = async (req, res, next) => {
       // Continue even if socket fails
     }
 
-    // Transform task response to use columnData instead of statusColumnValues
-    const columnData = await transformStatusColumnValuesToColumnData(
+    // Transform task response to use columnValues instead of statusColumnValues
+    const columnValues = await transformStatusColumnValuesToColumnValues(
       task.tabId,
       updatedTask.statusColumnValues
     );
@@ -844,7 +844,7 @@ exports.batchUpdateTask = async (req, res, next) => {
     delete taskObj.statusColumnValues;
     const taskWithColumnData = {
       ...taskObj,
-      columnData,
+      columnValues,
     };
 
     return generateResponse(

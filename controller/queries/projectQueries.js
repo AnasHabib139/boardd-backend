@@ -978,10 +978,10 @@ exports.getOpenTasksQuery = (channelId) => {
       },
     },
 
-    // Enrich with columnData (similar to project tasks)
+    // Enrich with columnValues (similar to project tasks)
     {
       $addFields: {
-        columnData: {
+        columnValues: {
           $map: {
             input: "$columnDefinitions",
             as: "colDef",
@@ -1052,7 +1052,7 @@ exports.getOpenTasksQuery = (channelId) => {
           },
         },
         // Include column data and counts
-        columnData: 1,
+        columnValues: 1,
         fileCount: 1,
         linkCount: 1,
       },
@@ -1439,7 +1439,7 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
                     $mergeObjects: [
                       "$$task",
                       {
-                        columnData: {
+                        columnValues: {
                           $map: {
                             input: "$columnDefinitions",
                             as: "colDef",
@@ -1663,9 +1663,9 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
               $mergeObjects: [
                 "$$task",
                 {
-                  columnData: {
+                  columnValues: {
                     $map: {
-                      input: "$$task.columnData",
+                      input: "$$task.columnValues",
                       as: "col",
                       in: {
                         $cond: [
@@ -1733,9 +1733,9 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
               $mergeObjects: [
                 "$$task",
                 {
-                  columnData: {
+                  columnValues: {
                     $map: {
-                      input: "$$task.columnData",
+                      input: "$$task.columnValues",
                       as: "col",
                       in: {
                         $cond: [
@@ -1803,9 +1803,9 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
               $mergeObjects: [
                 "$$task",
                 {
-                  columnData: {
+                  columnValues: {
                     $map: {
-                      input: "$$task.columnData",
+                      input: "$$task.columnValues",
                       as: "col",
                       in: {
                         $cond: [
@@ -1873,9 +1873,9 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
               $mergeObjects: [
                 "$$task",
                 {
-                  columnData: {
+                  columnValues: {
                     $map: {
-                      input: "$$task.columnData",
+                      input: "$$task.columnValues",
                       as: "col",
                       in: {
                         $cond: [
@@ -2359,7 +2359,7 @@ exports.getSingleProjectListQuery = (projectId) => {
               $mergeObjects: [
                 "$$task",
                 {
-                  columnData: {
+                  columnValues: {
                     $map: {
                       input: "$columnDefinitions",
                       as: "colDef",
@@ -2391,7 +2391,7 @@ exports.getSingleProjectListQuery = (projectId) => {
               $mergeObjects: [
                 "$$task",
                 {
-                  columnData: {
+                  columnValues: {
                     $map: {
                       input: "$columnDefinitions",
                       as: "colDef",
@@ -2423,7 +2423,7 @@ exports.getSingleProjectListQuery = (projectId) => {
               $mergeObjects: [
                 "$$task",
                 {
-                  columnData: {
+                  columnValues: {
                     $map: {
                       input: "$columnDefinitions",
                       as: "colDef",
@@ -2455,7 +2455,7 @@ exports.getSingleProjectListQuery = (projectId) => {
               $mergeObjects: [
                 "$$task",
                 {
-                  columnData: {
+                  columnValues: {
                     $map: {
                       input: "$columnDefinitions",
                       as: "colDef",

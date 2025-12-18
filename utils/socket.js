@@ -21,7 +21,7 @@ const { createNotification } = require("../models/notificationModel");
 const { findUserMutePreferences } = require("../models/userMutePreferencesModel");
 const { generateActivityMessage, deleteFileFromDisk } = require("../utils");
 const { ACTION_TYPE, TASK_STATUS, TASK_PRIORITY } = require("./constants");
-const { processTaskColumnValues, transformStatusColumnValuesToColumnData } = require("../controller/helpers/tasks/statusColumns.helper");
+const { processTaskColumnValues, transformStatusColumnValuesToColumnValues } = require("../controller/helpers/tasks/statusColumns.helper");
 const { getProjectStatusKeys } = require("../models/tabTaskStatusModel");
 
 let io;
@@ -145,8 +145,8 @@ const getEssentialTaskDetails = async (taskId, userId = null) => {
 
     const task = result.task[0];
 
-    // Transform statusColumnValues to columnData
-    const columnData = await transformStatusColumnValuesToColumnData(
+    // Transform statusColumnValues to columnValues
+    const columnValues = await transformStatusColumnValuesToColumnValues(
       task.tabId,
       task.statusColumnValues
     );
@@ -154,7 +154,7 @@ const getEssentialTaskDetails = async (taskId, userId = null) => {
 
     return {
       ...task,
-      columnData,
+      columnValues,
     };
   } catch (error) {
     console.error("Error getting essential task details:", error);
@@ -643,7 +643,7 @@ const processTaskUpdate = async (socket, data) => {
       activities: [activity],
     });
 
-    // Transform statusColumnValues to columnData array for ALL updates
+    // Transform statusColumnValues to columnValues array for ALL updates
     let taskWithColumnData = updatedTask;
     if (updatedTask.statusColumnValues) {
       try {
@@ -657,7 +657,7 @@ const processTaskUpdate = async (socket, data) => {
         }
 
         if (tabIdForColumns) {
-          const columnData = await transformStatusColumnValuesToColumnData(
+          const columnValues = await transformStatusColumnValuesToColumnValues(
             tabIdForColumns,
             updatedTask.statusColumnValues
           );
@@ -665,11 +665,11 @@ const processTaskUpdate = async (socket, data) => {
           delete taskObj.statusColumnValues;
           taskWithColumnData = {
             ...taskObj,
-            columnData,
+            columnValues,
           };
         }
       } catch (error) {
-        console.error("Error transforming statusColumnValues to columnData:", error);
+        console.error("Error transforming statusColumnValues to columnValues:", error);
         // Continue with original task if transformation fails
       }
     }
