@@ -189,17 +189,19 @@ exports.getActivities = async (req, res, next) => {
 
     // Build filter query
     const filter = {
-      userId: Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : null,
+      userId: Types.ObjectId.isValid(userId)
+        ? new Types.ObjectId(userId)
+        : null,
     };
 
     // CRITICAL: Only return CHAT notifications, exclude task notifications
     // Task notifications (MENTION, CHANNEL, WORK_IN_PROGRESS) are a separate system
     const CHAT_NOTIFICATION_TYPES = [
-      'CHAT_MESSAGE',
-      'CHAT_MENTION',
-      'CHAT_THREAD_REPLY',
-      'CHAT_REACTION',
-      'CHANNEL_INVITATION'
+      "CHAT_MESSAGE",
+      "CHAT_MENTION",
+      "CHAT_THREAD_REPLY",
+      "CHAT_REACTION",
+      "CHANNEL_INVITATION",
     ];
     filter.type = { $in: CHAT_NOTIFICATION_TYPES };
 
@@ -267,7 +269,6 @@ exports.getActivities = async (req, res, next) => {
           },
         },
       },
-      { $sort: { timestamp: -1 } },
     ];
 
     // Get paginated results
@@ -279,6 +280,7 @@ exports.getActivities = async (req, res, next) => {
       query: aggregationQuery,
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 20,
+      sort: { timestamp: -1 },
     });
 
     // Format activities
@@ -392,7 +394,11 @@ exports.markActivityAsRead = async (req, res, next) => {
         const { markAsRead } = require("../models/chatConversationModel");
         const { getIO } = require("../utils/socket");
 
-        await markAsRead(notification.conversationId.toString(), userId, new Date());
+        await markAsRead(
+          notification.conversationId.toString(),
+          userId,
+          new Date()
+        );
 
         // Emit chat unread update via socket
         const io = getIO();
@@ -406,7 +412,10 @@ exports.markActivityAsRead = async (req, res, next) => {
       }
     }
 
-    const updatedCounts = await calculateUnreadCounts(NotificationModel, userId);
+    const updatedCounts = await calculateUnreadCounts(
+      NotificationModel,
+      userId
+    );
 
     // Emit real-time unread count update
     await emitUnreadCountsUpdate(userId);
@@ -461,11 +470,14 @@ exports.markAllAsRead = async (req, res, next) => {
 
     // ========== Sync: Find affected conversations before bulk update ==========
     // Get distinct conversationIds for CHAT_MESSAGE notifications that will be marked as read
-    const affectedConversationIds = await NotificationModel.distinct("conversationId", {
-      ...query,
-      type: "CHAT_MESSAGE",
-      conversationId: { $exists: true, $ne: null },
-    });
+    const affectedConversationIds = await NotificationModel.distinct(
+      "conversationId",
+      {
+        ...query,
+        type: "CHAT_MESSAGE",
+        conversationId: { $exists: true, $ne: null },
+      }
+    );
 
     const result = await NotificationModel.updateMany(query, {
       isRead: true,
@@ -489,7 +501,10 @@ exports.markAllAsRead = async (req, res, next) => {
               unreadCount: 0,
             });
           } catch (convError) {
-            console.error(`Error marking conversation ${conversationId} as read:`, convError);
+            console.error(
+              `Error marking conversation ${conversationId} as read:`,
+              convError
+            );
             // Continue with other conversations
           }
         }
@@ -499,14 +514,18 @@ exports.markAllAsRead = async (req, res, next) => {
       }
     }
 
-    const updatedCounts = await calculateUnreadCounts(NotificationModel, userId);
+    const updatedCounts = await calculateUnreadCounts(
+      NotificationModel,
+      userId
+    );
 
     // Emit real-time unread count update
     await emitUnreadCountsUpdate(userId);
 
-    const message = type && type !== "all"
-      ? `All ${type} marked as read`
-      : "All activities marked as read";
+    const message =
+      type && type !== "all"
+        ? `All ${type} marked as read`
+        : "All activities marked as read";
 
     return generateResponse(
       {
