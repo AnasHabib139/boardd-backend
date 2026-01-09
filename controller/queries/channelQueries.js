@@ -235,19 +235,6 @@ exports.getAllMembersInChannelQuery = (channelId, currentUserId) => {
             },
           },
           {
-            // Exclude current logged-in user but keep demo users
-            $match: {
-              $or: [
-                {
-                  _id: {
-                    $ne: Types.ObjectId.createFromHexString(currentUserId),
-                  },
-                },
-                { isDemo: true },
-              ],
-            },
-          },
-          {
             // Lookup private tabs where this user is a member
             $lookup: {
               from: "channeltabs",
