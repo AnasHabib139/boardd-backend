@@ -4,6 +4,8 @@ const { aggregateTasks } = require("../models/taskModel");
 const { aggregateUsers, findUser } = require("../models/userModel");
 const { aggregateChatMessages } = require("../models/chatMessageModel");
 const { aggregateForms } = require("../models/formModel");
+const { findManyProjects } = require("../models/projectModel");
+const { TabTaskStatus } = require("../models/tabTaskStatusModel");
 const { STATUS_CODES } = require("../utils/constants");
 const {
   buildTasksSearchPipeline,
@@ -378,7 +380,84 @@ const getDesignations = async (req, res) => {
   }
 };
 
+/**
+ * Get unique statuses for company (for dropdown filters)
+ * GET /api/search/statuses
+ */
+const getCompanyStatuses = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Fetch user from database to get companyId
+    const user = await findUser({ _id: userId });
+
+    if (!user) {
+      return res.status(STATUS_CODES.NOT_FOUND).json({
+        message: "User not found"
+      });
+    }
+
+    const companyId = user.companyId;
+
+    // Validate user has a company
+    if (!companyId) {
+      return res.status(STATUS_CODES.BAD_REQUEST).json({
+        message: "User does not have a company assigned"
+      });
+    }
+
+    // Find all projects in the company
+    const projects = await findManyProjects({ companyId, status: "active" });
+    const projectIds = projects.map(p => p._id);
+
+    // Get all unique statuses using aggregation
+    const statuses = await TabTaskStatus.aggregate([
+      {
+        $match: {
+          projectId: { $in: projectIds },
+          isActive: true
+        }
+      },
+      {
+        $group: {
+          _id: "$statusKey",
+          statusKey: { $first: "$statusKey" },
+          statusName: { $first: "$statusName" },
+          color: { $first: "$color" },
+          isSystem: { $first: "$isSystem" },
+          order: { $min: "$order" }
+        }
+      },
+      {
+        $sort: { order: 1 }
+      },
+      {
+        $project: {
+          _id: 0,
+          statusKey: 1,
+          statusName: 1,
+          color: 1,
+          isSystem: 1
+        }
+      }
+    ]);
+
+    return res.status(STATUS_CODES.SUCCESS).json({
+      message: "Statuses fetched successfully",
+      statuses,
+      total: statuses.length
+    });
+  } catch (error) {
+    console.error("Get statuses error:", error);
+    return res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({
+      message: "An error occurred while fetching statuses",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   globalSearch,
-  getDesignations
+  getDesignations,
+  getCompanyStatuses
 };

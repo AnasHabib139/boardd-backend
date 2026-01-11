@@ -2,7 +2,7 @@
 
 const { Router } = require("express");
 const { validateGlobalSearch } = require("../validation/searchValidation");
-const { globalSearch, getDesignations } = require("../controller/search.controller");
+const { globalSearch, getDesignations, getCompanyStatuses } = require("../controller/search.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
 
@@ -47,6 +47,17 @@ class SearchApi {
       "/designations",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       getDesignations
+    );
+
+    /**
+     * @route   GET /api/search/statuses
+     * @desc    Get unique task statuses for company (for dropdown filters)
+     * @access  Private
+     */
+    router.get(
+      "/statuses",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getCompanyStatuses
     );
   }
 
