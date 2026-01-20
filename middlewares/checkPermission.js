@@ -203,6 +203,66 @@ function checkAnyPermission(permissionKeys) {
 }
 
 /**
+ * Permission check with self-join bypass for channel add-member
+ * Skips permission check if user is only adding themselves
+ *
+ * @param {String} permissionKey - The permission to check
+ * @returns {Function} Express middleware function
+ *
+ * Usage:
+ * router.put('/add-member', checkPermissionWithSelfJoinBypass('addRemoveChannelMembers'), addUserToChannel);
+ */
+function checkPermissionWithSelfJoinBypass(permissionKey) {
+  return async (req, res, next) => {
+    try {
+      const { emails } = req.body || {};
+
+      if (!req.user || !req.user.id) {
+        return next({
+          statusCode: STATUS_CODES.UNAUTHORIZED,
+          message: "Authentication required",
+        });
+      }
+
+      // Get user email for comparison
+      const { findUser } = require("../models/userModel");
+      const user = await findUser({ _id: req.user.id });
+
+      if (!user) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "User not found",
+        });
+      }
+
+      // Check if self-join: only 1 email and it matches logged-in user
+      const DEMO_EMAIL = "uncle@boardd.demo";
+      const nonDemoEmails = (emails || []).filter(
+        (email) => email.toLowerCase() !== DEMO_EMAIL.toLowerCase()
+      );
+
+      const isSelfJoin =
+        nonDemoEmails.length === 1 &&
+        nonDemoEmails[0].toLowerCase() === user.email.toLowerCase();
+
+      if (isSelfJoin) {
+        // Skip permission check for self-join
+        return next();
+      }
+
+      // Not self-join, run normal permission check
+      return checkPermission(permissionKey)(req, res, next);
+    } catch (error) {
+      console.error(`Self-join bypass check error:`, error);
+      return next({
+        statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+        message: "Permission verification failed",
+      });
+    }
+  };
+}
+
+/**
  * Batch Permission Check Middleware (AND logic)
  * Checks if user has ALL of the specified permissions
  *
@@ -271,4 +331,5 @@ module.exports = {
   checkPermissionOptional,
   checkAnyPermission,
   checkAllPermissions,
+  checkPermissionWithSelfJoinBypass,
 };

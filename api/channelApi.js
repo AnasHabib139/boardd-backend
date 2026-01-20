@@ -21,7 +21,7 @@ const {
   getChannelTasksDropdown,
 } = require("../controller/channelController");
 const Auth = require("../middlewares/Auth");
-const { checkPermission, checkAnyPermission } = require("../middlewares/checkPermission");
+const { checkPermission, checkAnyPermission, checkPermissionWithSelfJoinBypass } = require("../middlewares/checkPermission");
 const { ROLES } = require("../utils/constants");
 const {
   validateCreateChannel,
@@ -60,10 +60,11 @@ class ChannelApi {
     );
 
     // Add user to channel with validation
+    // Uses self-join bypass to allow users to add themselves via invite links
     router.put(
       "/add-member",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
-      checkPermission("addRemoveChannelMembers"),
+      checkPermissionWithSelfJoinBypass("addRemoveChannelMembers"),
       validateAddUserToChannel,
       addUserToChannel
     );
