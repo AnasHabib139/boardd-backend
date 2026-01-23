@@ -710,12 +710,6 @@ exports.getProjectBoardQuery = (projectId, search = null) => {
               coverImage: 1,
             },
           },
-          // Sort tasks by their status-specific orderIndex
-          {
-            $sort: {
-              createdAt: -1, // Fallback sort by creation date
-            },
-          },
         ],
       },
     },
@@ -1058,12 +1052,6 @@ exports.getOpenTasksQuery = (channelId) => {
       },
     },
 
-    // Sort tasks by creation date
-    {
-      $sort: {
-        createdAt: -1,
-      },
-    },
   ];
 };
 
@@ -1356,12 +1344,6 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
               linkCount: 1,
               // Store statusColumnValues for later enrichment
               statusColumnValues: 1,
-            },
-          },
-          // Sort tasks by their status-specific orderIndex (handled in controller)
-          {
-            $sort: {
-              createdAt: -1, // Fallback sort by creation date
             },
           },
         ],
@@ -2307,22 +2289,9 @@ exports.getSingleProjectListQuery = (projectId) => {
               statusColumnValues: 1,
             },
           },
-          // Sort tasks by creation date as fallback
-          {
-            $sort: {
-              createdAt: -1, // Fallback sort by creation date
-            },
-          },
         ],
       },
     },
-
-    // Filter out projects with no matching tasks (when search is active)
-    ...(search && search.trim() ? [{
-      $match: {
-        "allTasks.0": { $exists: true } // Only projects with at least one task
-      }
-    }] : []),
 
     // Separate tasks by status for better organization
     {
