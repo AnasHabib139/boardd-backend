@@ -150,6 +150,16 @@ const createTaskValidation = Joi.object({
     .messages({
       "object.base": "Column values must be an object",
     }),
+
+  tags: Joi.array()
+    .items(Joi.string().trim().min(1).max(30))
+    .optional()
+    .default([])
+    .messages({
+      "array.base": "Tags must be an array of strings",
+      "string.min": "Each tag must be at least 1 character long",
+      "string.max": "Each tag cannot exceed 30 characters",
+    }),
 }).custom((value, helpers) => {
   // Custom validation to ensure either projectId or channelId is provided, but not both
   const { projectId, channelId, tabId } = value;

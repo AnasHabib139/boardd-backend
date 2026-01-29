@@ -704,6 +704,7 @@ exports.getProjectBoardQuery = (projectId, search = null) => {
               assignees: 1,
               // Computed fields
               isOverdue: 1,
+              tags: 1,
               fileCount: 1,
               linkCount: 1,
               coverLink: 1,
@@ -1047,6 +1048,7 @@ exports.getOpenTasksQuery = (channelId) => {
         },
         // Include column data and counts
         columnValues: 1,
+        tags: 1,
         fileCount: 1,
         linkCount: 1,
       },
@@ -1340,6 +1342,7 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
               },
               // Include computed fields
               isOverdue: 1,
+              tags: 1,
               fileCount: 1,
               linkCount: 1,
               // Store statusColumnValues for later enrichment
@@ -2283,6 +2286,7 @@ exports.getSingleProjectListQuery = (projectId) => {
               },
               // Include computed fields
               isOverdue: 1,
+              tags: 1,
               fileCount: 1,
               linkCount: 1,
               // Store statusColumnValues for later enrichment

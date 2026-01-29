@@ -86,6 +86,7 @@ exports.createTask = async (req, res, next) => {
       attachments,
       links,
       columnValues,
+      tags,
     } = parseBody(req.body);
 
     const userId = req?.user?.id;
@@ -265,7 +266,7 @@ exports.createTask = async (req, res, next) => {
       statusColumnValues: processedColumnValues,
       // Auto-defaults for removed fields
       description: "",
-      tags: [],
+      tags: tags || [],
       strokeColor: "#6C63FF",
       type: "task",
       customFields: [],
