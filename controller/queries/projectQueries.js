@@ -647,7 +647,7 @@ exports.getProjectBoardQuery = (projectId, search = null) => {
                         input: { $ifNull: ["$attachments", []] },
                         cond: {
                           $regexMatch: {
-                            input: "$$this",
+                            input: "$$this.url",
                             regex: /\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i
                           }
                         }
