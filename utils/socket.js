@@ -13,7 +13,7 @@ const {
   getAllTasks,
 } = require("../models/taskModel");
 // Removed unused imports: getTaskByIdQuery, updateSubtask
-const { findProject } = require("../models/projectModel");
+const { findProject, updateProjectOrderIndex } = require("../models/projectModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
 const { findUser } = require("../models/userModel");
@@ -1030,6 +1030,144 @@ const processTaskReorder = async (socket, data) => {
   }
 };
 
+// Process project reorder within same tab
+const processProjectReorder = async (socket, data) => {
+  const { projectId, newOrderIndex, userId } = data;
+
+  try {
+    // 1. Validate input
+    if (!projectId || newOrderIndex === undefined || !userId) {
+      socket.emit("project-reorder-response", {
+        success: false,
+        error: "Missing required fields: projectId, newOrderIndex, userId",
+        projectId,
+      });
+      return;
+    }
+
+    // 2. Check for conflicts
+    const updateKey = `${projectId}-project-reorder`;
+    if (pendingUpdates.has(updateKey)) {
+      socket.emit("project-reorder-response", {
+        success: false,
+        error: "Another reorder is in progress for this project",
+        projectId,
+        conflict: true,
+      });
+      return;
+    }
+    pendingUpdates.set(updateKey, { userId, timestamp: Date.now() });
+
+    // 3. Find project
+    const project = await findProject({ _id: projectId });
+    if (!project) {
+      socket.emit("project-reorder-response", {
+        success: false,
+        error: "Project not found",
+        projectId,
+      });
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
+    // 4. Get context
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      socket.emit("project-reorder-response", {
+        success: false,
+        error: "User not found",
+        projectId,
+      });
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
+    const channel = await findChannel({ _id: project.channelId });
+    if (!channel) {
+      socket.emit("project-reorder-response", {
+        success: false,
+        error: "Channel not found",
+        projectId,
+      });
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
+    const tab = await findChannelTab({ _id: project.tabId });
+    if (!tab) {
+      socket.emit("project-reorder-response", {
+        success: false,
+        error: "Tab not found",
+        projectId,
+      });
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
+    // 5. Check permissions (tab member)
+    if (!tab.members.includes(userId)) {
+      socket.emit("project-reorder-response", {
+        success: false,
+        error: "Permission denied - not a tab member",
+        projectId,
+      });
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
+    // 6. Update order index
+    const previousOrderIndex = project.orderIndex;
+    const updatedProject = await updateProjectOrderIndex(projectId, newOrderIndex);
+
+    // 7. Broadcast to channel room (all users who joined via join-user-channel)
+    io.to(`channel:${channel._id}`).emit("project-reorder-response", {
+      success: true,
+      projectId,
+      previousOrderIndex,
+      newOrderIndex,
+      project: {
+        _id: updatedProject._id,
+        name: updatedProject.name,
+        orderIndex: updatedProject.orderIndex,
+      },
+      reorderedBy: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+    });
+
+    // 8. Emit tab activity
+    io.to(`channel:${channel._id}`).emit("tab-activity", {
+      type: "PROJECT_REORDERED",
+      projectId,
+      tabId: tab._id,
+      previousOrderIndex,
+      newOrderIndex,
+      project: {
+        _id: updatedProject._id,
+        name: updatedProject.name,
+      },
+      reorderedBy: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+      timestamp: new Date(),
+    });
+
+    pendingUpdates.delete(updateKey);
+  } catch (error) {
+    console.error(`Error processing project reorder for ${projectId}:`, error);
+    socket.emit("project-reorder-response", {
+      success: false,
+      error: error.message,
+      projectId,
+    });
+    pendingUpdates.delete(`${projectId}-project-reorder`);
+  }
+};
+
 // Process task move between projects or to/from Open
 const processTaskMove = async (socket, data) => {
   const { taskId, newProjectId, newChannelId, newStatus, newOrderIndex, userId } = data;
@@ -1596,6 +1734,11 @@ exports.initSocket = (server) => {
     // Handle task drag and drop within same project
     socket.on("task-reorder", async (data) => {
       await processTaskReorder(socket, data);
+    });
+
+    // Handle project drag and drop reordering
+    socket.on("project-reorder", async (data) => {
+      await processProjectReorder(socket, data);
     });
 
     // Handle task drag and drop between projects

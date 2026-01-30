@@ -1,6 +1,6 @@
 const { findChannel } = require("../models/channelModel");
 const { findChannelTab } = require("../models/channelTabsModel");
-const { createProject, getAllProjects, getAllProjectsWithoutPagination, findProject, updateProject, deleteProject } = require("../models/projectModel");
+const { createProject, getAllProjects, getAllProjectsWithoutPagination, findProject, updateProject, deleteProject, getNextProjectOrderIndex } = require("../models/projectModel");
 const { createTask, findManyTasks } = require("../models/taskModel");
 const { findUser } = require("../models/userModel");
 const { findCompany } = require("../models/companyModel");
@@ -74,6 +74,9 @@ exports.CreateProject = async (req, res, next) => {
       });
     }
 
+    // Get next order index for the tab
+    const orderIndex = await getNextProjectOrderIndex(tabId);
+
     // create project
     const project = await createProject({
       name,
@@ -86,6 +89,7 @@ exports.CreateProject = async (req, res, next) => {
       endDate: parseDate(endDate),
       color,
       priority,
+      orderIndex,
     });
 
     // Initialize system statuses for the new project (todo, in_progress, completed)
@@ -235,7 +239,7 @@ exports.getProjectsOfTab = async (req, res, next) => {
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 10,
       responseKey: "projects",
-      sort: { isPinned: -1, createdAt: -1 }, // Pinned first, then newest
+      sort: { isPinned: -1, orderIndex: 1, createdAt: -1 }, // Pinned first, then by order, then newest
     });
 
     // For list view, also fetch open tasks (tasks without project)
@@ -525,11 +529,11 @@ exports.getProjectsOverview = async (req, res, next) => {
     // Determine sorting based on search
     let sortOptions;
     if (search) {
-      // Sort by search relevance (searchScore desc, then createdAt desc)
-      sortOptions = { searchScore: -1, createdAt: -1 };
+      // Sort by search relevance (searchScore desc, then by order, then createdAt desc)
+      sortOptions = { searchScore: -1, orderIndex: 1, createdAt: -1 };
     } else {
-      // Default sorting (createdAt desc)
-      sortOptions = { createdAt: -1 };
+      // Default sorting (by order, then createdAt desc)
+      sortOptions = { orderIndex: 1, createdAt: -1 };
     }
 
     // Fetch projects with pagination and sorting
@@ -634,10 +638,10 @@ exports.getProjectsList = async (req, res, next) => {
     let sortOptions;
     if (search && search.trim()) {
       // Sort by search relevance (pinned first, then searchScore desc, then createdAt desc)
-      sortOptions = { isPinned: -1, searchScore: -1, createdAt: -1 };
+      sortOptions = { isPinned: -1, searchScore: -1, orderIndex: 1, createdAt: -1 };
     } else {
-      // Default sorting (pinned first, then createdAt desc)
-      sortOptions = { isPinned: -1, createdAt: -1 };
+      // Default sorting (pinned first, then by order, then createdAt desc)
+      sortOptions = { isPinned: -1, orderIndex: 1, createdAt: -1 };
     }
 
     // Fetch projects with pagination and sorting
@@ -1513,6 +1517,9 @@ exports.duplicateProject = async (req, res, next) => {
       });
     }
 
+    // Get next order index for the tab
+    const orderIndex = await getNextProjectOrderIndex(originalProject.tabId);
+
     // Create new project (exact copy with new name)
     const newProjectData = {
       name: name || `Copy of ${originalProject.name}`,
@@ -1527,6 +1534,7 @@ exports.duplicateProject = async (req, res, next) => {
       isPinned: false, // Reset pin status
       createdBy: userId,
       status: "active",
+      orderIndex,
     };
 
     const newProject = await createProject(newProjectData);
