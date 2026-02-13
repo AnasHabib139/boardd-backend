@@ -7,7 +7,7 @@ const { findTask } = require("../models/taskModel");
 const { findProject } = require("../models/projectModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
-const { createTaskComment, findTaskComment, getAllTaskComments } = require("../models/taskCommentModel");
+const { createTaskComment, findTaskComment, getAllTaskComments, deleteTaskComment: removeTaskComment } = require("../models/taskCommentModel");
 const { createActivity } = require("../models/activityModel");
 const { emitTaskEvent } = require("../utils/socket");
 
@@ -165,6 +165,68 @@ exports.createTaskComment = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in createTaskComment:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Delete a comment on a task
+ * Only the comment author can delete their own comment
+ */
+exports.deleteTaskComment = async (req, res, next) => {
+  try {
+    const { taskId, commentId } = req.params;
+    const userId = req.user.id;
+
+    // Find the comment and verify it belongs to the task
+    const comment = await findTaskComment({ _id: commentId, taskId });
+    if (!comment) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Comment not found",
+      });
+    }
+
+    // Verify the requesting user is the comment author
+    if (comment.userId.toString() !== userId) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You can only delete your own comments",
+      });
+    }
+
+    // Find task for socket event context
+    const task = await findTask({ _id: taskId });
+
+    // Hard delete the comment
+    await removeTaskComment({ _id: commentId });
+
+    // Emit socket event for real-time updates
+    try {
+      emitTaskEvent({
+        taskId,
+        channelId: task?.channelId || task?.projectId,
+        type: "TASK_COMMENT_DELETED",
+        payload: {
+          commentId,
+          taskId,
+          deletedBy: userId,
+        },
+      });
+    } catch (socketError) {
+      console.error("Error emitting comment delete socket event:", socketError);
+    }
+
+    return generateResponse(
+      { commentId },
+      "Comment deleted successfully",
+      res
+    );
+  } catch (error) {
+    console.error("Error in deleteTaskComment:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

@@ -52,6 +52,18 @@ const taskIdParamValidation = Joi.object({
   }),
 });
 
+// Delete task comment parameter validation (taskId + commentId)
+const deleteTaskCommentParamValidation = Joi.object({
+  taskId: helpers.objectIdValidation.required().messages({
+    "any.required": "Task ID is required",
+    "string.pattern.name": "Task ID must be a valid ObjectId",
+  }),
+  commentId: helpers.objectIdValidation.required().messages({
+    "any.required": "Comment ID is required",
+    "string.pattern.name": "Comment ID must be a valid ObjectId",
+  }),
+});
+
 // Get task comments query validation
 const getTaskCommentsQueryValidation = Joi.object({
   page: Joi.number().integer().min(1).default(1).messages({
@@ -113,11 +125,13 @@ module.exports = {
   validateCreateTaskComment: validateRequest(createTaskCommentValidation),
   validateTaskIdParam: validateRequest(taskIdParamValidation, "params"),
   validateGetTaskCommentsQuery: validateRequest(getTaskCommentsQueryValidation, "query"),
+  validateDeleteTaskCommentParams: validateRequest(deleteTaskCommentParamValidation, "params"),
 
   // Export schemas for testing or custom usage
   schemas: {
     createTaskCommentValidation,
     taskIdParamValidation,
     getTaskCommentsQueryValidation,
+    deleteTaskCommentParamValidation,
   },
 };
