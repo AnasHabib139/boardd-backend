@@ -20,7 +20,7 @@ exports.generateJoinToken = () => {
 // Invite slots helper
 exports.createInviteSlots = async (companyId, createManyInviteSlots) => {
   const companySlotCount = parseInt(process.env.INVITE_SLOT_COUNT) || 5;
-  const guestSlotCount = 5; // Fixed 5 guest slots per company
+  const guestSlotCount = parseInt(process.env.GUEST_INVITE_SLOT_COUNT) || 5;
 
   // Create company invite slots (existing functionality)
   const companySlots = Array.from({ length: companySlotCount }, (_, i) => ({

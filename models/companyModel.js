@@ -232,5 +232,8 @@ exports.getAllCompanies = async ({
   return { [responseKey]: data, pagination };
 };
 
+// find many companies
+exports.findManyCompanies = (query) => CompanyModel.find(query);
+
 // delete company
 exports.deleteCompany = (query) => CompanyModel.findOneAndDelete(query);

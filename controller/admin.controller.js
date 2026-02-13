@@ -13,9 +13,12 @@ const {
   findInviteSlot,
   updateInviteSlot,
   findAvailableInviteSlot,
+  findManyInviteSlots,
+  createManyInviteSlots,
 } = require("../models/inviteSlotModel");
-const { findCompany, updateCompany } = require("../models/companyModel");
+const { findCompany, updateCompany, findManyCompanies } = require("../models/companyModel");
 const crypto = require("crypto");
+const { generateJoinToken } = require("./helpers/users/signup.helper");
 const Mailer = require("../utils/mailer");
 const { generateOwnershipTransferEmail } = require("../utils/emailTemplates");
 const {
@@ -695,6 +698,100 @@ exports.changeUserRole = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to change user role",
+    });
+  }
+};
+
+/**
+ * Sync invite seats for all existing companies
+ * Tops up company and guest slots to match current env configuration
+ * Idempotent — safe to run multiple times
+ */
+exports.syncSeats = async (req, res, next) => {
+  try {
+    const targetCompanySlots = parseInt(process.env.INVITE_SLOT_COUNT) || 5;
+    const targetGuestSlots = parseInt(process.env.GUEST_INVITE_SLOT_COUNT) || 5;
+
+    const companies = await findManyCompanies({});
+    const results = [];
+
+    for (const company of companies) {
+      const existingCompanySlots = await findManyInviteSlots({
+        companyId: company._id,
+        inviteType: "company",
+        isGuestInviteSlot: false,
+      });
+
+      const existingGuestSlots = await findManyInviteSlots({
+        companyId: company._id,
+        inviteType: "guest",
+        isGuestInviteSlot: true,
+      });
+
+      // Find the current max slot number for this company
+      const allSlots = await findManyInviteSlots({ companyId: company._id });
+      const maxSlot = allSlots.reduce((max, s) => Math.max(max, s.slot), 0);
+
+      const companyToAdd = targetCompanySlots - existingCompanySlots.length;
+      const guestToAdd = targetGuestSlots - existingGuestSlots.length;
+
+      const newSlots = [];
+      let nextSlot = maxSlot + 1;
+
+      if (companyToAdd > 0) {
+        for (let i = 0; i < companyToAdd; i++) {
+          newSlots.push({
+            companyId: company._id,
+            slot: nextSlot++,
+            token: generateJoinToken(),
+            isGuestInviteSlot: false,
+            inviteType: "company",
+          });
+        }
+      }
+
+      if (guestToAdd > 0) {
+        for (let i = 0; i < guestToAdd; i++) {
+          newSlots.push({
+            companyId: company._id,
+            slot: nextSlot++,
+            token: generateJoinToken(),
+            isGuestInviteSlot: true,
+            inviteType: "guest",
+          });
+        }
+      }
+
+      if (newSlots.length > 0) {
+        await createManyInviteSlots(newSlots);
+      }
+
+      results.push({
+        companyId: company._id,
+        companyName: company.name,
+        companySlotsAdded: Math.max(companyToAdd, 0),
+        guestSlotsAdded: Math.max(guestToAdd, 0),
+        totalCompanySlots: existingCompanySlots.length + Math.max(companyToAdd, 0),
+        totalGuestSlots: existingGuestSlots.length + Math.max(guestToAdd, 0),
+      });
+    }
+
+    return generateResponse(
+      {
+        targetCompanySlots,
+        targetGuestSlots,
+        companiesProcessed: companies.length,
+        details: results,
+      },
+      "Seats synced successfully for all companies",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in syncSeats:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
     });
   }
 };

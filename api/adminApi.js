@@ -9,6 +9,7 @@ const {
   initiateOwnershipTransfer,
   confirmOwnershipTransfer,
   changeUserRole,
+  syncSeats,
 } = require("../controller/admin.controller");
 const { ROLES } = require("../utils/constants");
 const Auth = require("../middlewares/Auth");
@@ -83,6 +84,14 @@ class AdminAPI {
       Auth([ROLES.ADMIN]),
       checkPermission("manageAllMembers"),
       changeUserRole
+    );
+
+    // Sync invite seats for all existing companies
+    router.post(
+      "/sync-seats",
+      Auth([ROLES.ADMIN]),
+      checkPermission("manageAllMembers"),
+      syncSeats
     );
   }
 
