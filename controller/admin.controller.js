@@ -44,8 +44,7 @@ exports.getCompanyUsersAdmin = async (req, res, next) => {
     // Build aggregation query - exclude logged-in user and only show active users
     const aggregationQuery = getCompanyUsersAdminQuery(
       admin.companyId,
-      search,
-      userId
+      search
     );
 
     // Get users with pagination
@@ -206,6 +205,14 @@ exports.toggleUserSeat = async (req, res, next) => {
   try {
     const { userId: targetUserId } = req.body;
     const adminId = req.user.id;
+
+    // Prevent admin from toggling their own seat
+    if (targetUserId === adminId) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "You cannot toggle your own seat status",
+      });
+    }
 
     // Get admin user
     const admin = await findUser({ _id: adminId });
