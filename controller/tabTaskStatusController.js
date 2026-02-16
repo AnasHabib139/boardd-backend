@@ -103,7 +103,12 @@ exports.createStatus = async (req, res, next) => {
     // Emit socket event
     const io = getIO();
     const allStatuses = await findManyTabTaskStatuses({ projectId, isActive: true });
-    io.to(`project:${projectId}`).emit("project-status-updated", { statuses: allStatuses });
+    io.to(`channel:${project.channelId}`).emit("tab-activity", {
+      type: "PROJECT_STATUS_CREATED",
+      projectId,
+      statuses: allStatuses,
+      timestamp: new Date(),
+    });
 
     return generateResponse(
       { status: newStatus },
@@ -170,7 +175,12 @@ exports.updateStatus = async (req, res, next) => {
     // Emit socket event
     const io = getIO();
     const allStatuses = await findManyTabTaskStatuses({ projectId, isActive: true });
-    io.to(`project:${projectId}`).emit("project-status-updated", { statuses: allStatuses });
+    io.to(`channel:${project.channelId}`).emit("tab-activity", {
+      type: "PROJECT_STATUS_UPDATED",
+      projectId,
+      statuses: allStatuses,
+      timestamp: new Date(),
+    });
 
     return generateResponse(
       { status: updatedStatus },
@@ -246,11 +256,14 @@ exports.deleteStatus = async (req, res, next) => {
     // Emit socket event
     const io = getIO();
     const allStatuses = await findManyTabTaskStatuses({ projectId, isActive: true });
-    io.to(`project:${projectId}`).emit("project-status-updated", { statuses: allStatuses });
-    io.to(`project:${projectId}`).emit("project-status-deleted", {
-      statusKey: status.statusKey,
+    io.to(`channel:${project.channelId}`).emit("tab-activity", {
+      type: "PROJECT_STATUS_DELETED",
+      projectId,
+      statuses: allStatuses,
+      deletedStatusKey: status.statusKey,
       migratedToKey: "todo",
       affectedTasks: tasksWithStatus.length,
+      timestamp: new Date(),
     });
 
     return generateResponse(
@@ -304,7 +317,12 @@ exports.reorderStatuses = async (req, res, next) => {
     // Emit socket event
     const io = getIO();
     const allStatuses = await findManyTabTaskStatuses({ projectId, isActive: true });
-    io.to(`project:${projectId}`).emit("project-status-updated", { statuses: allStatuses });
+    io.to(`channel:${project.channelId}`).emit("tab-activity", {
+      type: "PROJECT_STATUS_REORDERED",
+      projectId,
+      statuses: allStatuses,
+      timestamp: new Date(),
+    });
 
     return generateResponse(
       { statuses: allStatuses },
