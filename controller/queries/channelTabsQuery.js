@@ -53,6 +53,222 @@ exports.getAllTabsOfMemberInChannelQuery = (channelId, userId) => {
         },
       },
     },
+    // Lookup team chat conversation unread count
+    {
+      $lookup: {
+        from: "chatconversations",
+        let: { channelId: "$channelId" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$type", "channel"] },
+                  { $eq: ["$channelId", "$$channelId"] },
+                ],
+              },
+            },
+          },
+          {
+            $addFields: {
+              userParticipant: {
+                $arrayElemAt: [
+                  {
+                    $filter: {
+                      input: "$participants",
+                      as: "p",
+                      cond: {
+                        $eq: [
+                          "$$p.userId",
+                          Types.ObjectId.createFromHexString(userId),
+                        ],
+                      },
+                    },
+                  },
+                  0,
+                ],
+              },
+            },
+          },
+          {
+            $lookup: {
+              from: "chatmessages",
+              let: {
+                convId: "$_id",
+                lastRead: "$userParticipant.lastReadAt",
+              },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $eq: ["$conversationId", "$$convId"] },
+                        {
+                          $cond: {
+                            if: { $ne: ["$$lastRead", null] },
+                            then: { $gt: ["$createdAt", "$$lastRead"] },
+                            else: true,
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+                { $count: "count" },
+              ],
+              as: "unreadMessages",
+            },
+          },
+          {
+            $project: {
+              _id: 1,
+              unreadCount: {
+                $ifNull: [
+                  { $arrayElemAt: ["$unreadMessages.count", 0] },
+                  0,
+                ],
+              },
+            },
+          },
+        ],
+        as: "teamChatConversation",
+      },
+    },
+    // Lookup client chat conversation unread count
+    {
+      $lookup: {
+        from: "chatconversations",
+        let: { channelId: "$channelId" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$type", "client"] },
+                  { $eq: ["$channelId", "$$channelId"] },
+                ],
+              },
+            },
+          },
+          {
+            $addFields: {
+              userParticipant: {
+                $arrayElemAt: [
+                  {
+                    $filter: {
+                      input: "$participants",
+                      as: "p",
+                      cond: {
+                        $eq: [
+                          "$$p.userId",
+                          Types.ObjectId.createFromHexString(userId),
+                        ],
+                      },
+                    },
+                  },
+                  0,
+                ],
+              },
+            },
+          },
+          {
+            $lookup: {
+              from: "chatmessages",
+              let: {
+                convId: "$_id",
+                lastRead: "$userParticipant.lastReadAt",
+              },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $eq: ["$conversationId", "$$convId"] },
+                        {
+                          $cond: {
+                            if: { $ne: ["$$lastRead", null] },
+                            then: { $gt: ["$createdAt", "$$lastRead"] },
+                            else: true,
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+                { $count: "count" },
+              ],
+              as: "unreadMessages",
+            },
+          },
+          {
+            $project: {
+              _id: 1,
+              unreadCount: {
+                $ifNull: [
+                  { $arrayElemAt: ["$unreadMessages.count", 0] },
+                  0,
+                ],
+              },
+            },
+          },
+        ],
+        as: "clientChatConversation",
+      },
+    },
+    // Conditionally assign unreadCount and conversationId based on tabName
+    {
+      $addFields: {
+        unreadCount: {
+          $switch: {
+            branches: [
+              {
+                case: { $eq: ["$tabName", "team chat"] },
+                then: {
+                  $ifNull: [
+                    { $arrayElemAt: ["$teamChatConversation.unreadCount", 0] },
+                    0,
+                  ],
+                },
+              },
+              {
+                case: { $eq: ["$tabName", "client chat"] },
+                then: {
+                  $ifNull: [
+                    {
+                      $arrayElemAt: [
+                        "$clientChatConversation.unreadCount",
+                        0,
+                      ],
+                    },
+                    0,
+                  ],
+                },
+              },
+            ],
+            default: 0,
+          },
+        },
+        conversationId: {
+          $switch: {
+            branches: [
+              {
+                case: { $eq: ["$tabName", "team chat"] },
+                then: {
+                  $arrayElemAt: ["$teamChatConversation._id", 0],
+                },
+              },
+              {
+                case: { $eq: ["$tabName", "client chat"] },
+                then: {
+                  $arrayElemAt: ["$clientChatConversation._id", 0],
+                },
+              },
+            ],
+            default: null,
+          },
+        },
+      },
+    },
     {
       $project: {
         _id: 1,
@@ -68,6 +284,8 @@ exports.getAllTabsOfMemberInChannelQuery = (channelId, userId) => {
         channelName: "$channelInfo.channelName",
         channelDescription: "$channelInfo.channelDescription",
         sortOrder: 1, // Include sortOrder for controller sorting
+        unreadCount: 1,
+        conversationId: 1,
       },
     },
   ];
