@@ -2,6 +2,7 @@
 
 const { Router } = require("express");
 const {
+  getActiveTimer,
   startClock,
   stopClock,
   editTimeEntry,
@@ -47,6 +48,13 @@ class ClockupApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateStopClock,
       stopClock
+    );
+
+    // Get active timer - Check if user has a running clock
+    router.get(
+      "/active",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getActiveTimer
     );
 
     // Edit time entry - Update title, description, times

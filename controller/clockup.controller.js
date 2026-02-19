@@ -32,6 +32,38 @@ const {
 const { generateClockupReportPDF } = require("../services/pdfGenerator");
 
 /**
+ * Get active timer - Check if user has a running clock
+ */
+exports.getActiveTimer = async (req, res, next) => {
+  try {
+    const userId = req?.user?.id;
+
+    const activeEntry = await findActiveTimeEntry(userId);
+
+    return generateResponse(
+      {
+        activeEntry: activeEntry
+          ? {
+              _id: activeEntry._id,
+              title: activeEntry.title,
+              description: activeEntry.description,
+              tags: activeEntry.tags,
+              startTime: activeEntry.startTime,
+              isActive: activeEntry.isActive,
+              parentEntryId: activeEntry.parentEntryId,
+              createdAt: activeEntry.createdAt,
+            }
+          : null,
+      },
+      activeEntry ? "Active timer found" : "No active timer",
+      res
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
  * Start clock - Begin time tracking
  */
 exports.startClock = async (req, res, next) => {
