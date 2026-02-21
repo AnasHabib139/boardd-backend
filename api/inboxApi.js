@@ -1,7 +1,7 @@
 "use strict";
 
 const { Router } = require("express");
-const { getUserInbox, toggleReadStatus, toggleClearedStatus } = require("../controller/inbox.controller");
+const { getUserInbox, getInboxUnreadCount, toggleReadStatus, toggleClearedStatus } = require("../controller/inbox.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
 const { validateInboxQuery, validateTaskIdParam } = require("../validation/inboxValidation");
@@ -21,6 +21,13 @@ class InboxApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateInboxQuery,
       getUserInbox
+    );
+
+    // Get inbox unread counts (important + outbox)
+    router.get(
+      "/unread-count",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      getInboxUnreadCount
     );
 
     // Toggle read status of inbox entry (read/unread)

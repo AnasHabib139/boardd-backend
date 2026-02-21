@@ -992,3 +992,137 @@ exports.getUserInboxTasksQuery = (userId, filter = 'important') => {
       return exports.getImportantInboxTasksQuery(userId);
   }
 };
+
+/**
+ * Lightweight count of unread important inbox tasks (assigned to user, not cleared, not read)
+ * @param {string} userId - User ID
+ * @returns {Array} Aggregation pipeline ending with $count
+ */
+exports.getImportantInboxUnreadCountQuery = (userId) => {
+  return [
+    {
+      $match: {
+        isActive: true,
+        assignedTo: Types.ObjectId.createFromHexString(userId),
+      },
+    },
+    {
+      $lookup: {
+        from: "taskinboxes",
+        let: { taskId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$taskId", "$$taskId"] },
+                  {
+                    $eq: [
+                      "$userId",
+                      Types.ObjectId.createFromHexString(userId),
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+        as: "inboxEntry",
+      },
+    },
+    {
+      $unwind: {
+        path: "$inboxEntry",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $match: {
+        $and: [
+          // Not cleared
+          {
+            $or: [
+              { "inboxEntry.isCleared": { $ne: true } },
+              { inboxEntry: null },
+            ],
+          },
+          // Not read
+          {
+            $or: [
+              { "inboxEntry.isRead": { $ne: true } },
+              { inboxEntry: null },
+            ],
+          },
+        ],
+      },
+    },
+    { $count: "count" },
+  ];
+};
+
+/**
+ * Lightweight count of unread outbox inbox tasks (created by user, not cleared, not read)
+ * @param {string} userId - User ID
+ * @returns {Array} Aggregation pipeline ending with $count
+ */
+exports.getOutboxInboxUnreadCountQuery = (userId) => {
+  return [
+    {
+      $match: {
+        isActive: true,
+        createdBy: Types.ObjectId.createFromHexString(userId),
+      },
+    },
+    {
+      $lookup: {
+        from: "taskinboxes",
+        let: { taskId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$taskId", "$$taskId"] },
+                  {
+                    $eq: [
+                      "$userId",
+                      Types.ObjectId.createFromHexString(userId),
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+        as: "inboxEntry",
+      },
+    },
+    {
+      $unwind: {
+        path: "$inboxEntry",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $match: {
+        $and: [
+          // Not cleared
+          {
+            $or: [
+              { "inboxEntry.isCleared": { $ne: true } },
+              { inboxEntry: null },
+            ],
+          },
+          // Not read
+          {
+            $or: [
+              { "inboxEntry.isRead": { $ne: true } },
+              { inboxEntry: null },
+            ],
+          },
+        ],
+      },
+    },
+    { $count: "count" },
+  ];
+};

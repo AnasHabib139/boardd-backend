@@ -4,6 +4,7 @@ const { Types } = require("mongoose");
 const { createActivity } = require("../models/activityModel");
 const { initChatSocket } = require("./chatSocket");
 const { emitUnreadCountsUpdate } = require("./activityNotifications");
+const { emitInboxUnreadUpdate } = require("./inboxNotifications");
 const {
   updateTask,
   findTask,
@@ -723,6 +724,22 @@ const processTaskUpdate = async (socket, data) => {
         },
       });
     });
+
+    // Emit inbox unread count updates for assignedTo changes
+    if (field === "assignedTo") {
+      try {
+        const allAffectedUserIds = new Set([
+          ...processedValue.map((id) => id.toString()),
+          ...(previousValue || []).map((id) => id.toString()),
+          task.createdBy.toString(),
+        ]);
+        for (const uid of allAffectedUserIds) {
+          await emitInboxUnreadUpdate(uid, io);
+        }
+      } catch (inboxError) {
+        console.error("Error emitting inbox unread update:", inboxError);
+      }
+    }
   } catch (error) {
     console.error(`Error processing task update for ${taskId}:`, error);
     socket.emit("task-update-response", {
@@ -1785,6 +1802,15 @@ exports.getIO = () => {
 exports.emitUnreadCountsUpdate = async (userId, ioInstance = null) => {
   const socketIo = ioInstance || exports.getIO();
   return emitUnreadCountsUpdate(userId, socketIo);
+};
+
+/**
+ * Re-export emitInboxUnreadUpdate for convenience
+ * Actual implementation is in inboxNotifications.js to avoid circular dependencies
+ */
+exports.emitInboxUnreadUpdate = async (userId, ioInstance = null) => {
+  const socketIo = ioInstance || exports.getIO();
+  return emitInboxUnreadUpdate(userId, socketIo);
 };
 
 // Generate notification message for tab activity

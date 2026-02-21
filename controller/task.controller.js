@@ -20,7 +20,8 @@ const { createNotification } = require("../models/notificationModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
 const { generateActivityMessage } = require("../utils");
-const { emitUserNotification, emitTaskEvent } = require("../utils/socket");
+const { emitUserNotification, emitTaskEvent, getIO } = require("../utils/socket");
+const { emitInboxUnreadUpdate } = require("../utils/inboxNotifications");
 const {
   createTaskActivitiesAndNotifications,
   handlePriorityActivity,
@@ -415,6 +416,16 @@ exports.createTask = async (req, res, next) => {
             });
           }
         });
+      }
+
+      // Emit inbox unread count updates
+      const socketIo = getIO();
+      const affectedUserIds = new Set([
+        creator._id.toString(),
+        ...(assignedTo || []).map((id) => id.toString()),
+      ]);
+      for (const uid of affectedUserIds) {
+        await emitInboxUnreadUpdate(uid, socketIo);
       }
     } catch (error) {
       console.error("Socket error:", error);
@@ -829,6 +840,19 @@ exports.batchUpdateTask = async (req, res, next) => {
               },
             });
           }
+        }
+      }
+
+      // Emit inbox unread count updates if assignedTo changed
+      if (updates.assignedTo !== undefined) {
+        const socketIo = getIO();
+        const affectedUserIds = new Set([
+          task.createdBy.toString(),
+          ...(updates.assignedTo || []).map((id) => id.toString()),
+          ...(previousValues.assignedTo || []).map((id) => id.toString()),
+        ]);
+        for (const uid of affectedUserIds) {
+          await emitInboxUnreadUpdate(uid, socketIo);
         }
       }
     } catch (error) {
@@ -1455,6 +1479,16 @@ exports.archiveTask = async (req, res, next) => {
           isActive: newIsActiveState,
         },
       });
+
+      // Emit inbox unread count updates to affected users
+      const socketIo = getIO();
+      const affectedUserIds = new Set([
+        task.createdBy.toString(),
+        ...(task.assignedTo || []).map((id) => id.toString()),
+      ]);
+      for (const uid of affectedUserIds) {
+        await emitInboxUnreadUpdate(uid, socketIo);
+      }
     } catch (socketError) {
       console.error("Error emitting archive/unarchive task socket event:", socketError);
       // Continue even if socket fails
@@ -1599,6 +1633,16 @@ exports.deleteTaskPermanently = async (req, res, next) => {
           },
         },
       });
+
+      // Emit inbox unread count updates to affected users
+      const socketIo = getIO();
+      const affectedUserIds = new Set([
+        task.createdBy.toString(),
+        ...(task.assignedTo || []).map((id) => id.toString()),
+      ]);
+      for (const uid of affectedUserIds) {
+        await emitInboxUnreadUpdate(uid, socketIo);
+      }
     } catch (socketError) {
       console.error("Error emitting delete task socket event:", socketError);
       // Continue even if socket fails

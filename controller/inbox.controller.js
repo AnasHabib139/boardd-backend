@@ -5,7 +5,13 @@ const { STATUS_CODES } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const { getAllTasks } = require("../models/taskModel");
 const { bulkCreateTaskInboxEntries, findTaskInboxEntry, upsertTaskInboxEntry, findUserTaskInboxEntries } = require("../models/taskInboxModel");
-const { getUserInboxTasksQuery } = require("./queries/inboxQueries");
+const {
+  getUserInboxTasksQuery,
+  getImportantInboxUnreadCountQuery,
+  getOutboxInboxUnreadCountQuery,
+} = require("./queries/inboxQueries");
+const { getIO } = require("../utils/socket");
+const { emitInboxUnreadUpdate } = require("../utils/inboxNotifications");
 
 /**
  * Get user's inbox tasks (important/outbox/cleared filters)
@@ -115,6 +121,39 @@ exports.getUserInbox = async (req, res, next) => {
 };
 
 /**
+ * Get inbox unread counts (important + outbox)
+ */
+exports.getInboxUnreadCount = async (req, res, next) => {
+  try {
+    const userId = req?.user?.id;
+
+    const { model } = require("mongoose");
+    const TaskModel = model("Task");
+
+    const [importantResult, outboxResult] = await Promise.all([
+      TaskModel.aggregate(getImportantInboxUnreadCountQuery(userId)),
+      TaskModel.aggregate(getOutboxInboxUnreadCountQuery(userId)),
+    ]);
+
+    const important = importantResult[0]?.count || 0;
+    const outbox = outboxResult[0]?.count || 0;
+
+    return generateResponse(
+      { important, outbox, total: important + outbox },
+      "Inbox unread counts fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getInboxUnreadCount:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
  * Toggle read status of inbox entry
  */
 exports.toggleReadStatus = async (req, res, next) => {
@@ -150,6 +189,14 @@ exports.toggleReadStatus = async (req, res, next) => {
     const updatedEntry = await upsertTaskInboxEntry(userId, taskId, {
       isRead: newReadStatus
     });
+
+    // Emit updated inbox unread counts via socket
+    try {
+      const io = getIO();
+      await emitInboxUnreadUpdate(userId, io);
+    } catch (socketError) {
+      console.error("Socket error in toggleReadStatus:", socketError);
+    }
 
     return generateResponse(
       {
@@ -207,6 +254,14 @@ exports.toggleClearedStatus = async (req, res, next) => {
     const updatedEntry = await upsertTaskInboxEntry(userId, taskId, {
       isCleared: newClearedStatus
     });
+
+    // Emit updated inbox unread counts via socket
+    try {
+      const io = getIO();
+      await emitInboxUnreadUpdate(userId, io);
+    } catch (socketError) {
+      console.error("Socket error in toggleClearedStatus:", socketError);
+    }
 
     return generateResponse(
       {
