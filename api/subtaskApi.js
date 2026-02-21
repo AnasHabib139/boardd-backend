@@ -28,6 +28,14 @@ class SubtaskApi {
       subtaskController.createSubtask
     );
 
+    // Get subtask by ID
+    router.get(
+      "/:subtaskId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateSubtaskIdParam,
+      subtaskController.getSubtaskById
+    );
+
     // Update subtask with validation
     router.put(
       "/:subtaskId",

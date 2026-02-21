@@ -8,6 +8,7 @@ const { findProject } = require("../models/projectModel");
 const {
   createSubtask,
   findSubtask,
+  findSubtaskPopulated,
   updateSubtask,
   deleteSubtask,
 } = require("../models/subtaskModel");
@@ -19,11 +20,48 @@ const { createNotification } = require("../models/notificationModel");
 const { emitUserNotification } = require("../utils/socket");
 
 /**
+ * Get subtask by ID
+ */
+exports.getSubtaskById = async (req, res, next) => {
+  try {
+    const { subtaskId } = req.params;
+
+    const subtask = await findSubtaskPopulated({ _id: subtaskId });
+    if (!subtask) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Subtask not found",
+      });
+    }
+
+    return generateResponse(subtask, "Subtask fetched successfully", res);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
  * Create a new subtask
  */
 exports.createSubtask = async (req, res, next) => {
   try {
-    const { title, taskId, assignedTo } = parseBody(req.body);
+    const {
+      title,
+      taskId,
+      assignedTo,
+      description,
+      status,
+      priority,
+      dueDate,
+      tags,
+      strokeColor,
+      type,
+      attachments,
+      links,
+      customFields,
+      checklist,
+      isCompleted,
+    } = parseBody(req.body);
 
     // Check if task exists
     const task = await findTask({ _id: taskId });
@@ -42,15 +80,6 @@ exports.createSubtask = async (req, res, next) => {
       });
     }
 
-    // Check if project exists
-    const project = await findProject({ _id: task.projectId });
-    if (!project) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Project not found",
-      });
-    }
-
     // Get creator's info
     const userId = req.user.id;
     const creator = await findUser({ _id: userId });
@@ -61,30 +90,54 @@ exports.createSubtask = async (req, res, next) => {
       });
     }
 
-    // Get tab and channel info for context
-    const tab = await findChannelTab({ _id: project.tabId });
-    if (!tab) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Tab not found",
-      });
+    // Get project, tab, and channel info for context
+    let project = null;
+    let tab = null;
+    let channel = null;
+
+    if (task.projectId) {
+      project = await findProject({ _id: task.projectId });
+      if (!project) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Project not found",
+        });
+      }
+      tab = await findChannelTab({ _id: project.tabId });
+      channel = await findChannel({ _id: project.channelId });
+    } else {
+      // Open task (no project) — get tab and channel directly from task
+      if (task.tabId) tab = await findChannelTab({ _id: task.tabId });
+      if (task.channelId) channel = await findChannel({ _id: task.channelId });
     }
 
-    const channel = await findChannel({ _id: project.channelId });
-    if (!channel) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Channel not found",
-      });
-    }
+    // Auto-fill attachment metadata
+    const processedAttachments = (attachments || []).map((att) => ({
+      ...att,
+      uploadedBy: att.uploadedBy || userId,
+      uploadedAt: att.uploadedAt || new Date(),
+    }));
 
     // Create subtask object
     const subtaskData = {
       title,
       taskId,
-      projectId: task.projectId,
+      projectId: task.projectId || null,
+      companyId: task.companyId,
       createdBy: userId,
       assignedTo: assignedTo || [],
+      description: description || "",
+      status: status || "todo",
+      priority: priority || "medium",
+      dueDate,
+      tags: tags || [],
+      strokeColor: strokeColor || "#6C63FF",
+      type: type || "task",
+      attachments: processedAttachments,
+      links: links || [],
+      customFields: customFields || [],
+      checklist: checklist || [],
+      isCompleted: isCompleted || false,
     };
 
     // Create subtask
@@ -100,7 +153,9 @@ exports.createSubtask = async (req, res, next) => {
       { new: true }
     );
 
-    const contextPath = `${channel.channelName} / ${tab.tabName}`;
+    const contextPath = channel && tab
+      ? `${channel.channelName} / ${tab.tabName}`
+      : channel ? channel.channelName : "";
     const userName = creator.name || creator.email;
 
     // Initialize activities and notifications arrays
@@ -125,24 +180,26 @@ exports.createSubtask = async (req, res, next) => {
     activities.push(activity);
 
     // 2. Create notifications for task creator and tab members
-    for (const memberId of tab.members) {
-      notifications.push(
-        createNotification({
-          userId: memberId,
-          type: "CHANNEL",
-          projectId: task.projectId,
-          channelId: channel._id,
-          tabId: tab._id,
-          taskId: task._id,
-          createdBy: userId,
-          title: "New Subtask Created",
-          message:
-            memberId.toString() === userId.toString()
-              ? createSubtaskMessage.forCreator
-              : createSubtaskMessage.forOthers,
-          contextPath,
-        })
-      );
+    if (tab && tab.members) {
+      for (const memberId of tab.members) {
+        notifications.push(
+          createNotification({
+            userId: memberId,
+            type: "CHANNEL",
+            projectId: task.projectId,
+            channelId: channel?._id,
+            tabId: tab._id,
+            taskId: task._id,
+            createdBy: userId,
+            title: "New Subtask Created",
+            message:
+              memberId.toString() === userId.toString()
+                ? createSubtaskMessage.forCreator
+                : createSubtaskMessage.forOthers,
+            contextPath,
+          })
+        );
+      }
     }
 
     // 3. Create notifications for assigned users
@@ -154,8 +211,8 @@ exports.createSubtask = async (req, res, next) => {
               userId: assigneeId,
               type: "MENTION",
               projectId: task.projectId,
-              channelId: channel._id,
-              tabId: tab._id,
+              channelId: channel?._id,
+              tabId: tab?._id,
               taskId: task._id,
               createdBy: userId,
               title: "Subtask Assignment",
@@ -203,10 +260,10 @@ exports.createSubtask = async (req, res, next) => {
               message: `${userName} assigned you to subtask "${title}" in task "${task.title}"`,
               taskId: task._id,
               context: {
-                channelId: channel._id,
-                tabId: tab._id,
-                projectId: project._id,
-                projectName: project.name,
+                channelId: channel?._id,
+                tabId: tab?._id,
+                projectId: project?._id,
+                projectName: project?.name,
                 contextPath,
               },
             });
@@ -251,13 +308,16 @@ exports.updateSubtask = async (req, res, next) => {
       });
     }
 
-    // Get project for context
-    const project = await findProject({ _id: subtask.projectId });
-    if (!project) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Project not found",
-      });
+    // Get project for context (optional for open tasks)
+    let project = null;
+    if (subtask.projectId) {
+      project = await findProject({ _id: subtask.projectId });
+      if (!project) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Project not found",
+        });
+      }
     }
 
     // Capture previous values for activity tracking
@@ -265,7 +325,22 @@ exports.updateSubtask = async (req, res, next) => {
     const updateFields = {};
 
     // Only update allowed fields and track changes
-    const allowedFields = ["title", "description", "status", "assignedTo", "isCompleted"];
+    const allowedFields = [
+      "title",
+      "description",
+      "status",
+      "assignedTo",
+      "isCompleted",
+      "priority",
+      "dueDate",
+      "tags",
+      "strokeColor",
+      "type",
+      "attachments",
+      "links",
+      "customFields",
+      "checklist",
+    ];
 
     for (const field of allowedFields) {
       if (field in updates && updates[field] !== undefined) {
@@ -370,15 +445,6 @@ exports.deleteSubtask = async (req, res, next) => {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
         message: "Subtask not found",
-      });
-    }
-
-    // Get project for context
-    const project = await findProject({ _id: subtask.projectId });
-    if (!project) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Project not found",
       });
     }
 

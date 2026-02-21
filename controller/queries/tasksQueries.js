@@ -254,12 +254,25 @@ exports.getTaskByIdQuery = (taskId, userId = null) => {
               as: "assignees",
             },
           },
-          // Project only needed subtask fields with proper assignee array
+          // Project subtask fields with proper assignee array
           {
             $project: {
               _id: 1,
               title: 1,
+              description: 1,
+              status: 1,
+              priority: 1,
+              dueDate: 1,
+              tags: 1,
+              strokeColor: 1,
+              type: 1,
+              attachments: 1,
+              links: 1,
+              customFields: 1,
+              checklist: 1,
               isActive: 1,
+              isCompleted: 1,
+              orderIndex: 1,
               createdAt: 1,
               updatedAt: 1,
               assignees: {
