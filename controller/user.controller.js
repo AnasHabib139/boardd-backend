@@ -28,6 +28,10 @@ const {
   createInviteSlots,
 } = require("./helpers/users/signup.helper");
 const { getCompanyUsersQuery } = require("./queries/userQueries");
+const Mailer = require("../utils/mailer");
+const {
+  generateRegistrationSuccessEmail,
+} = require("../utils/templates/registrationSuccessTemplate");
 const { extractDeviceInfo } = require("../utils/deviceDetection");
 const {
   determineLoginStrategy,
@@ -121,6 +125,24 @@ exports.signup = async (req, res, next) => {
 
     // Set refresh token as httpOnly cookie
     setRefreshTokenCookie(res, refreshToken);
+
+    // Send registration success email (silent failure)
+    try {
+      const emailTemplate = generateRegistrationSuccessEmail({
+        userName: name,
+        companyName: accountName,
+        loginLink: `${process.env.FRONTEND_URL}/login`,
+      });
+
+      await Mailer.sendEmail({
+        email: email,
+        subject: "Welcome to Boarddd!",
+        message: emailTemplate.text,
+        html: emailTemplate.html,
+      });
+    } catch (emailError) {
+      console.error("Failed to send registration email:", emailError);
+    }
 
     return generateResponse(
       {
