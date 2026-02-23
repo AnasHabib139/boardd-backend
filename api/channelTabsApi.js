@@ -10,6 +10,8 @@ const {
   createSelectedChannelTabs,
   toggleChannelTab,
   getDefaultChannelTabsWithPresence,
+  createEmbedTab,
+  updateEmbedConfig,
 } = require("../controller/channelTabsController");
 const Auth = require("../middlewares/Auth");
 const { checkPermission } = require("../middlewares/checkPermission");
@@ -23,6 +25,9 @@ const {
   validateGetAllTabsOfChannelQuery,
   validateGetTabMembersQuery,
   validateToggleChannelTab,
+  validateCreateEmbedTab,
+  validateUpdateEmbedConfig,
+  validateEmbedTabIdParam,
 } = require("../validation/channelTabsValidation");
 
 class ChannelTabsApi {
@@ -66,6 +71,23 @@ class ChannelTabsApi {
       checkPermission("addRemoveChannelMembers"),
       validateRemoveMembersFromChannelTab,
       removeMembersFromChannelTab
+    );
+
+    // Create embed tab
+    router.post(
+      "/embed",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateCreateEmbedTab,
+      createEmbedTab
+    );
+
+    // Update embed config
+    router.put(
+      "/embed/:tabId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateEmbedTabIdParam,
+      validateUpdateEmbedConfig,
+      updateEmbedConfig
     );
 
     // Get all tabs of channel with validation

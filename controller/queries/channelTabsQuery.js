@@ -44,10 +44,19 @@ exports.getAllTabsOfMemberInChannelQuery = (channelId, userId) => {
         // Add custom sort order based on tab name using TAB_ORDER constants
         sortOrder: {
           $switch: {
-            branches: Object.entries(TAB_ORDER).map(([tabName, order]) => ({
-              case: { $eq: ["$tabName", tabName] },
-              then: order
-            })),
+            branches: [
+              ...Object.entries(TAB_ORDER)
+                .filter(([tabName]) => tabName !== "embed")
+                .map(([tabName, order]) => ({
+                  case: { $eq: ["$tabName", tabName] },
+                  then: order,
+                })),
+              // Embed tabs get the embed order regardless of tabName
+              {
+                case: { $eq: ["$tabType", "embed"] },
+                then: TAB_ORDER.embed,
+              },
+            ],
             default: 999, // For any non-standard tabs, put them at the end
           },
         },
@@ -278,6 +287,8 @@ exports.getAllTabsOfMemberInChannelQuery = (channelId, userId) => {
         isActive: 1,
         isPrivate: 1,
         isDefault: 1,
+        tabType: 1,
+        embedConfig: 1,
         // members: 1,
         createdAt: 1,
         updatedAt: 1,

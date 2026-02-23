@@ -13,6 +13,17 @@ const channelTabSchema = new Schema({
   companyId: { type: Types.ObjectId, ref: "Company", required: true },
   isPrivate: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
+  tabType: {
+    type: String,
+    enum: ["default", "embed"],
+    default: "default",
+  },
+  embedConfig: {
+    embedType: { type: String, enum: ["url", "html"] },
+    url: { type: String },
+    html: { type: String },
+    provider: { type: String },
+  },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

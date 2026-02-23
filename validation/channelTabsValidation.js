@@ -1,6 +1,6 @@
 const Joi = require("joi");
 const { helpers } = require("./authValidation");
-const { DEFAULT_TABS } = require("../utils/constants");
+const { DEFAULT_TABS, EMBED_PROVIDERS } = require("../utils/constants");
 
 // Create channel tab validation schema
 const createChannelTabValidation = Joi.object({
@@ -338,6 +338,110 @@ const toggleChannelTabValidation = Joi.object({
   }),
 });
 
+// Create embed tab validation schema
+const createEmbedTabValidation = Joi.object({
+  channelId: helpers.objectIdValidation.required().messages({
+    "any.required": "Channel ID is required",
+  }),
+
+  tabName: Joi.string().trim().min(1).max(50).required().messages({
+    "string.empty": "Tab name is required",
+    "string.min": "Tab name must be at least 1 character long",
+    "string.max": "Tab name cannot exceed 50 characters",
+  }),
+
+  embedType: Joi.string().valid("url", "html").required().messages({
+    "any.required": "Embed type is required",
+    "any.only": "Embed type must be either 'url' or 'html'",
+  }),
+
+  url: Joi.string()
+    .uri({ scheme: ["https"] })
+    .when("embedType", {
+      is: "url",
+      then: Joi.required(),
+      otherwise: Joi.forbidden(),
+    })
+    .messages({
+      "string.uri": "URL must be a valid HTTPS URL",
+      "string.uriCustomScheme": "URL must use HTTPS protocol",
+      "any.required": "URL is required when embed type is 'url'",
+      "any.unknown": "URL should not be provided when embed type is 'html'",
+    }),
+
+  html: Joi.string()
+    .max(10000)
+    .when("embedType", {
+      is: "html",
+      then: Joi.required(),
+      otherwise: Joi.forbidden(),
+    })
+    .messages({
+      "string.max": "HTML embed code cannot exceed 10000 characters",
+      "any.required": "HTML is required when embed type is 'html'",
+      "any.unknown": "HTML should not be provided when embed type is 'url'",
+    }),
+
+  provider: Joi.string()
+    .valid(...EMBED_PROVIDERS)
+    .optional()
+    .default("custom")
+    .messages({
+      "any.only": `Provider must be one of: ${EMBED_PROVIDERS.join(", ")}`,
+    }),
+
+  isPrivate: Joi.boolean().optional().default(false).messages({
+    "boolean.base": "isPrivate must be a boolean value",
+  }),
+});
+
+// Update embed config validation schema
+const updateEmbedConfigValidation = Joi.object({
+  embedType: Joi.string().valid("url", "html").optional().messages({
+    "any.only": "Embed type must be either 'url' or 'html'",
+  }),
+
+  url: Joi.string()
+    .uri({ scheme: ["https"] })
+    .when("embedType", {
+      is: "url",
+      then: Joi.required(),
+      otherwise: Joi.optional(),
+    })
+    .messages({
+      "string.uri": "URL must be a valid HTTPS URL",
+      "any.required": "URL is required when embed type is 'url'",
+    }),
+
+  html: Joi.string()
+    .max(10000)
+    .when("embedType", {
+      is: "html",
+      then: Joi.required(),
+      otherwise: Joi.optional(),
+    })
+    .messages({
+      "string.max": "HTML embed code cannot exceed 10000 characters",
+      "any.required": "HTML is required when embed type is 'html'",
+    }),
+
+  provider: Joi.string()
+    .valid(...EMBED_PROVIDERS)
+    .optional()
+    .messages({
+      "any.only": `Provider must be one of: ${EMBED_PROVIDERS.join(", ")}`,
+    }),
+
+  tabName: Joi.string().trim().min(1).max(50).optional().messages({
+    "string.min": "Tab name must be at least 1 character long",
+    "string.max": "Tab name cannot exceed 50 characters",
+  }),
+})
+  .min(1)
+  .messages({
+    "object.min": "At least one field must be provided for update",
+  });
+
 // Validation middleware function
 const validateRequest = (schema, source = "body") => {
   return (req, res, next) => {
@@ -409,6 +513,9 @@ module.exports = {
     "query"
   ),
   validateToggleChannelTab: validateRequest(toggleChannelTabValidation),
+  validateCreateEmbedTab: validateRequest(createEmbedTabValidation),
+  validateUpdateEmbedConfig: validateRequest(updateEmbedConfigValidation),
+  validateEmbedTabIdParam: validateRequest(tabIdParamValidation, "params"),
 
   // Export schemas for testing or custom usage
   schemas: {
@@ -422,5 +529,7 @@ module.exports = {
     getChannelTabsQueryValidation,
     getTabMembersQueryValidation,
     getAllTabsOfChannelQueryValidation,
+    createEmbedTabValidation,
+    updateEmbedConfigValidation,
   },
 };

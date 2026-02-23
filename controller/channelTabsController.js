@@ -9,7 +9,7 @@ const {
 } = require("../models/channelTabsModel");
 const { generateResponse, parseBody } = require("../utils");
 const mongoose = require("mongoose");
-const { STATUS_CODES } = require("../utils/constants");
+const { STATUS_CODES, EMBED_PROVIDERS } = require("../utils/constants");
 const {
   getAllTabsOfMemberInChannelQuery,
   getAllTabMembersQuery,
@@ -955,6 +955,257 @@ exports.getDefaultChannelTabsWithPresence = async (req, res, next) => {
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message ?? "Failed to fetch default channel tabs",
+    });
+  }
+};
+
+/**
+ * Sanitize HTML embed code to prevent XSS
+ * - Strips <script> tags
+ * - Strips event handler attributes (onclick, onerror, onload, etc.)
+ * - Validates that src attributes use https://
+ */
+const sanitizeEmbedHtml = (html) => {
+  let sanitized = html;
+
+  // Strip <script> tags and their content
+  sanitized = sanitized.replace(
+    /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
+    ""
+  );
+
+  // Strip event handler attributes (on*)
+  sanitized = sanitized.replace(
+    /\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi,
+    ""
+  );
+
+  // Strip javascript: protocol in href/src attributes
+  sanitized = sanitized.replace(
+    /(href|src)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*')/gi,
+    ""
+  );
+
+  // Strip data: protocol in src attributes (can be used for XSS)
+  sanitized = sanitized.replace(
+    /src\s*=\s*(?:"data:[^"]*"|'data:[^']*')/gi,
+    ""
+  );
+
+  return sanitized.trim();
+};
+
+/**
+ * Validate that all src attributes in HTML use https://
+ */
+const validateHtmlSrcProtocol = (html) => {
+  const srcMatches = html.match(/src\s*=\s*["']([^"']+)["']/gi);
+  if (!srcMatches) return true;
+
+  for (const match of srcMatches) {
+    const urlMatch = match.match(/src\s*=\s*["']([^"']+)["']/i);
+    if (urlMatch && urlMatch[1] && !urlMatch[1].startsWith("https://")) {
+      return false;
+    }
+  }
+  return true;
+};
+
+/**
+ * Create an embed tab
+ */
+exports.createEmbedTab = async (req, res, next) => {
+  try {
+    const { channelId, tabName, embedType, url, html, provider, isPrivate } =
+      parseBody(req.body);
+    const userId = req.user.id;
+
+    // Get current user to check their company
+    const currentUser = await findUser({ _id: userId });
+    if (!currentUser) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Find channel
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel not found",
+      });
+    }
+
+    // Security Check: Verify the channel belongs to the user's company
+    if (channel.companyId.toString() !== currentUser.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You can only create tabs in channels from your own company",
+      });
+    }
+
+    // Build embedConfig
+    const embedConfig = {
+      embedType,
+      provider: provider || "custom",
+    };
+
+    if (embedType === "url") {
+      embedConfig.url = url;
+    } else {
+      // Sanitize HTML
+      const sanitizedHtml = sanitizeEmbedHtml(html);
+
+      // Validate src protocols in HTML
+      if (!validateHtmlSrcProtocol(sanitizedHtml)) {
+        return next({
+          statusCode: STATUS_CODES.UNPROCESSABLE_ENTITY,
+          message:
+            "All src attributes in HTML embed code must use HTTPS protocol",
+        });
+      }
+
+      embedConfig.html = sanitizedHtml;
+    }
+
+    // Get all company admins and merge with creator
+    const allMembers = await getAdminsAndMergeMembers(channel.companyId, [
+      userId,
+    ]);
+
+    // Create the embed tab
+    const channelTabBody = {
+      channelId,
+      tabName,
+      tabType: "embed",
+      embedConfig,
+      members: allMembers,
+      createdBy: userId,
+      companyId: channel.companyId,
+      isPrivate: isPrivate || false,
+    };
+
+    const newTab = await createChannelTab(channelTabBody);
+
+    // Add tab to channel's tabs array
+    await updateChannel(
+      { _id: channelId },
+      { $push: { tabs: newTab._id } }
+    );
+
+    return generateResponse(
+      newTab,
+      "Embed tab created successfully",
+      res,
+      STATUS_CODES.CREATED
+    );
+  } catch (error) {
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Update embed configuration of an existing embed tab
+ */
+exports.updateEmbedConfig = async (req, res, next) => {
+  try {
+    const { tabId } = req.params;
+    const { embedType, url, html, provider, tabName } = parseBody(req.body);
+    const userId = req.user.id;
+
+    // Get current user to check their company
+    const currentUser = await findUser({ _id: userId });
+    if (!currentUser) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Find the tab
+    const tab = await findChannelTab({ _id: tabId });
+    if (!tab) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Tab not found",
+      });
+    }
+
+    // Security Check: Verify the tab belongs to the user's company
+    if (tab.companyId.toString() !== currentUser.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You can only update tabs from your own company",
+      });
+    }
+
+    // Verify it's an embed tab
+    if (tab.tabType !== "embed") {
+      return next({
+        statusCode: STATUS_CODES.UNPROCESSABLE_ENTITY,
+        message: "This tab is not an embed tab",
+      });
+    }
+
+    // Build update object
+    const updateObj = { updatedAt: new Date() };
+
+    if (tabName) {
+      updateObj.tabName = tabName;
+    }
+
+    // Determine the effective embedType
+    const effectiveEmbedType = embedType || tab.embedConfig?.embedType;
+
+    if (embedType || url || html || provider) {
+      const embedConfigUpdate = { ...tab.embedConfig.toObject() };
+
+      if (embedType) {
+        embedConfigUpdate.embedType = embedType;
+      }
+
+      if (effectiveEmbedType === "url" && url) {
+        embedConfigUpdate.url = url;
+        embedConfigUpdate.html = undefined;
+      } else if (effectiveEmbedType === "html" && html) {
+        const sanitizedHtml = sanitizeEmbedHtml(html);
+
+        if (!validateHtmlSrcProtocol(sanitizedHtml)) {
+          return next({
+            statusCode: STATUS_CODES.UNPROCESSABLE_ENTITY,
+            message:
+              "All src attributes in HTML embed code must use HTTPS protocol",
+          });
+        }
+
+        embedConfigUpdate.html = sanitizedHtml;
+        embedConfigUpdate.url = undefined;
+      }
+
+      if (provider) {
+        embedConfigUpdate.provider = provider;
+      }
+
+      updateObj.embedConfig = embedConfigUpdate;
+    }
+
+    const updatedTab = await updateChannelTab({ _id: tabId }, updateObj);
+
+    return generateResponse(
+      updatedTab,
+      "Embed configuration updated successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
     });
   }
 };

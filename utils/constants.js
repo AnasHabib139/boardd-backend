@@ -97,7 +97,25 @@ exports.TAB_ORDER = Object.freeze({
   files: 5,
   forms: 6,
   progress: 7,
+  embed: 8,
 });
+
+// Tab type enum
+exports.TAB_TYPES = Object.freeze({
+  DEFAULT: "default",
+  EMBED: "embed",
+});
+
+// Known embed providers
+exports.EMBED_PROVIDERS = Object.freeze([
+  "google_sheets",
+  "google_docs",
+  "google_calendar",
+  "google_maps",
+  "youtube",
+  "figma",
+  "custom",
+]);
 
 // Custom field type enum
 exports.CUSTOM_FIELD_TYPES = Object.freeze({
