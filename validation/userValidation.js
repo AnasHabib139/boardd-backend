@@ -21,9 +21,9 @@ const signupValidation = Joi.object({
   }),
 
   accountName: Joi.string().trim().min(2).max(100).required().messages({
-    "string.empty": "Account name is required",
-    "string.min": "Account name must be at least 2 characters long",
-    "string.max": "Account name cannot exceed 100 characters",
+    "string.empty": "Organization name is required",
+    "string.min": "Organization name must be at least 2 characters long",
+    "string.max": "Organization name cannot exceed 100 characters",
   }),
 
   role: Joi.string()
