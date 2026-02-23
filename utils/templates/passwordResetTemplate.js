@@ -21,7 +21,7 @@ exports.generatePasswordResetEmail = ({ code, userName, userEmail }) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reset Your Password - Boardd</title>
+  <title>Reset Your Password - Boarddd</title>
   <style>
     * {
       margin: 0;
@@ -267,7 +267,7 @@ exports.generatePasswordResetEmail = ({ code, userName, userEmail }) => {
   <div class="email-container">
     <!-- Header -->
     <div class="email-header">
-      <img src="${logoUrl}" alt="Boardd" class="logo" />
+      <img src="${logoUrl}" alt="Boarddd" class="logo" />
       <h1 class="header-title">Reset Your Password</h1>
       <div class="header-subtitle">We received a request to reset your password</div>
     </div>
@@ -277,7 +277,7 @@ exports.generatePasswordResetEmail = ({ code, userName, userEmail }) => {
       <div class="greeting">Hello ${userName || 'there'}! 👋</div>
       
       <div class="reset-message">
-        We received a request to reset the password for your Boardd account associated with <strong>${userEmail}</strong>.
+        We received a request to reset the password for your Boarddd account associated with <strong>${userEmail}</strong>.
         <br><br>
         Use the verification code below to reset your password:
       </div>
@@ -317,12 +317,12 @@ exports.generatePasswordResetEmail = ({ code, userName, userEmail }) => {
     <!-- Footer -->
     <div class="email-footer">
       <div class="footer-text">
-        This email was sent because a password reset was requested for your Boardd account.
+        This email was sent because a password reset was requested for your Boarddd account.
         <br>
         If you didn't make this request, please ignore this email.
       </div>
       <div class="footer-branding">
-        Powered by <a href="${process.env.FRONTEND_URL}">Boardd</a>
+        Powered by <a href="${process.env.FRONTEND_URL}">Boarddd</a>
       </div>
     </div>
   </div>
@@ -332,11 +332,11 @@ exports.generatePasswordResetEmail = ({ code, userName, userEmail }) => {
 
   // Plain text version
   const text = `
-🔐 RESET YOUR PASSWORD - BOARDD
+🔐 RESET YOUR PASSWORD - BOARDDD
 
 Hello ${userName || 'there'}!
 
-We received a request to reset the password for your Boardd account associated with ${userEmail}.
+We received a request to reset the password for your Boarddd account associated with ${userEmail}.
 
 YOUR VERIFICATION CODE:
 ═══════════════════════════════════════════════════════════
@@ -358,9 +358,9 @@ If you didn't request a password reset, please ignore this email. Your password 
 
 If you're having trouble resetting your password, please contact our support team.
 
-This email was sent because a password reset was requested for your Boardd account.
+This email was sent because a password reset was requested for your Boarddd account.
 
-Powered by Boardd - ${process.env.FRONTEND_URL}
+Powered by Boarddd - ${process.env.FRONTEND_URL}
   `;
 
   return { html, text };

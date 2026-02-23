@@ -114,7 +114,7 @@ const handleSendResetCode = async (email, user, res, next) => {
 
       await Mailer.sendEmail({
         email: email,
-        subject: "Reset Your Password - Boardd",
+        subject: "Reset Your Password - Boarddd",
         message: emailTemplate.text,
         html: emailTemplate.html,
       });

@@ -130,7 +130,7 @@ const emailConfigSchema = Joi.object({
  */
 const testMessageSchema = Joi.object({
   to: Joi.string().required(),
-  message: Joi.string().max(500).default("This is a test message from your Boardd messaging configuration."),
+  message: Joi.string().max(500).default("This is a test message from your Boarddd messaging configuration."),
 });
 
 /**
