@@ -1,3 +1,30 @@
+exports.AUTH_PROVIDERS = Object.freeze({
+  LOCAL: "local",
+  GOOGLE: "google",
+});
+
+exports.CONSUMER_DOMAINS = Object.freeze([
+  "gmail.com",
+  "googlemail.com",
+  "google.com",
+  "yahoo.com",
+  "yahoo.co.uk",
+  "hotmail.com",
+  "outlook.com",
+  "live.com",
+  "aol.com",
+  "icloud.com",
+  "me.com",
+  "protonmail.com",
+  "proton.me",
+]);
+
+// Backward-compatible alias
+exports.BLOCKED_CONSUMER_DOMAINS = exports.CONSUMER_DOMAINS;
+
+exports.isConsumerDomain = (domain) =>
+  exports.CONSUMER_DOMAINS.includes(domain?.toLowerCase());
+
 exports.ROLES = Object.freeze({
   ADMIN: "admin",
   EMPLOYEE: "employee",

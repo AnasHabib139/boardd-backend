@@ -247,6 +247,14 @@ exports.handleRegularLogin = async (
       });
     }
 
+    // Block password login for Google-only accounts
+    if (user.authProvider === "google" && !user.password) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "This account uses Google sign-in. Please log in with Google.",
+      });
+    }
+
     // Verify password
     const isPasswordValid = await comparePassword(password, user?.password);
     if (!isPasswordValid) {

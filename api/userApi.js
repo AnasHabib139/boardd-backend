@@ -4,6 +4,7 @@ const { Router } = require("express");
 const {
   signup,
   login,
+  googleAuth,
   getUsersOfCompany,
   getUserProfile,
   updateUserSettings,
@@ -17,6 +18,7 @@ const {
   validateLogin,
 } = require("../validation/userValidation");
 const { validateUpdateUserSettings } = require("../validation/userSettingsValidation");
+const { validateGoogleAuth } = require("../validation/googleAuthValidation");
 
 class UserAPI {
   constructor() {
@@ -29,6 +31,9 @@ class UserAPI {
 
     // Admin signup with validation
     router.post("/admin/signup", validateSignup, signup);
+
+    // Google Workspace auth (signup or login)
+    router.post("/google/auth", validateGoogleAuth, googleAuth);
 
     // Login with validation (tokens are optional, handled in controller)
     router.post("/login", validateLogin, login);

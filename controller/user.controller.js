@@ -1,7 +1,7 @@
 "use strict";
 
 const bcrypt = require("bcrypt");
-const { STATUS_CODES } = require("../utils/constants");
+const { STATUS_CODES, AUTH_PROVIDERS, isConsumerDomain } = require("../utils/constants");
 const {
   generateResponse,
   parseBody,
@@ -19,6 +19,7 @@ const {
   addRefreshToken,
   removeUser,
   findManyUsers,
+  findUserByGoogleId,
 } = require("../models/userModel");
 const { createCompany, findCompany } = require("../models/companyModel");
 const { createManyInviteSlots, findInviteSlot, updateInviteSlot, findManyInviteSlots } = require("../models/inviteSlotModel");
@@ -42,6 +43,125 @@ const {
   handleGuestFlow,
 } = require("./helpers/users/login.flow");
 const { cleanupUserReferences } = require("./helpers/users/deleteUser.helper");
+const {
+  verifyGoogleIdToken,
+  checkConsumerAccount,
+} = require("../services/googleAuth");
+const {
+  handleGoogleLogin,
+  handleGoogleAdminSignup,
+  handleGoogleDomainSignup,
+} = require("./helpers/users/googleAuth.helper");
+
+exports.googleAuth = async (req, res, next) => {
+  try {
+    const { idToken, accountName, howDidYouHearAboutUs } = parseBody(req.body);
+
+    // Step 1: Verify Google ID token
+    let googlePayload;
+    try {
+      googlePayload = await verifyGoogleIdToken(idToken);
+    } catch (err) {
+      return next({
+        statusCode: STATUS_CODES.UNAUTHORIZED,
+        message: "Invalid or expired Google ID token",
+      });
+    }
+
+    // Step 2: Detect consumer vs workspace account
+    const { isConsumer } = checkConsumerAccount(googlePayload);
+
+    // Step 3: Look up existing user by googleId
+    const existingGoogleUser = await findUserByGoogleId(googlePayload.googleId);
+    if (existingGoogleUser) {
+      return await handleGoogleLogin(existingGoogleUser, req, res, next);
+    }
+
+    // Step 4: Look up existing user by email (account linking)
+    const existingEmailUser = await findUser({ email: googlePayload.email });
+    if (existingEmailUser) {
+      // Link Google account to existing local user
+      await updateUser(
+        { _id: existingEmailUser._id },
+        {
+          googleId: googlePayload.googleId,
+          authProvider: AUTH_PROVIDERS.GOOGLE,
+          ...(googlePayload.picture && !existingEmailUser.image
+            ? { image: googlePayload.picture }
+            : {}),
+        }
+      );
+
+      const linkedUser = await findUser({ _id: existingEmailUser._id });
+      return await handleGoogleLogin(linkedUser, req, res, next);
+    }
+
+    // Step 5: New user — branch on consumer vs workspace
+    const domain = extractDomainFromEmail(googlePayload.email);
+
+    if (isConsumer) {
+      // Consumer domain: never auto-join by domain, always create new company
+      if (!accountName) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message:
+            "Organization name is required to create a new company. Please provide accountName.",
+        });
+      }
+
+      return await handleGoogleAdminSignup(
+        googlePayload,
+        accountName,
+        domain,
+        howDidYouHearAboutUs,
+        true, // isConsumerDomain
+        req,
+        res,
+        next
+      );
+    }
+
+    // Workspace domain: look up company by domain (existing behavior)
+    const company = await findCompany({ domain });
+
+    if (company) {
+      // Join existing company
+      return await handleGoogleDomainSignup(
+        googlePayload,
+        company,
+        req,
+        res,
+        next
+      );
+    }
+
+    // No company found for workspace domain — require accountName
+    if (!accountName) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message:
+          "Organization name is required to create a new company. Please provide accountName.",
+      });
+    }
+
+    return await handleGoogleAdminSignup(
+      googlePayload,
+      accountName,
+      domain,
+      howDidYouHearAboutUs,
+      false, // isConsumerDomain
+      req,
+      res,
+      next
+    );
+  } catch (error) {
+    console.error("Google auth error:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message ?? "An unexpected error occurred during Google authentication",
+    });
+  }
+};
 
 exports.signup = async (req, res, next) => {
   try {
@@ -63,14 +183,18 @@ exports.signup = async (req, res, next) => {
       });
     }
 
-    // Check if company exists
+    // Check if company exists (skip for consumer domains — they can create multiple companies)
     const domain = extractDomainFromEmail(email);
-    const existingCompany = await findCompany({ domain });
-    if (existingCompany) {
-      return next({
-        statusCode: STATUS_CODES.CONFLICT,
-        message: "Company already exists",
-      });
+    const isConsumer = isConsumerDomain(domain);
+
+    if (!isConsumer) {
+      const existingCompany = await findCompany({ domain });
+      if (existingCompany) {
+        return next({
+          statusCode: STATUS_CODES.CONFLICT,
+          message: "Company already exists",
+        });
+      }
     }
 
     // Create user with hashed password
@@ -89,6 +213,7 @@ exports.signup = async (req, res, next) => {
       joinToken: generateJoinToken(),
       howDidYouHearAboutUs,
       adminUser: user._id,
+      isConsumerDomain: isConsumer,
     });
 
     // Create invite slots

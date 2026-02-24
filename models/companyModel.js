@@ -34,7 +34,8 @@ const generalQuestionsSchema = new Schema({
 const CompanySchema = new Schema(
   {
     name: { type: String, required: true },
-    domain: { type: String, required: true, unique: true }, // e.g. workspin.net
+    domain: { type: String, required: true }, // e.g. workspin.net or gmail.com
+    isConsumerDomain: { type: Boolean, default: false },
     logo: { type: String, required: false }, // URL to company logo image
     adminUser: { type: Types.ObjectId, ref: "User" },
     joinToken: { type: String, required: true, unique: true }, // e.g. 32-byte hex
@@ -203,6 +204,17 @@ CompanySchema.plugin(aggregatePaginate);
 CompanySchema.index({ 'twilioConfig.subAccountSid': 1 });
 CompanySchema.index({ 'twilioConfig.messagingServiceSid': 1 });
 CompanySchema.index({ 'twilioConfig.useTwilioSubaccount': 1, 'twilioConfig.active': 1 });
+
+// Enforce domain uniqueness only for workspace (non-consumer) companies.
+// Consumer domain companies (gmail.com, etc.) share the same domain value.
+CompanySchema.index(
+  { domain: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { isConsumerDomain: { $ne: true } },
+    name: "domain_1_non_consumer_unique",
+  }
+);
 
 const CompanyModel = model("Company", CompanySchema);
 

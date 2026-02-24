@@ -13,7 +13,7 @@ const {
   handleDomainSignup,
   handleGuestSignup,
 } = require("./login.helper");
-const { STATUS_CODES } = require("../../../utils/constants");
+const { STATUS_CODES, isConsumerDomain } = require("../../../utils/constants");
 
 /**
  * Determine which login strategy to use based on parameters
@@ -162,7 +162,13 @@ exports.handleRegularFlow = async (strategyData, userData, req, res, next) => {
   const { password } = userData;
 
   const domain = extractDomainFromEmail(email);
-  const company = await findCompany({ domain });
+
+  // Skip domain lookup for consumer domains (avoids ambiguous match).
+  // handleRegularLogin doesn't use the company param.
+  let company = null;
+  if (!isConsumerDomain(domain)) {
+    company = await findCompany({ domain });
+  }
 
   return await handleRegularLogin(
     existingUser,
@@ -192,6 +198,16 @@ exports.handleDomainFlow = async (strategyData, userData, req, res, next) => {
 
   // Handle domain-based signup
   const domain = extractDomainFromEmail(email);
+
+  // Consumer domains cannot auto-join companies by domain matching.
+  // They must use invite links or sign up via Google auth.
+  if (isConsumerDomain(domain)) {
+    return next({
+      statusCode: STATUS_CODES.NOT_FOUND,
+      message: "No matching company domain",
+    });
+  }
+
   const company = await findCompany({ domain });
 
   if (!company) {

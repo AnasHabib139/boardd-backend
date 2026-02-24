@@ -217,7 +217,23 @@ const userSchema = new Schema(
       lowercase: true,
       trim: true,
     },
-    password: { type: String, required: true, select: false },
+    password: {
+      type: String,
+      required: function () {
+        return this.authProvider === "local";
+      },
+      select: false,
+    },
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      default: "local",
+    },
+    googleId: {
+      type: String,
+      sparse: true,
+      unique: true,
+    },
     location: {
       type: { type: String, enum: ["Point"], default: "Point" },
       coordinates: { type: [Number, Number] },
@@ -413,6 +429,9 @@ exports.getFcmToken = async (userId) => {
   const { fcmToken } = await UserModel.findById(userId);
   return fcmToken;
 };
+
+// find user by Google ID
+exports.findUserByGoogleId = (googleId) => UserModel.findOne({ googleId });
 
 // remove user ( HARD DELETE)
 exports.removeUser = (userId) => UserModel.findByIdAndDelete(userId);
