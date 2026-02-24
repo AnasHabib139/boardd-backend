@@ -1,11 +1,11 @@
 "use strict";
 
 const { Router } = require("express");
-const { createChannelGroup, assignChannelsToGroup, getAllChannelGroups } = require("../controller/channelGroupController");
+const { createChannelGroup, assignChannelsToGroup, getAllChannelGroups, deleteChannelGroup } = require("../controller/channelGroupController");
 const Auth = require("../middlewares/Auth");
 const { checkPermission } = require("../middlewares/checkPermission");
 const { ROLES } = require("../utils/constants");
-const { validateCreateChannelGroup, validateAssignChannelsToGroup } = require("../validation/channelGroupValidation");
+const { validateCreateChannelGroup, validateAssignChannelsToGroup, validateDeleteChannelGroup } = require("../validation/channelGroupValidation");
 
 class ChannelGroupApi {
   constructor() {
@@ -22,6 +22,14 @@ class ChannelGroupApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateCreateChannelGroup,
       createChannelGroup
+    );
+
+    // Delete channel group
+    router.delete(
+      "/:groupId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateDeleteChannelGroup,
+      deleteChannelGroup
     );
 
     // Assign channels to group with validation

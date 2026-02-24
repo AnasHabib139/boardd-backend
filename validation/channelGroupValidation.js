@@ -32,10 +32,20 @@ const assignChannelsToGroupValidation = Joi.object({
     }),
 });
 
+// Delete channel group validation schema (params)
+const deleteChannelGroupValidation = Joi.object({
+  groupId: Joi.string().regex(/^[0-9a-fA-F]{24}$/).required().messages({
+    "string.pattern.base": "Group ID must be a valid MongoDB ObjectId",
+    "string.empty": "Group ID is required",
+    "any.required": "Group ID is required",
+  }),
+});
+
 // Validation middleware function
 const validateRequest = (schema, source = "body") => {
   return (req, res, next) => {
-    const dataToValidate = source === "query" ? req.query : req.body;
+    const dataToValidate =
+      source === "params" ? req.params : source === "query" ? req.query : req.body;
 
     const { error, value } = schema.validate(dataToValidate, {
       abortEarly: false,
@@ -59,7 +69,9 @@ const validateRequest = (schema, source = "body") => {
     }
 
     // Replace the original data with validated data
-    if (source === "query") {
+    if (source === "params") {
+      req.params = value;
+    } else if (source === "query") {
       req.query = value;
     } else {
       req.body = value;
@@ -72,10 +84,12 @@ const validateRequest = (schema, source = "body") => {
 module.exports = {
   validateCreateChannelGroup: validateRequest(createChannelGroupValidation),
   validateAssignChannelsToGroup: validateRequest(assignChannelsToGroupValidation),
+  validateDeleteChannelGroup: validateRequest(deleteChannelGroupValidation, "params"),
 
   // Export schemas for testing or custom usage
   schemas: {
     createChannelGroupValidation,
     assignChannelsToGroupValidation,
+    deleteChannelGroupValidation,
   },
 };

@@ -8,6 +8,7 @@ const {
   findChannelGroup,
   updateChannelGroup,
   getAllChannelGroups,
+  deleteChannelGroup: removeChannelGroup,
 } = require("../models/channelGroupModel");
 const { findManyChannels } = require("../models/channelModel");
 const {
@@ -190,6 +191,57 @@ exports.assignChannelsToGroup = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in assignChannelsToGroup:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Delete a channel group
+ */
+exports.deleteChannelGroup = async (req, res, next) => {
+  try {
+    const { groupId } = req.params;
+    const userId = req.user.id;
+
+    // Get user info
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    // Find the channel group
+    const channelGroup = await findChannelGroup({ _id: groupId });
+    if (!channelGroup) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Channel group not found",
+      });
+    }
+
+    // Check if channel group belongs to user's company
+    if (channelGroup.companyId.toString() !== user.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You can only delete channel groups in your own company",
+      });
+    }
+
+    // Delete the group (channels become "unassigned" automatically)
+    await removeChannelGroup({ _id: groupId });
+
+    return generateResponse(
+      { channelGroup },
+      "Channel group deleted successfully",
+      res
+    );
+  } catch (error) {
+    console.error("Error in deleteChannelGroup:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,
