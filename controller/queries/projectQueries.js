@@ -870,13 +870,12 @@ exports.getProjectBoardQuery = (projectId, search = null) => {
  * @param {string} channelId - Channel ID
  * @returns {Array} Aggregation pipeline
  */
-exports.getOpenTasksQuery = (channelId, tabId) => {
+exports.getOpenTasksQuery = (channelId) => {
   return [
-    // Match tasks by channelId and tabId with no projectId
+    // Match tasks by channelId with no projectId
     {
       $match: {
         channelId: Types.ObjectId.createFromHexString(channelId),
-        tabId: Types.ObjectId.createFromHexString(tabId),
         projectId: null,
         isActive: true,
       },

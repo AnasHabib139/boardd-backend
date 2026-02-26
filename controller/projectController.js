@@ -246,7 +246,7 @@ exports.getProjectsOfTab = async (req, res, next) => {
     let openTasks = [];
     if (view !== "overview") {
       const { getAllTasks } = require("../models/taskModel");
-      const openTasksQuery = getOpenTasksQuery(channelId, tabId);
+      const openTasksQuery = getOpenTasksQuery(channelId);
       
       try {
         const openTasksResult = await getAllTasks({
@@ -686,7 +686,7 @@ exports.getProjectsList = async (req, res, next) => {
     let openProject = null;
     if (!search || !search.trim()) {
       const { getAllTasks } = require("../models/taskModel");
-      const openTasksQuery = getOpenTasksQuery(channelId, tabId);
+      const openTasksQuery = getOpenTasksQuery(channelId);
       
       try {
         const openTasksResult = await getAllTasks({
