@@ -23,6 +23,7 @@ const {
   addReaction,
   removeReaction,
   getReactionsByMessage,
+  removeAllReactionsForMessage,
 } = require("../models/chatReactionModel");
 const { findChannel } = require("../models/channelModel");
 const { findUser } = require("../models/userModel");
@@ -545,8 +546,9 @@ const processChatMessageDelete = async (socket, data, io) => {
       return;
     }
 
-    // Soft delete
+    // Soft delete and remove reactions
     const deletedMessage = await softDeleteMessage(messageId, userId);
+    await removeAllReactionsForMessage(messageId);
 
     // Populate author
     const author = await findUser({ _id: userId });

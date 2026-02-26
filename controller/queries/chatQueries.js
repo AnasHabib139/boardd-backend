@@ -228,37 +228,43 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
       },
     },
 
-    // Group reactions by emoji
+    // Group reactions by emoji (skip for deleted messages)
     {
       $addFields: {
         reactions: {
-          $map: {
-            input: {
-              $setUnion: ["$reactionsRaw.emoji"],
-            },
-            as: "emoji",
-            in: {
-              emoji: "$$emoji",
-              count: {
-                $size: {
-                  $filter: {
-                    input: "$reactionsRaw",
-                    as: "r",
-                    cond: { $eq: ["$$r.emoji", "$$emoji"] },
-                  },
+          $cond: {
+            if: { $ne: ["$deletedAt", null] },
+            then: [],
+            else: {
+              $map: {
+                input: {
+                  $setUnion: ["$reactionsRaw.emoji"],
                 },
-              },
-              users: {
-                $map: {
-                  input: {
-                    $filter: {
-                      input: "$reactionsRaw",
-                      as: "r",
-                      cond: { $eq: ["$$r.emoji", "$$emoji"] },
+                as: "emoji",
+                in: {
+                  emoji: "$$emoji",
+                  count: {
+                    $size: {
+                      $filter: {
+                        input: "$reactionsRaw",
+                        as: "r",
+                        cond: { $eq: ["$$r.emoji", "$$emoji"] },
+                      },
                     },
                   },
-                  as: "reaction",
-                  in: "$$reaction.userId",
+                  users: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: "$reactionsRaw",
+                          as: "r",
+                          cond: { $eq: ["$$r.emoji", "$$emoji"] },
+                        },
+                      },
+                      as: "reaction",
+                      in: "$$reaction.userId",
+                    },
+                  },
                 },
               },
             },
