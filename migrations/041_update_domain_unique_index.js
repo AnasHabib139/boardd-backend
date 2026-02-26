@@ -40,7 +40,7 @@ module.exports = {
         { domain: 1 },
         {
           unique: true,
-          partialFilterExpression: { isConsumerDomain: { $ne: true } },
+          partialFilterExpression: { isConsumerDomain: { $eq: false } },
           name: "domain_1_non_consumer_unique",
         }
       );

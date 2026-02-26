@@ -359,6 +359,62 @@ exports.getTaskByIdQuery = (taskId, userId = null) => {
         as: "activities",
       },
     },
+    // Lookup task connections (bidirectional)
+    {
+      $lookup: {
+        from: "taskconnections",
+        let: { taskId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $or: [
+                  { $eq: ["$sourceTaskId", "$$taskId"] },
+                  { $eq: ["$targetTaskId", "$$taskId"] },
+                ],
+              },
+            },
+          },
+          {
+            $addFields: {
+              connectedTaskId: {
+                $cond: {
+                  if: { $eq: ["$sourceTaskId", "$$taskId"] },
+                  then: "$targetTaskId",
+                  else: "$sourceTaskId",
+                },
+              },
+            },
+          },
+          {
+            $lookup: {
+              from: "tasks",
+              let: { connId: "$connectedTaskId" },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: { $eq: ["$_id", "$$connId"] },
+                    isActive: true,
+                  },
+                },
+                { $project: { _id: 1, title: 1, status: 1, priority: 1 } },
+              ],
+              as: "connectedTask",
+            },
+          },
+          { $unwind: "$connectedTask" },
+          {
+            $project: {
+              _id: 1,
+              connectedTask: 1,
+              createdAt: 1,
+            },
+          },
+          { $sort: { createdAt: -1 } },
+        ],
+        as: "connections",
+      },
+    },
     // Unwind creator array (will always be single item)
     {
       $unwind: {
@@ -513,6 +569,8 @@ exports.getTaskByIdQuery = (taskId, userId = null) => {
         subtasks: 1,
         // Include activities array (already processed in lookup)
         activities: 1,
+        // Include connections array (bidirectional task links)
+        connections: 1,
         // Add context and permissions
         contextPath: 1,
         permissions: 1,

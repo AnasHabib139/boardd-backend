@@ -1607,12 +1607,14 @@ exports.deleteTaskPermanently = async (req, res, next) => {
     const { Activity } = require("../models/activityModel");
     const { Notification } = require("../models/notificationModel");
     const { TaskInbox } = require("../models/taskInboxModel");
+    const { deleteTaskConnectionsByTaskId } = require("../models/taskConnectionModel");
 
     await Promise.all([
       Activity?.deleteMany({ taskId }) || Promise.resolve(),
       Notification?.deleteMany({ taskId }) || Promise.resolve(),
       deleteSubtask({ taskId }),
       TaskInbox?.deleteMany({ taskId }) || Promise.resolve(),
+      deleteTaskConnectionsByTaskId(taskId),
     ]);
 
     // Delete the task

@@ -35,6 +35,7 @@ const PaymentsAPI = require("../payments-service/api");
 const PermissionApi = require("./permissionApi");
 const SearchApi = require("./search");
 const TabTaskStatusApi = require("./tabTaskStatusApi");
+const TaskConnectionApi = require("./taskConnectionApi");
 // FileServeApi is now mounted directly in server.js at /uploadFiles
 // const FileServeApi = require("./fileServeApi");
 // all API routing files import here like above
@@ -80,6 +81,7 @@ class API {
     this.routeGroups.push(new PermissionApi());
     this.routeGroups.push(new SearchApi());
     this.routeGroups.push(new TabTaskStatusApi());
+    this.routeGroups.push(new TaskConnectionApi());
     // FileServeApi is now mounted directly in server.js
     // this.routeGroups.push(new FileServeApi());
     // all routes register here like above
