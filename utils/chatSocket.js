@@ -94,7 +94,7 @@ const processChatMessageSend = async (socket, data, io) => {
 
     // Check user has access to conversation
     const hasAccess =
-      conversation.type === "channel"
+      conversation.type === "channel" || conversation.type === "client"
         ? await validateChannelAccess(conversation.channelId, userId)
         : conversation.participantIds.some(
             (id) => id.toString() === userId.toString()
