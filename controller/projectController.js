@@ -949,16 +949,8 @@ exports.getProjectsCalendar = async (req, res, next) => {
 exports.getProjectBoard = async (req, res, next) => {
   try {
     const { projectId } = req.params;
-    const { search } = req.query;
+    const { search, channelId } = req.query;
     const userId = req.user.id;
-
-    // Validate project ID format
-    if (!projectId || projectId.length !== 24) {
-      return next({
-        statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Invalid project ID format",
-      });
-    }
 
     // Validate user exists
     const user = await findUser({ _id: userId });
@@ -966,6 +958,125 @@ exports.getProjectBoard = async (req, res, next) => {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
         message: "User not found",
+      });
+    }
+
+    // Handle "open" tasks board view
+    if (projectId === "open") {
+      if (!channelId) {
+        return next({
+          statusCode: STATUS_CODES.BAD_REQUEST,
+          message: "channelId query parameter is required for open tasks board",
+        });
+      }
+
+      // Validate channel exists and user is a member
+      const channel = await findChannel({ _id: channelId });
+      if (!channel) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Channel not found",
+        });
+      }
+      if (!channel.members.includes(userId)) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You are not a member of this channel",
+        });
+      }
+
+      // Fetch open tasks
+      const { getAllTasks } = require("../models/taskModel");
+      const openTasksQuery = getOpenTasksQuery(channelId);
+      const openTasksResult = await getAllTasks({
+        query: openTasksQuery,
+        page: 1,
+        limit: 1000,
+        responseKey: "openTasks",
+      });
+      const openTasks = openTasksResult.openTasks || [];
+
+      // Sort helper
+      const sortByOrderIndex = (tasks, status) => {
+        return tasks.sort((a, b) => {
+          const aOrder = a.orderIndex?.[status] || new Date(a.createdAt).getTime();
+          const bOrder = b.orderIndex?.[status] || new Date(b.createdAt).getTime();
+          return aOrder - bOrder;
+        });
+      };
+
+      const todoTasks = sortByOrderIndex(
+        openTasks.filter((t) => t.status === "todo"), "todo"
+      );
+      const inProgressTasks = sortByOrderIndex(
+        openTasks.filter((t) => t.status === "in_progress"), "in_progress"
+      );
+      const completedTasks = sortByOrderIndex(
+        openTasks.filter((t) => t.status === "completed"), "completed"
+      );
+
+      const overdueTasks = openTasks.filter((t) => t.isOverdue);
+      const total = openTasks.length;
+      const progress = total > 0
+        ? Math.round((completedTasks.length / total) * 100 * 10) / 10
+        : 0;
+
+      const openProject = {
+        _id: "open",
+        name: "Open",
+        description: "Tasks without specific project",
+        status: "active",
+        startDate: null,
+        endDate: null,
+        priority: "medium",
+        color: "#808080",
+        isPinned: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        creator: null,
+        todoTasks,
+        inProgressTasks,
+        completedTasks,
+        tasksByStatus: [
+          { statusKey: "todo", statusName: "To Do", color: "#6B7280", order: 1, isSystem: true, tasks: todoTasks },
+          { statusKey: "in_progress", statusName: "In Progress", color: "#3B82F6", order: 2, isSystem: true, tasks: inProgressTasks },
+          { statusKey: "completed", statusName: "Completed", color: "#10B981", order: 3, isSystem: true, tasks: completedTasks },
+        ],
+        taskStats: {
+          total,
+          todo: todoTasks.length,
+          inProgress: inProgressTasks.length,
+          completed: completedTasks.length,
+          overdue: overdueTasks.length,
+        },
+        progress,
+        fileAttached: openTasks.reduce((sum, t) => sum + (t.fileCount || 0), 0),
+        linksAttached: openTasks.reduce((sum, t) => sum + (t.linkCount || 0), 0),
+      };
+
+      return generateResponse(
+        {
+          project: openProject,
+          view: "board",
+          search: search || null,
+          context: {
+            channel: {
+              id: channel._id,
+              name: channel.channelName,
+            },
+          },
+        },
+        "Open tasks board fetched successfully",
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+
+    // Validate project ID format
+    if (!projectId || projectId.length !== 24) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Invalid project ID format",
       });
     }
 
