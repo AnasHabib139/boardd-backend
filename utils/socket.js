@@ -1031,24 +1031,23 @@ const processTaskReorder = async (socket, data) => {
       },
     });
 
-    // Emit tab activity to channel room
-    io.to(`channel:${channel._id}`).emit("tab-activity", {
-      type: "TASK_REORDERED",
-      task: responseData.task,
-      newStatus,
-      previousStatus,
-      orderIndex: calculatedOrderIndex,
-      movedBy: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-      },
-      notification:
-        newStatus !== previousStatus
-          ? `${userName} moved "${task.title}" to ${newStatusName}`
-          : `${userName} reordered "${task.title}"`,
-      timestamp: new Date(),
-    });
+    // Only emit tab activity notification when status actually changed
+    if (newStatus !== previousStatus) {
+      io.to(`channel:${channel._id}`).emit("tab-activity", {
+        type: "TASK_REORDERED",
+        task: responseData.task,
+        newStatus,
+        previousStatus,
+        orderIndex: calculatedOrderIndex,
+        movedBy: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+        },
+        notification: `${userName} moved "${task.title}" to ${newStatusName}`,
+        timestamp: new Date(),
+      });
+    }
   } catch (error) {
     console.error(`Error processing task reorder for ${taskId}:`, error);
     socket.emit("task-reorder-response", {
@@ -1539,19 +1538,22 @@ const processTaskMove = async (socket, data) => {
         },
       });
 
-      io.to(sourceRoomId).emit("tab-activity", {
-        type: "TASK_MOVED_WITHIN_ROOM",
-        task: responseData.task,
-        source: responseData.source,
-        target: responseData.target,
-        movedBy: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-        },
-        notification: `${userName} moved "${task.title}" from "${sourceName}" to "${targetName}"`,
-        timestamp: new Date(),
-      });
+      // Only emit tab activity notification when status actually changed
+      if (newStatus !== previousStatus) {
+        io.to(sourceRoomId).emit("tab-activity", {
+          type: "TASK_MOVED_WITHIN_ROOM",
+          task: responseData.task,
+          source: responseData.source,
+          target: responseData.target,
+          movedBy: {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+          },
+          notification: `${userName} moved "${task.title}" from "${sourceName}" to "${targetName}"`,
+          timestamp: new Date(),
+        });
+      }
     } else {
       // Different rooms - emit to both
       io.to(sourceRoomId).emit("task-move-response", {
