@@ -1903,9 +1903,27 @@ const generateTabNotificationMessage = (type, payload) => {
         case "type":
           updateMessage = `changed type to "${newValue}"`;
           break;
-        case "attachments":
-          updateMessage = `updated attachments`;
+        case "attachments": {
+          const prevUrls = (previousValue || []).map(a => a.url);
+          const newUrls = (newValue || []).map(a => a.url);
+          const added = (newValue || []).filter(a => !prevUrls.includes(a.url));
+          const removed = (previousValue || []).filter(a => !newUrls.includes(a.url));
+
+          if (added.length > 0 && removed.length === 0) {
+            const name = added[0].fileName || "file";
+            updateMessage = added.length === 1
+              ? `added attachment "${name}"`
+              : `added ${added.length} attachments`;
+          } else if (removed.length > 0 && added.length === 0) {
+            const name = removed[0].fileName || "file";
+            updateMessage = removed.length === 1
+              ? `removed attachment "${name}"`
+              : `removed ${removed.length} attachments`;
+          } else {
+            updateMessage = `updated attachments`;
+          }
           break;
+        }
         case "checklist":
           updateMessage = `updated checklist`;
           break;
