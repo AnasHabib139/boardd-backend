@@ -1866,7 +1866,7 @@ const generateTabNotificationMessage = (type, payload) => {
           updateMessage = `set priority to "${newValue}"`;
           break;
         case "assignedTo":
-          updateMessage = `updated assignments`;
+          updateMessage = `updated assignees`;
           break;
         case "dueDate":
           updateMessage = `updated due date`;
