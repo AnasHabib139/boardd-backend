@@ -499,6 +499,12 @@ const processTaskUpdate = async (socket, data) => {
       }
     }
 
+    // Skip update if status value hasn't changed (e.g., same-column reorder)
+    if (field === "status" && previousValue === processedValue) {
+      pendingUpdates.delete(updateKey);
+      return;
+    }
+
     // INSTANT DB UPDATE FOR ALL FIELDS
     const updatedTask = await updateTask(
       { _id: taskId },
