@@ -1934,6 +1934,14 @@ const generateTabNotificationMessage = (type, payload) => {
         color: "warning",
       };
 
+    case "TASK_DELETED":
+      return {
+        title: "Task Deleted",
+        message: `${payload.deletedBy?.name || userName} deleted "${taskTitle}"`,
+        icon: "🗑️",
+        color: "error",
+      };
+
     default:
       return {
         title: "Activity Update",

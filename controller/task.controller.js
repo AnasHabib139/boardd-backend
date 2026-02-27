@@ -1637,6 +1637,7 @@ exports.deleteTaskPermanently = async (req, res, next) => {
         type: "TASK_DELETED",
         payload: {
           taskId: task._id,
+          task,
           deletedBy: {
             _id: user._id,
             name: user.name,
