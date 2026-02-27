@@ -122,6 +122,16 @@ exports.getProjectStatusKeys = async (projectId) => {
   return statuses.map((s) => s.statusKey);
 };
 
+// Resolve a statusKey to its display name
+exports.getStatusName = async (projectId, statusKey) => {
+  if (!projectId) {
+    const systemStatus = SYSTEM_STATUSES.find((s) => s.statusKey === statusKey);
+    return systemStatus ? systemStatus.statusName : statusKey;
+  }
+  const status = await TabTaskStatus.findOne({ projectId, statusKey });
+  return status ? status.statusName : statusKey;
+};
+
 // Export model and constants
 exports.TabTaskStatus = TabTaskStatus;
 exports.SYSTEM_STATUSES = SYSTEM_STATUSES;

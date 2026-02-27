@@ -560,6 +560,14 @@ const processTaskUpdate = async (socket, data) => {
       }
     }
 
+    // Convert status keys to display names
+    if (field === "status") {
+      const { getStatusName } = require("../models/tabTaskStatusModel");
+      const projectId = task.projectId || null;
+      activityMessageData.newValue = await getStatusName(projectId, processedValue);
+      activityMessageData.previousValue = await getStatusName(projectId, previousValue);
+    }
+
     const activityMessage = generateActivityMessage(field, userName, activityMessageData);
 
     const activityData = {
@@ -640,7 +648,7 @@ const processTaskUpdate = async (socket, data) => {
       task: updatedTask,
       project,
       field,
-      newValue: processedValue,
+      newValue: field === "status" ? activityMessageData.newValue : processedValue,
       activities: [activity],
     });
 
@@ -915,6 +923,12 @@ const processTaskReorder = async (socket, data) => {
     const contextPath = project ? `${channel.channelName} / ${tab.tabName}` : `${channel.channelName} / Open`;
     const userName = user.name || user.email;
 
+    // Resolve status keys to display names
+    const { getStatusName } = require("../models/tabTaskStatusModel");
+    const projectId = task.projectId || null;
+    const newStatusName = await getStatusName(projectId, newStatus);
+    const previousStatusName = await getStatusName(projectId, previousStatus);
+
     // Update task status and order index
     const updatedTask = await updateTaskOrderIndex(
       taskId,
@@ -931,11 +945,11 @@ const processTaskReorder = async (socket, data) => {
     const activityMessage = {
       forCreator:
         newStatus !== previousStatus
-          ? `You moved "${task.title}" to ${newStatus}`
+          ? `You moved "${task.title}" to ${newStatusName}`
           : `You reordered "${task.title}"`,
       forOthers:
         newStatus !== previousStatus
-          ? `${userName} moved "${task.title}" to ${newStatus}`
+          ? `${userName} moved "${task.title}" to ${newStatusName}`
           : `${userName} reordered "${task.title}"`,
     };
 
@@ -1030,7 +1044,7 @@ const processTaskReorder = async (socket, data) => {
       },
       notification:
         newStatus !== previousStatus
-          ? `${userName} moved "${task.title}" to ${newStatus}`
+          ? `${userName} moved "${task.title}" to ${newStatusName}`
           : `${userName} reordered "${task.title}"`,
       timestamp: new Date(),
     });
@@ -1411,6 +1425,10 @@ const processTaskMove = async (socket, data) => {
 
     // Create additional activity for status change if status changed (for work progress tracking)
     if (newStatus !== previousStatus) {
+      const { getStatusName } = require("../models/tabTaskStatusModel");
+      const moveProjectId = newProjectId || null;
+      const newStatusName = await getStatusName(moveProjectId, newStatus);
+
       const statusActivityData = {
         taskId: task._id,
         userId,
@@ -1419,8 +1437,8 @@ const processTaskMove = async (socket, data) => {
         previousValue: previousStatus,
         newValue: newStatus,
         message: {
-          forCreator: `You changed the status to ${newStatus}`,
-          forOthers: `${userName} changed the status to ${newStatus}`,
+          forCreator: `You changed the status to ${newStatusName}`,
+          forOthers: `${userName} changed the status to ${newStatusName}`,
         },
         timestamp: new Date(),
       };

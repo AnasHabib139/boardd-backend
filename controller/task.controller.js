@@ -775,9 +775,18 @@ exports.batchUpdateTask = async (req, res, next) => {
         (Array.isArray(previousValues[field]) &&
           previousValues[field].length === 0);
 
+      let messageNewValue = value;
+      let messagePrevValue = previousValues[field];
+      if (field === "status") {
+        const { getStatusName } = require("../models/tabTaskStatusModel");
+        const projectId = task.projectId || null;
+        messageNewValue = await getStatusName(projectId, value);
+        messagePrevValue = await getStatusName(projectId, previousValues[field]);
+      }
+
       const message = generateActivityMessage(field, userName, {
-        previousValue: previousValues[field],
-        newValue: value,
+        previousValue: messagePrevValue,
+        newValue: messageNewValue,
         taskTitle: task.title,
         isCreation: isFieldCreation,
       });
