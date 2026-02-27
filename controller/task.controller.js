@@ -396,7 +396,7 @@ exports.createTask = async (req, res, next) => {
         creator,
         contextPath,
       });
-      emitTaskEvent(taskEventPayload);
+      emitTaskEvent({ ...taskEventPayload, excludeUserId: req.user.id });
 
       // Emit notifications to assigned users
       if (assignedTo && assignedTo.length > 0) {

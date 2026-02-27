@@ -1919,7 +1919,7 @@ exports.emitTaskEvent = (data) => {
     throw new Error("Socket.io not initialized!");
   }
 
-  const { taskId, channelId, type, payload } = data;
+  const { taskId, channelId, type, payload, excludeUserId } = data;
 
   // Emit task-specific update to users viewing the task
   if (taskId) {
@@ -1934,7 +1934,12 @@ exports.emitTaskEvent = (data) => {
   if (channelId) {
     const notificationMessage = generateTabNotificationMessage(type, payload);
 
-    io.to(`channel:${channelId}`).emit("tab-activity", {
+    let target = io.to(`channel:${channelId}`);
+    if (excludeUserId) {
+      target = target.except(`user:${excludeUserId}`);
+    }
+
+    target.emit("tab-activity", {
       type,
       ...payload,
       notification: notificationMessage,
