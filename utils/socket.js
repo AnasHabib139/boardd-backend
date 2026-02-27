@@ -649,6 +649,7 @@ const processTaskUpdate = async (socket, data) => {
       project,
       field,
       newValue: field === "status" ? activityMessageData.newValue : processedValue,
+      previousValue,
       activities: [activity],
     });
 
@@ -1833,7 +1834,7 @@ exports.emitInboxUnreadUpdate = async (userId, ioInstance = null) => {
 
 // Generate notification message for tab activity
 const generateTabNotificationMessage = (type, payload) => {
-  const { updatedBy, task, project, field, newValue, activities } = payload;
+  const { updatedBy, task, project, field, newValue, previousValue, activities } = payload;
   const userName = updatedBy?.name || "Someone";
   const taskTitle = task?.title || "a task";
   const projectName = project?.name || "a project";
@@ -1871,8 +1872,20 @@ const generateTabNotificationMessage = (type, payload) => {
           updateMessage = `updated due date`;
           break;
         case "title":
-          updateMessage = `renamed task to "${newValue}"`;
-          break;
+          if (previousValue) {
+            return {
+              title: "Task Updated",
+              message: `${userName} renamed task from "${previousValue}" to "${newValue}"`,
+              icon: "📝",
+              color: "info",
+            };
+          }
+          return {
+            title: "Task Updated",
+            message: `${userName} renamed task to "${newValue}"`,
+            icon: "📝",
+            color: "info",
+          };
         case "description":
           updateMessage = `updated description`;
           break;
