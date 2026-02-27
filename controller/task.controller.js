@@ -1644,6 +1644,7 @@ exports.deleteTaskPermanently = async (req, res, next) => {
             email: user.email,
           },
         },
+        excludeUserId: req.user.id,
       });
 
       // Emit inbox unread count updates to affected users
