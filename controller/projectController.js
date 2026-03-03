@@ -1671,6 +1671,8 @@ exports.duplicateProject = async (req, res, next) => {
         description: task.description,
         projectId: newProject._id,
         channelId: task.channelId,
+        companyId: task.companyId,
+        tabId: task.tabId,
         status: task.status, // Keep exact status (todo/in_progress/completed)
         priority: task.priority,
         dueDate: task.dueDate, // Keep exact due date
