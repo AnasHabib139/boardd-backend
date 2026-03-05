@@ -55,12 +55,14 @@ exports.getAllChannelsDetails = async ({
   page,
   limit,
   responseKey = "data",
+  sort,
 }) => {
   const { data, pagination } = await getMongooseAggregatePaginatedData({
     model: Channel,
     query,
     page,
     limit,
+    ...(sort && { sort }),
   });
 
   return { [responseKey]: data, pagination };

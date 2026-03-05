@@ -1503,6 +1503,7 @@ exports.getChannelFiles = async (req, res, next) => {
       page: parseInt(page),
       limit: parseInt(limit),
       responseKey: "files",
+      sort: { uploadedAt: -1 },
     });
 
     return generateResponse(

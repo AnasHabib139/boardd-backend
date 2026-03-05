@@ -657,10 +657,6 @@ exports.getChannelFilesQuery = (channelId, type, baseUrl) => {
       },
     },
 
-    // Sort by upload date (newest first)
-    {
-      $sort: { uploadedAt: -1 },
-    },
   ];
 
   return pipeline;
