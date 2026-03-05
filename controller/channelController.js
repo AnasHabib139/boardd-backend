@@ -1419,14 +1419,27 @@ exports.uploadFilesToChannel = async (req, res, next) => {
     }
 
     // Prepare files data with metadata
-    const filesData = files.map((file) => ({
-      url: file.url,
-      fileName: file.fileName || null,
-      fileSize: file.fileSize || null,
-      mimeType: file.mimeType || null,
-      uploadedBy: userId,
-      uploadedAt: new Date(),
-    }));
+    const filesData = files.map((file) => {
+      let url = file.url;
+      // Normalize full URLs to relative paths for consistency with task attachments
+      if (url && url.startsWith("http")) {
+        try {
+          const urlObj = new URL(url);
+          url = urlObj.pathname;
+        } catch {
+          // If URL parsing fails, use as-is
+        }
+      }
+
+      return {
+        url,
+        fileName: file.fileName || null,
+        fileSize: file.fileSize || null,
+        mimeType: file.mimeType || null,
+        uploadedBy: userId,
+        uploadedAt: new Date(),
+      };
+    });
 
     // Add files to channel
     const updatedChannel = await addFilesToChannel(channelId, filesData);
@@ -1547,11 +1560,34 @@ exports.deleteChannelFile = async (req, res, next) => {
     const fileExists = channel.files.some(
       (file) => file._id.toString() === fileId
     );
+
     if (!fileExists) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "File not found in this channel",
+      // Check if it's a task attachment in this channel
+      const task = await findTask({
+        channelId,
+        isActive: true,
+        "attachments._id": new mongoose.Types.ObjectId(fileId),
       });
+
+      if (!task) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "File not found in this channel",
+        });
+      }
+
+      // Remove attachment from task
+      await updateTask(
+        { _id: task._id },
+        { $pull: { attachments: { _id: new mongoose.Types.ObjectId(fileId) } } }
+      );
+
+      return generateResponse(
+        { channelId, fileId, source: "task", deletedAt: new Date() },
+        "File deleted successfully",
+        res,
+        STATUS_CODES.SUCCESS
+      );
     }
 
     // Remove file from channel
