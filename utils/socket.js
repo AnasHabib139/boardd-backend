@@ -627,7 +627,7 @@ const processTaskUpdate = async (socket, data) => {
       await Promise.all(notifications);
     }
 
-    // Emit minimal task update response to task room
+    // Emit minimal task update response to task room (data sync only, no notification data)
     io.to(`task:${taskId}`).emit("task-update-response", {
       success: true,
       taskId,
@@ -636,16 +636,6 @@ const processTaskUpdate = async (socket, data) => {
       previousValue,
       newValue: processedValue,
       version: updatedTask.version,
-      activity: {
-        _id: activity._id,
-        message: activityMessage, // Contains both forCreator and forOthers
-        timestamp: activity.timestamp,
-        user: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-        },
-      },
     });
 
     // Keep tab-activity emission unchanged for notifications
