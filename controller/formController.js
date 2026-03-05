@@ -1,7 +1,7 @@
 "use strict";
 
 const { parseBody, generateResponse, generateNextOrder } = require("../utils");
-const { STATUS_CODES, FORM_TYPE, TEMPLATE_CATEGORY } = require("../utils/constants");
+const { STATUS_CODES, FORM_TYPE, TEMPLATE_CATEGORY, FORM_FIELD_TYPES } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
@@ -34,7 +34,7 @@ const {
   updateLastMessage,
 } = require("../models/chatConversationModel");
 const { createChatMessage } = require("../models/chatMessageModel");
-const { findTask, updateTask } = require("../models/taskModel");
+const { findTask, updateTask, createTask } = require("../models/taskModel");
 const { getIO } = require("../utils/socket");
 const { upsertFormView } = require("../models/formViewModel");
 const {
@@ -2127,6 +2127,16 @@ exports.submitFormResponse = async (req, res, next) => {
     // Update form response count
     await updateForm({ _id: formId }, { $inc: { responseCount: 1 } });
 
+    // Auto-create task from form response
+    try {
+      if (form.tabId) {
+        await createTaskFromFormResponse(form, validatedResponses, invite);
+      }
+    } catch (taskError) {
+      console.error("Error creating task from form response:", taskError);
+      // Non-fatal — response is already saved
+    }
+
     return generateResponse(
       { responseId: formResponse._id },
       "Form response submitted successfully",
@@ -2411,4 +2421,75 @@ exports.shareFormToChannelChat = async (req, res, next) => {
       message: error?.message || "Failed to share form",
     });
   }
+};
+
+/**
+ * Helper: Create a task from a submitted form response.
+ * File fields → attachments, URL fields → links, everything else → customFields.
+ */
+const createTaskFromFormResponse = async (form, validatedResponses, invite) => {
+  const channel = await findChannel({ _id: form.channelId });
+  if (!channel) return;
+
+  const FIELD_TYPE_TO_CUSTOM = {
+    [FORM_FIELD_TYPES.TEXT]: "text",
+    [FORM_FIELD_TYPES.EMAIL]: "text",
+    [FORM_FIELD_TYPES.PHONE]: "text",
+    [FORM_FIELD_TYPES.NUMBER]: "number",
+    [FORM_FIELD_TYPES.TEXTAREA]: "textarea",
+    [FORM_FIELD_TYPES.DATE]: "date",
+    [FORM_FIELD_TYPES.TIME]: "text",
+    [FORM_FIELD_TYPES.CHECKBOX]: "checkbox",
+    [FORM_FIELD_TYPES.SELECT]: "text",
+    [FORM_FIELD_TYPES.RADIO]: "text",
+  };
+
+  const attachments = [];
+  const links = [];
+  const customFields = [];
+
+  for (const resp of validatedResponses) {
+    if (!resp.value && resp.value !== 0 && resp.value !== false) continue;
+
+    if (resp.fieldType === FORM_FIELD_TYPES.FILE) {
+      const files = Array.isArray(resp.value) ? resp.value : [resp.value];
+      for (const fileUrl of files) {
+        if (!fileUrl) continue;
+        const fileName = decodeURIComponent(
+          String(fileUrl).split("/").pop().split("?")[0]
+        );
+        attachments.push({ url: fileUrl, fileName });
+      }
+    } else if (resp.fieldType === FORM_FIELD_TYPES.URL) {
+      const urls = Array.isArray(resp.value) ? resp.value : [resp.value];
+      for (const url of urls) {
+        if (url) links.push(url);
+      }
+    } else {
+      const customType = FIELD_TYPE_TO_CUSTOM[resp.fieldType];
+      if (customType) {
+        customFields.push({
+          name: resp.label,
+          type: customType,
+          value: resp.value,
+        });
+      }
+    }
+  }
+
+  const taskData = {
+    title: form.title,
+    description: `Form response from ${invite.invitedName || "Unknown"} (${invite.invitedEmail || ""})`,
+    channelId: form.channelId,
+    tabId: form.tabId,
+    companyId: channel.companyId,
+    createdBy: form.createdBy,
+    status: "todo",
+    priority: "medium",
+    customFields,
+    attachments,
+    links,
+  };
+
+  await createTask(taskData);
 };
