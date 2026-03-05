@@ -405,7 +405,7 @@ exports.getArchivedChannelsQuery = (userId) => {
  * @param {string} type - File type filter (all, photos&images, videos, etc.)
  * @returns {Array} Aggregation pipeline
  */
-exports.getChannelFilesQuery = (channelId, type) => {
+exports.getChannelFilesQuery = (channelId, type, baseUrl) => {
   const { getMimeTypeFilter } = require("../helpers/channels/fileTypeMapper");
 
   // Get MIME type filters for both channel files and task attachments
@@ -639,7 +639,7 @@ exports.getChannelFilesQuery = (channelId, type) => {
       },
     },
 
-    // Normalize URLs: strip domain prefix so all URLs are relative paths
+    // Prepend base URL to relative paths so frontend gets ready-to-use preview URLs
     {
       $addFields: {
         url: {
@@ -647,49 +647,10 @@ exports.getChannelFilesQuery = (channelId, type) => {
             if: {
               $and: [
                 { $ne: ["$url", null] },
-                { $gte: [{ $indexOfCP: ["$url", "://"] }, 0] },
+                { $eq: [{ $indexOfCP: ["$url", "://"] }, -1] },
               ],
             },
-            then: {
-              $let: {
-                vars: {
-                  protocolEnd: { $indexOfCP: ["$url", "://"] },
-                },
-                in: {
-                  $let: {
-                    vars: {
-                      afterProtocol: {
-                        $substrCP: [
-                          "$url",
-                          { $add: ["$$protocolEnd", 3] },
-                          { $subtract: [{ $strLenCP: "$url" }, { $add: ["$$protocolEnd", 3] }] },
-                        ],
-                      },
-                    },
-                    in: {
-                      $let: {
-                        vars: {
-                          slashIdx: { $indexOfCP: ["$$afterProtocol", "/"] },
-                        },
-                        in: {
-                          $cond: {
-                            if: { $gte: ["$$slashIdx", 0] },
-                            then: {
-                              $substrCP: [
-                                "$$afterProtocol",
-                                "$$slashIdx",
-                                { $subtract: [{ $strLenCP: "$$afterProtocol" }, "$$slashIdx"] },
-                              ],
-                            },
-                            else: "$url",
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
+            then: { $concat: [baseUrl, "$url"] },
             else: "$url",
           },
         },

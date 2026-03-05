@@ -1495,7 +1495,7 @@ exports.getChannelFiles = async (req, res, next) => {
     }
 
     // Build aggregation query
-    const query = getChannelFilesQuery(channelId, type);
+    const query = getChannelFilesQuery(channelId, type, process.env.BACKEND_URL);
 
     // Get paginated files
     const result = await getAllChannelsDetails({
