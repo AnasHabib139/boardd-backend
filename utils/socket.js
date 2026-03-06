@@ -220,6 +220,8 @@ const validateFieldValue = (field, value) => {
       );
     case "columnValues":
       return typeof value === "object" && value !== null && !Array.isArray(value);
+    case "assignees":
+      return false; // Virtual field — use assignedTo instead
     default:
       return true;
   }
