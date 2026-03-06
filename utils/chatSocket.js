@@ -18,6 +18,7 @@ const {
   softDeleteMessage,
   incrementThreadCount,
   countChatMessages,
+  findLatestRootMessage,
 } = require("../models/chatMessageModel");
 const {
   addReaction,
@@ -549,6 +550,23 @@ const processChatMessageDelete = async (socket, data, io) => {
     // Soft delete and remove reactions
     const deletedMessage = await softDeleteMessage(messageId, userId);
     await removeAllReactionsForMessage(messageId);
+
+    // Update sidebar preview if this was a root message
+    if (!originalMessage.parentMessageId) {
+      const latestMessage = await findLatestRootMessage(
+        originalMessage.conversationId,
+        messageId
+      );
+      if (latestMessage) {
+        await updateLastMessage(
+          originalMessage.conversationId,
+          latestMessage.contentText || "",
+          latestMessage.createdAt
+        );
+      } else {
+        await updateLastMessage(originalMessage.conversationId, "", new Date());
+      }
+    }
 
     // Populate author
     const author = await findUser({ _id: userId });

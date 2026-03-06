@@ -545,6 +545,14 @@ exports.getMessageWithDetails = async (messageId) => {
  * @param {String} conversationId
  * @returns {Promise<Boolean>}
  */
+exports.findLatestRootMessage = (conversationId, excludeMessageId) =>
+  ChatMessage.findOne({
+    conversationId,
+    parentMessageId: null,
+    deletedAt: null,
+    ...(excludeMessageId && { _id: { $ne: excludeMessageId } }),
+  }).sort({ createdAt: -1 });
+
 exports.hasMessageAccess = async (messageId, conversationId) => {
   const message = await ChatMessage.findOne({
     _id: messageId,
