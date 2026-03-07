@@ -286,6 +286,7 @@ const processChatMessageSend = async (socket, data, io) => {
       }
 
       await updateLastMessage(conversationId, preview, message.createdAt);
+      await emitConversationUpdate(io, conversation, preview, message.createdAt);
     }
 
     // Handle thread reply
@@ -498,6 +499,19 @@ const processChatMessageEdit = async (socket, data, io) => {
       },
     };
 
+    // Update sidebar preview if edited message is the latest root message
+    if (!originalMessage.parentMessageId) {
+      const latestMessage = await findLatestRootMessage(originalMessage.conversationId);
+      if (latestMessage && latestMessage._id.toString() === messageId.toString()) {
+        const editedPreview = contentText || "";
+        await updateLastMessage(originalMessage.conversationId, editedPreview, latestMessage.createdAt);
+        const conversation = await findChatConversation({ _id: originalMessage.conversationId });
+        if (conversation) {
+          await emitConversationUpdate(io, conversation, editedPreview, latestMessage.createdAt);
+        }
+      }
+    }
+
     // Broadcast update
     io.to(`conversation:${originalMessage.conversationId}`).emit(
       "chat:message:updated",
@@ -557,14 +571,13 @@ const processChatMessageDelete = async (socket, data, io) => {
         originalMessage.conversationId,
         messageId
       );
-      if (latestMessage) {
-        await updateLastMessage(
-          originalMessage.conversationId,
-          latestMessage.contentText || "",
-          latestMessage.createdAt
-        );
-      } else {
-        await updateLastMessage(originalMessage.conversationId, "", new Date());
+      const newLastText = latestMessage ? latestMessage.contentText || "" : "";
+      const newLastAt = latestMessage ? latestMessage.createdAt : new Date();
+      await updateLastMessage(originalMessage.conversationId, newLastText, newLastAt);
+
+      const conversation = await findChatConversation({ _id: originalMessage.conversationId });
+      if (conversation) {
+        await emitConversationUpdate(io, conversation, newLastText, newLastAt);
       }
     }
 
@@ -1589,6 +1602,37 @@ const calculateUnreadCount = async (conversationId, userId) => {
  * Helper: Emit unread count updates to conversation participants
  * Calculates and emits updated unread counts after a new message
  */
+/**
+ * Helper: Emit sidebar conversation preview update to all participants
+ * @param {Object} io - Socket.IO instance
+ * @param {Object} conversation - ChatConversation document
+ * @param {String} lastMessageText - New preview text
+ * @param {Date} lastMessageAt - New timestamp
+ */
+const emitConversationUpdate = async (io, conversation, lastMessageText, lastMessageAt) => {
+  try {
+    let participantIds = [];
+    if (conversation.type === "dm" || conversation.type === "group_dm" || conversation.type === "client") {
+      participantIds = conversation.participantIds.map((id) => id.toString());
+    } else if (conversation.type === "channel") {
+      const channel = await findChannel({ _id: conversation.channelId });
+      if (channel) {
+        participantIds = channel.members.map((id) => id.toString());
+      }
+    }
+
+    for (const participantId of participantIds) {
+      io.to(`user:${participantId}`).emit("chat:conversation:updated", {
+        conversationId: conversation._id,
+        lastMessageText,
+        lastMessageAt,
+      });
+    }
+  } catch (error) {
+    console.error("Error emitting conversation update:", error);
+  }
+};
+
 const emitUnreadCountUpdates = async (
   io,
   conversation,
