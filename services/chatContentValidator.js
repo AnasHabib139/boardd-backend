@@ -374,6 +374,10 @@ exports.hasContent = (contentDoc) => {
       return true;
     }
 
+    if (node.type === "mention" && node.attrs && node.attrs.id) {
+      return true;
+    }
+
     if (node.content && Array.isArray(node.content)) {
       return node.content.some(hasText);
     }
