@@ -32,7 +32,7 @@ const pendingUpdates = new Map();
 
 // Helper function to parse date strings (reused from task controller)
 const parseDate = (dateString) => {
-  if (!dateString) return undefined;
+  if (!dateString) return null;
   if (dateString instanceof Date) return dateString;
 
   if (
