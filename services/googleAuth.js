@@ -3,7 +3,7 @@
 const { OAuth2Client } = require("google-auth-library");
 const { CONSUMER_DOMAINS } = require("../utils/constants");
 
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID_FOR_LOGIN);
 
 /**
  * Verify a Google ID token and return the payload.
@@ -13,7 +13,7 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 exports.verifyGoogleIdToken = async (idToken) => {
   const ticket = await client.verifyIdToken({
     idToken,
-    audience: process.env.GOOGLE_CLIENT_ID,
+    audience: process.env.GOOGLE_CLIENT_ID_FOR_LOGIN,
   });
 
   const payload = ticket.getPayload();
