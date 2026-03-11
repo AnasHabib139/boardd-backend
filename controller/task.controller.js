@@ -27,6 +27,7 @@ const {
   handlePriorityActivity,
   handleDueDateActivity,
   handleAssignmentActivitiesAndNotifications,
+  handleUnassignmentActivitiesAndNotifications,
   prepareTaskEventPayload,
   handleAttachmentsActivity,
   handleLinksActivity,
@@ -698,9 +699,11 @@ exports.batchUpdateTask = async (req, res, next) => {
 
     // Handle assignment updates (if provided)
     if (updates.assignedTo !== undefined) {
-      const newAssignees = updates.assignedTo.filter(
-        (id) => !previousValues.assignedTo?.includes(id.toString())
-      );
+      const previousAssignedTo = (previousValues.assignedTo || []).map((id) => id.toString());
+      const currentAssignedTo = (updates.assignedTo || []).map((id) => id.toString());
+
+      const newAssignees = currentAssignedTo.filter((id) => !previousAssignedTo.includes(id));
+      const removedAssignees = previousAssignedTo.filter((id) => !currentAssignedTo.includes(id));
 
       if (newAssignees.length > 0) {
         const assignmentResult = await handleAssignmentActivitiesAndNotifications({
@@ -716,6 +719,22 @@ exports.batchUpdateTask = async (req, res, next) => {
         });
         activities = [...activities, ...assignmentResult.activities];
         notifications = [...notifications, ...assignmentResult.notifications];
+      }
+
+      if (removedAssignees.length > 0) {
+        const removalResult = await handleUnassignmentActivitiesAndNotifications({
+          removedAssignees,
+          userName,
+          task: updatedTask,
+          projectId: task.projectId || null,
+          channelId: task.channelId || null,
+          userId,
+          channel,
+          tab,
+          contextPath,
+        });
+        activities = [...activities, ...removalResult.activities];
+        notifications = [...notifications, ...removalResult.notifications];
       }
     }
 

@@ -251,6 +251,73 @@ exports.handleAssignmentActivitiesAndNotifications = async ({
 };
 
 /**
+ * Handle unassignment activities and notifications
+ */
+exports.handleUnassignmentActivitiesAndNotifications = async ({
+  removedAssignees,
+  userName,
+  task,
+  projectId,
+  channelId,
+  userId,
+  channel,
+  tab,
+  contextPath,
+}) => {
+  const activities = [];
+  const notifications = [];
+
+  const removedUsers = await findManyUsers({ _id: { $in: removedAssignees } });
+  const removedNames = removedUsers.map((user) => user.name || user.email).join(", ");
+
+  const unassignMessage = {
+    forCreator: `You removed ${removedNames} from "${task.title}"`,
+    forOthers: `${userName} removed ${removedNames} from "${task.title}"`,
+  };
+
+  const activityData = {
+    taskId: task._id,
+    userId,
+    actionType: ACTION_TYPE.UNASSIGN_USER,
+    field: "assignedTo",
+    newValue: removedAssignees,
+    timestamp: new Date(),
+    message: unassignMessage,
+  };
+
+  if (projectId) {
+    activityData.projectId = projectId;
+  } else {
+    activityData.channelId = channelId;
+  }
+
+  activities.push(await createActivity(activityData));
+
+  // Notify removed users
+  for (const removedUserId of removedAssignees) {
+    notifications.push(
+      createNotification({
+        userId: removedUserId,
+        type: "MENTION",
+        projectId: projectId || null,
+        channelId: channel._id,
+        tabId: tab?._id || null,
+        taskId: task._id,
+        createdBy: userId,
+        title: "Task Unassignment",
+        message:
+          removedUserId === userId
+            ? unassignMessage.forCreator
+            : unassignMessage.forOthers,
+        contextPath,
+      })
+    );
+  }
+
+  return { activities, notifications };
+};
+
+/**
  * Prepare task event payload
  */
 exports.prepareTaskEventPayload = ({
