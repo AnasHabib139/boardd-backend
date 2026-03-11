@@ -5,6 +5,7 @@ const {
   createConnection,
   getConnections,
   deleteConnection,
+  searchTasksForConnection,
 } = require("../controller/taskConnection.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
@@ -12,6 +13,7 @@ const {
   validateCreateTaskConnection,
   validateTaskIdParam,
   validateConnectionIdParam,
+  validateSearchTasksQuery,
 } = require("../validation/taskConnectionValidation");
 
 class TaskConnectionApi {
@@ -29,6 +31,14 @@ class TaskConnectionApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateCreateTaskConnection,
       createConnection
+    );
+
+    // Search tasks by name within a channel (for connection dropdown)
+    router.get(
+      "/search",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateSearchTasksQuery,
+      searchTasksForConnection
     );
 
     // Get all connections for a task

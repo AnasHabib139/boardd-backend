@@ -11,8 +11,10 @@ const {
   aggregateTaskConnections,
 } = require("../models/taskConnectionModel");
 const { createActivity } = require("../models/activityModel");
+const { aggregateTasks } = require("../models/taskModel");
 const {
   getTaskConnectionsQuery,
+  getSearchableTasksQuery,
 } = require("./queries/taskConnectionQueries");
 
 /**
@@ -268,6 +270,31 @@ exports.deleteConnection = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in deleteConnection:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Search tasks by name within a channel (for connection dropdown)
+ */
+exports.searchTasksForConnection = async (req, res, next) => {
+  try {
+    const { channelId, search, excludeTaskId, limit } = req.query;
+
+    const pipeline = getSearchableTasksQuery(
+      channelId,
+      search,
+      excludeTaskId,
+      limit
+    );
+    const tasks = await aggregateTasks(pipeline);
+
+    return generateResponse({ tasks }, "Tasks fetched successfully", res);
+  } catch (error) {
+    console.error("Error in searchTasksForConnection:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

@@ -74,6 +74,25 @@ const validateRequest = (schema, source = "body") => {
   };
 };
 
+// Search tasks query validation
+const searchTasksQueryValidation = Joi.object({
+  channelId: objectIdValidation.required().messages({
+    "any.required": "Channel ID is required",
+    "string.pattern.base": "Channel ID must be a valid ObjectId",
+  }),
+  search: Joi.string().trim().min(1).max(100).optional().messages({
+    "string.min": "Search term must be at least 1 character",
+    "string.max": "Search term must not exceed 100 characters",
+  }),
+  excludeTaskId: objectIdValidation.optional().messages({
+    "string.pattern.base": "Exclude task ID must be a valid ObjectId",
+  }),
+  limit: Joi.number().integer().min(1).max(50).default(20).optional().messages({
+    "number.min": "Limit must be at least 1",
+    "number.max": "Limit must not exceed 50",
+  }),
+});
+
 module.exports = {
   validateCreateTaskConnection: validateRequest(createTaskConnectionValidation),
   validateTaskIdParam: validateRequest(taskIdParamValidation, "params"),
@@ -81,10 +100,12 @@ module.exports = {
     connectionIdParamValidation,
     "params"
   ),
+  validateSearchTasksQuery: validateRequest(searchTasksQueryValidation, "query"),
 
   schemas: {
     createTaskConnectionValidation,
     taskIdParamValidation,
     connectionIdParamValidation,
+    searchTasksQueryValidation,
   },
 };

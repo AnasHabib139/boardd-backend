@@ -3,6 +3,75 @@
 const { Types } = require("mongoose");
 
 /**
+ * Aggregation pipeline to search tasks by name within a channel.
+ * Used by the connection dropdown to find tasks to connect.
+ */
+exports.getSearchableTasksQuery = (
+  channelId,
+  searchTerm,
+  excludeTaskId,
+  limit = 20
+) => {
+  const channelObjectId = Types.ObjectId.createFromHexString(channelId);
+
+  const matchStage = {
+    channelId: channelObjectId,
+    isActive: true,
+  };
+
+  if (searchTerm) {
+    matchStage.title = { $regex: searchTerm, $options: "i" };
+  }
+
+  if (excludeTaskId) {
+    matchStage._id = {
+      $ne: Types.ObjectId.createFromHexString(excludeTaskId),
+    };
+  }
+
+  return [
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: "tabtaskstatuses",
+        let: { projId: "$projectId", sKey: "$status" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$projectId", "$$projId"] },
+                  { $eq: ["$statusKey", "$$sKey"] },
+                ],
+              },
+            },
+          },
+          { $project: { _id: 0, statusName: 1, color: 1 } },
+        ],
+        as: "statusInfo",
+      },
+    },
+    {
+      $unwind: {
+        path: "$statusInfo",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $project: {
+        _id: 1,
+        title: 1,
+        status: { $ifNull: ["$statusInfo.statusName", "$status"] },
+        statusColor: { $ifNull: ["$statusInfo.color", null] },
+        priority: 1,
+      },
+    },
+    { $sort: { title: 1 } },
+    { $limit: limit },
+  ];
+};
+
+/**
  * Aggregation pipeline to get all connections for a task (bidirectional).
  * Resolves the "other" task with title, status, priority, project name, and channel name.
  */
