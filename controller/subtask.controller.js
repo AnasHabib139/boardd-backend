@@ -2,7 +2,7 @@
 
 const { parseBody, generateResponse } = require("../utils");
 const { STATUS_CODES, ACTION_TYPE } = require("../utils/constants");
-const { findUser } = require("../models/userModel");
+const { findUser, findManyUsers } = require("../models/userModel");
 const { findTask, updateTask } = require("../models/taskModel");
 const { findProject } = require("../models/projectModel");
 const {
@@ -387,22 +387,100 @@ exports.updateSubtask = async (req, res, next) => {
     // Get user info for socket emission
     const user = await findUser({ _id: userId });
 
-    // Create one general activity for the entire update
+    // Create activities for the update
     const userName = user?.name || "Someone";
-    const activityMessage = {
-      forCreator: `You updated subtask "${updatedSubtask.title}"`,
-      forOthers: `${userName} updated subtask "${updatedSubtask.title}"`,
-    };
+    const activities = [];
 
-    const activity = await createActivity({
-      projectId: subtask.projectId,
-      taskId: subtask.taskId,
-      subtaskId: subtask._id,
-      userId,
-      actionType: ACTION_TYPE.UPDATE_SUBTASK,
-      timestamp: new Date(),
-      message: activityMessage,
-    });
+    // Handle assignedTo changes with specific add/remove messages
+    if ("assignedTo" in previousValues) {
+      const previousAssignedTo = (previousValues.assignedTo || []).map((id) => id.toString());
+      const currentAssignedTo = (updateFields.assignedTo || []).map((id) => id.toString());
+
+      const addedAssignees = currentAssignedTo.filter((id) => !previousAssignedTo.includes(id));
+      const removedAssignees = previousAssignedTo.filter((id) => !currentAssignedTo.includes(id));
+
+      if (addedAssignees.length > 0) {
+        const addedUsers = await findManyUsers({ _id: { $in: addedAssignees } });
+        const addedNames = addedUsers.map((u) => u.name || u.email).join(", ");
+        activities.push(
+          await createActivity({
+            projectId: subtask.projectId,
+            taskId: subtask.taskId,
+            subtaskId: subtask._id,
+            userId,
+            actionType: ACTION_TYPE.ASSIGN_USER,
+            field: "assignedTo",
+            newValue: addedAssignees,
+            timestamp: new Date(),
+            message: {
+              forCreator: `You added ${addedNames} to subtask "${updatedSubtask.title}"`,
+              forOthers: `${userName} added ${addedNames} to subtask "${updatedSubtask.title}"`,
+            },
+          })
+        );
+      }
+
+      if (removedAssignees.length > 0) {
+        const removedUsers = await findManyUsers({ _id: { $in: removedAssignees } });
+        const removedNames = removedUsers.map((u) => u.name || u.email).join(", ");
+        activities.push(
+          await createActivity({
+            projectId: subtask.projectId,
+            taskId: subtask.taskId,
+            subtaskId: subtask._id,
+            userId,
+            actionType: ACTION_TYPE.UNASSIGN_USER,
+            field: "assignedTo",
+            newValue: removedAssignees,
+            timestamp: new Date(),
+            message: {
+              forCreator: `You removed ${removedNames} from subtask "${updatedSubtask.title}"`,
+              forOthers: `${userName} removed ${removedNames} from subtask "${updatedSubtask.title}"`,
+            },
+          })
+        );
+      }
+    }
+
+    // Create generic activity for non-assignedTo changes
+    const hasOtherChanges = Object.keys(previousValues).some((field) => field !== "assignedTo");
+    if (hasOtherChanges) {
+      activities.push(
+        await createActivity({
+          projectId: subtask.projectId,
+          taskId: subtask.taskId,
+          subtaskId: subtask._id,
+          userId,
+          actionType: ACTION_TYPE.UPDATE_SUBTASK,
+          timestamp: new Date(),
+          message: {
+            forCreator: `You updated subtask "${updatedSubtask.title}"`,
+            forOthers: `${userName} updated subtask "${updatedSubtask.title}"`,
+          },
+        })
+      );
+    }
+
+    // If no specific activities were created (edge case), create generic one
+    if (activities.length === 0) {
+      activities.push(
+        await createActivity({
+          projectId: subtask.projectId,
+          taskId: subtask.taskId,
+          subtaskId: subtask._id,
+          userId,
+          actionType: ACTION_TYPE.UPDATE_SUBTASK,
+          timestamp: new Date(),
+          message: {
+            forCreator: `You updated subtask "${updatedSubtask.title}"`,
+            forOthers: `${userName} updated subtask "${updatedSubtask.title}"`,
+          },
+        })
+      );
+    }
+
+    // Use the last activity for socket emission
+    const activity = activities[activities.length - 1];
 
     // Emit socket event using standardized approach
     try {
