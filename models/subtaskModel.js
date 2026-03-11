@@ -119,6 +119,14 @@ exports.findSubtaskPopulated = (query) =>
     "name email title designation image coverImage description dob gender nickname role"
   );
 
+// find subtask with context path populations (assignedTo + taskId + projectId)
+exports.findSubtaskWithContext = (query) =>
+  SubtaskModel.findOne(query)
+    .populate("assignedTo", "name email title designation image coverImage description dob gender nickname role")
+    .populate("taskId", "title channelId")
+    .populate("projectId", "name channelId")
+    .lean();
+
 // update subtask by query
 exports.updateSubtask = (query, update, options = {}) =>
   SubtaskModel.findOneAndUpdate(query, update, { new: true, ...options });

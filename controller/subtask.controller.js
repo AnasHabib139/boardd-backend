@@ -9,6 +9,7 @@ const {
   createSubtask,
   findSubtask,
   findSubtaskPopulated,
+  findSubtaskWithContext,
   updateSubtask,
   deleteSubtask,
 } = require("../models/subtaskModel");
@@ -26,13 +27,28 @@ exports.getSubtaskById = async (req, res, next) => {
   try {
     const { subtaskId } = req.params;
 
-    const subtask = await findSubtaskPopulated({ _id: subtaskId });
+    const subtask = await findSubtaskWithContext({ _id: subtaskId });
     if (!subtask) {
       return next({
         statusCode: STATUS_CODES.NOT_FOUND,
         message: "Subtask not found",
       });
     }
+
+    // Resolve channel name from project or task
+    let channelName = null;
+    const channelId = subtask.projectId?.channelId || subtask.taskId?.channelId;
+    if (channelId) {
+      const channel = await findChannel({ _id: channelId });
+      channelName = channel?.channelName || null;
+    }
+
+    subtask.contextPath = {
+      channelName,
+      projectName: subtask.projectId?.name || null,
+      parentTaskName: subtask.taskId?.title || null,
+      subtaskName: subtask.title,
+    };
 
     return generateResponse(subtask, "Subtask fetched successfully", res);
   } catch (error) {
