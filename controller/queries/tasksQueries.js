@@ -397,16 +397,51 @@ exports.getTaskByIdQuery = (taskId, userId = null) => {
                     isActive: true,
                   },
                 },
-                { $project: { _id: 1, title: 1, status: 1, priority: 1 } },
+                { $project: { _id: 1, title: 1, status: 1, priority: 1, projectId: 1 } },
               ],
               as: "connectedTask",
             },
           },
           { $unwind: "$connectedTask" },
           {
+            $lookup: {
+              from: "tabtaskstatuses",
+              let: {
+                projId: "$connectedTask.projectId",
+                sKey: "$connectedTask.status",
+              },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $eq: ["$projectId", "$$projId"] },
+                        { $eq: ["$statusKey", "$$sKey"] },
+                      ],
+                    },
+                  },
+                },
+                { $project: { _id: 0, statusName: 1, color: 1 } },
+              ],
+              as: "statusInfo",
+            },
+          },
+          {
+            $unwind: {
+              path: "$statusInfo",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          {
             $project: {
               _id: 1,
-              connectedTask: 1,
+              connectedTask: {
+                _id: "$connectedTask._id",
+                title: "$connectedTask.title",
+                status: { $ifNull: ["$statusInfo.statusName", "$connectedTask.status"] },
+                statusColor: { $ifNull: ["$statusInfo.color", null] },
+                priority: "$connectedTask.priority",
+              },
               createdAt: 1,
             },
           },

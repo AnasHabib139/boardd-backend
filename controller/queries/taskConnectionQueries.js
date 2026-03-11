@@ -58,6 +58,36 @@ exports.getTaskConnectionsQuery = (taskId) => {
     {
       $unwind: "$connectedTask",
     },
+    // Lookup status info from tabtaskstatuses
+    {
+      $lookup: {
+        from: "tabtaskstatuses",
+        let: {
+          projId: "$connectedTask.projectId",
+          sKey: "$connectedTask.status",
+        },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$projectId", "$$projId"] },
+                  { $eq: ["$statusKey", "$$sKey"] },
+                ],
+              },
+            },
+          },
+          { $project: { _id: 0, statusName: 1, color: 1 } },
+        ],
+        as: "statusInfo",
+      },
+    },
+    {
+      $unwind: {
+        path: "$statusInfo",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
     // Lookup project for project name
     {
       $lookup: {
@@ -110,7 +140,8 @@ exports.getTaskConnectionsQuery = (taskId) => {
         connectedTask: {
           _id: "$connectedTask._id",
           title: "$connectedTask.title",
-          status: "$connectedTask.status",
+          status: { $ifNull: ["$statusInfo.statusName", "$connectedTask.status"] },
+          statusColor: { $ifNull: ["$statusInfo.color", null] },
           priority: "$connectedTask.priority",
           projectName: { $ifNull: ["$project.name", null] },
           channelName: { $ifNull: ["$channel.channelName", null] },
