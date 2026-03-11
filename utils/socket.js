@@ -603,6 +603,9 @@ const processTaskUpdate = async (socket, data) => {
       const newAssignees = processedValue.filter(
         (id) => !previousValue?.includes(id.toString())
       );
+      const removedAssignees = (previousValue || []).filter(
+        (id) => !processedValue.map(v => v.toString()).includes(id.toString())
+      );
 
       for (const assigneeId of newAssignees) {
         if (assigneeId.toString() !== userId) {
@@ -617,6 +620,25 @@ const processTaskUpdate = async (socket, data) => {
               createdBy: userId,
               title: "Task Assignment",
               message: `${userName} assigned you to task "${task.title}"`,
+              contextPath,
+            })
+          );
+        }
+      }
+
+      for (const removedId of removedAssignees) {
+        if (removedId.toString() !== userId) {
+          notifications.push(
+            createNotification({
+              userId: removedId,
+              type: "MENTION",
+              projectId: task.projectId || null,
+              channelId: channel._id,
+              tabId: project?.tabId || null,
+              taskId: task._id,
+              createdBy: userId,
+              title: "Task Unassignment",
+              message: `${userName} removed you from task "${task.title}"`,
               contextPath,
             })
           );
@@ -1857,6 +1879,16 @@ const generateTabNotificationMessage = (type, payload) => {
       };
 
     case "TASK_UPDATED":
+      // For batch updates (no field specified), use the activity message directly
+      if (!field && activities && activities.length > 0) {
+        const activityMsg = activities[0].message;
+        return {
+          title: "Task Updated",
+          message: activityMsg?.forOthers || `${userName} updated "${taskTitle}"`,
+          icon: "📝",
+          color: "info",
+        };
+      }
       let updateMessage = "";
       switch (field) {
         case "status":
@@ -1865,9 +1897,21 @@ const generateTabNotificationMessage = (type, payload) => {
         case "priority":
           updateMessage = `set priority to "${newValue}"`;
           break;
-        case "assignedTo":
-          updateMessage = `updated assignees`;
+        case "assignedTo": {
+          const prevIds = (previousValue || []).map(id => id.toString());
+          const newIds = (newValue || []).map(id => id.toString());
+          const added = newIds.filter(id => !prevIds.includes(id));
+          const removed = prevIds.filter(id => !newIds.includes(id));
+
+          if (added.length > 0 && removed.length === 0) {
+            updateMessage = added.length === 1 ? `added an assignee` : `added ${added.length} assignees`;
+          } else if (removed.length > 0 && added.length === 0) {
+            updateMessage = removed.length === 1 ? `removed an assignee` : `removed ${removed.length} assignees`;
+          } else {
+            updateMessage = `updated assignees`;
+          }
           break;
+        }
         case "dueDate":
           updateMessage = `updated due date`;
           break;
