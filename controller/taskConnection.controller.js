@@ -288,7 +288,7 @@ exports.searchTasksForConnection = async (req, res, next) => {
       channelId,
       search,
       excludeTaskId,
-      limit
+      Number(limit)
     );
     const tasks = await aggregateTasks(pipeline);
 
