@@ -482,14 +482,12 @@ exports.editTeamCard = async (req, res, next) => {
     let responseMessage;
     if (isActive === false) {
       responseMessage = "Team card deleted successfully";
+    } else if (title !== undefined && isActive === undefined) {
+      responseMessage = "Team card name updated successfully";
+    } else if (isActive === true && title === undefined) {
+      responseMessage = "Team card activated successfully";
     } else {
-      const changes = [];
-      if (title !== undefined) changes.push("title updated");
-      if (isActive === true) changes.push("card activated");
-
-      responseMessage = changes.length > 0
-        ? `Team card updated successfully: ${changes.join(", ")}`
-        : "Team card updated successfully";
+      responseMessage = "Team card updated successfully";
     }
 
     return generateResponse(
