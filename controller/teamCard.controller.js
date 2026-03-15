@@ -347,7 +347,7 @@ exports.editMemberInCard = async (req, res, next) => {
       if (designation !== undefined) changes.push("designation");
 
       responseMessage = changes.length > 0
-        ? `Member ${changes.join(", ")} updated successfully`
+        ? `Member ${changes.join(" and ")} updated successfully`
         : "Member updated successfully";
     }
 
