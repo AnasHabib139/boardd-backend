@@ -177,13 +177,6 @@ exports.getImportantInboxTasksQuery = (userId) => {
                         format: "%Y-%m-%d",
                         date: "$dueDate"
                       }
-                    },
-                    " at ",
-                    {
-                      $dateToString: {
-                        format: "%H:%M",
-                        date: "$dueDate"
-                      }
                     }
                   ]
                 },
@@ -193,13 +186,6 @@ exports.getImportantInboxTasksQuery = (userId) => {
                     {
                       $dateToString: {
                         format: "%Y-%m-%d",
-                        date: "$dueDate"
-                      }
-                    },
-                    " at ",
-                    {
-                      $dateToString: {
-                        format: "%H:%M",
                         date: "$dueDate"
                       }
                     }
@@ -535,13 +521,6 @@ exports.getOutboxInboxTasksQuery = (userId) => {
                         format: "%Y-%m-%d",
                         date: "$dueDate"
                       }
-                    },
-                    " at ",
-                    {
-                      $dateToString: {
-                        format: "%H:%M",
-                        date: "$dueDate"
-                      }
                     }
                   ]
                 },
@@ -551,13 +530,6 @@ exports.getOutboxInboxTasksQuery = (userId) => {
                     {
                       $dateToString: {
                         format: "%Y-%m-%d",
-                        date: "$dueDate"
-                      }
-                    },
-                    " at ",
-                    {
-                      $dateToString: {
-                        format: "%H:%M",
                         date: "$dueDate"
                       }
                     }
@@ -909,13 +881,6 @@ exports.getClearedInboxTasksQuery = (userId) => {
                         format: "%Y-%m-%d",
                         date: "$task.dueDate"
                       }
-                    },
-                    " at ",
-                    {
-                      $dateToString: {
-                        format: "%H:%M",
-                        date: "$task.dueDate"
-                      }
                     }
                   ]
                 },
@@ -925,13 +890,6 @@ exports.getClearedInboxTasksQuery = (userId) => {
                     {
                       $dateToString: {
                         format: "%Y-%m-%d",
-                        date: "$task.dueDate"
-                      }
-                    },
-                    " at ",
-                    {
-                      $dateToString: {
-                        format: "%H:%M",
                         date: "$task.dueDate"
                       }
                     }
