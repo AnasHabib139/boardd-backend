@@ -44,10 +44,10 @@ exports.getTeamCardsWithMembersQuery = (companyId) => {
       },
     },
     
-    // Lookup subtasks assigned to this member
+    // Lookup tasks assigned to this member
     {
       $lookup: {
-        from: "subtasks",
+        from: "tasks",
         let: { userId: "$members.userId" },
         pipeline: [
           {
@@ -55,27 +55,29 @@ exports.getTeamCardsWithMembersQuery = (companyId) => {
               $expr: {
                 $in: ["$$userId", "$assignedTo"]
               },
-              // Only count active subtasks
-              isActive: true
+              $or: [
+                { isDeleted: { $exists: false } },
+                { isDeleted: false }
+              ]
             }
           },
           {
             $project: {
               _id: 1,
-              isCompleted: 1,
+              status: 1,
             }
           }
         ],
-        as: "memberSubtasks",
+        as: "memberTasks",
       },
     },
-    
-    // Calculate progress for each member based on subtasks
+
+    // Calculate progress for each member based on tasks
     {
       $addFields: {
         "members.progress": {
           $cond: {
-            if: { $gt: [{ $size: "$memberSubtasks" }, 0] },
+            if: { $gt: [{ $size: "$memberTasks" }, 0] },
             then: {
               $multiply: [
                 {
@@ -83,12 +85,12 @@ exports.getTeamCardsWithMembersQuery = (companyId) => {
                     {
                       $size: {
                         $filter: {
-                          input: "$memberSubtasks",
-                          cond: { $eq: ["$$this.isCompleted", true] }
+                          input: "$memberTasks",
+                          cond: { $eq: ["$$this.status", "completed"] }
                         }
                       }
                     },
-                    { $size: "$memberSubtasks" }
+                    { $size: "$memberTasks" }
                   ]
                 },
                 100
