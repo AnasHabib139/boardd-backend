@@ -274,7 +274,7 @@ exports.toggleClearedStatus = async (req, res, next) => {
         isCleared: updatedEntry.isCleared,
         updatedAt: updatedEntry.updatedAt
       },
-      `Task ${newClearedStatus ? 'cleared' : 'restored'} from ${source}`,
+      `Task ${newClearedStatus ? 'cleared from' : 'restored to'} ${source}`,
       res,
       STATUS_CODES.SUCCESS
     );
