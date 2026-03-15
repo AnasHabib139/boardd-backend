@@ -3,7 +3,7 @@
 const { parseBody, generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
-const { getAllTasks } = require("../models/taskModel");
+const { getAllTasks, findTask } = require("../models/taskModel");
 const { bulkCreateTaskInboxEntries, findTaskInboxEntry, upsertTaskInboxEntry, findUserTaskInboxEntries } = require("../models/taskInboxModel");
 const {
   getUserInboxTasksQuery,
@@ -263,6 +263,10 @@ exports.toggleClearedStatus = async (req, res, next) => {
       console.error("Socket error in toggleClearedStatus:", socketError);
     }
 
+    // Determine if task is from inbox or outbox
+    const task = await findTask({ _id: taskId });
+    const source = task && task.createdBy?.toString() === userId.toString() ? "outbox" : "inbox";
+
     return generateResponse(
       {
         taskId,
@@ -270,7 +274,7 @@ exports.toggleClearedStatus = async (req, res, next) => {
         isCleared: updatedEntry.isCleared,
         updatedAt: updatedEntry.updatedAt
       },
-      `Task ${newClearedStatus ? 'cleared' : 'restored'} from inbox`,
+      `Task ${newClearedStatus ? 'cleared' : 'restored'} from ${source}`,
       res,
       STATUS_CODES.SUCCESS
     );
