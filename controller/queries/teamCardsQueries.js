@@ -101,7 +101,7 @@ exports.getTeamCardsWithMembersQuery = (companyId) => {
         },
         "members._id": "$members._id",
         "members.userId": "$members.userId",
-        "members.name": "$memberUser.name",
+        "members.name": "$members.memberName",
         "members.email": "$memberUser.email",
         "members.title": "$memberUser.title",
         "members.designation": "$members.designation",
