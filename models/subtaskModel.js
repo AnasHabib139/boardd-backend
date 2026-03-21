@@ -123,6 +123,7 @@ exports.findSubtaskPopulated = (query) =>
 exports.findSubtaskWithContext = (query) =>
   SubtaskModel.findOne(query)
     .populate("assignedTo", "name email title designation image coverImage description dob gender nickname role")
+    .populate("createdBy", "name email title designation image coverImage description dob gender nickname role")
     .populate("taskId", "title channelId")
     .populate("projectId", "name channelId")
     .lean();
