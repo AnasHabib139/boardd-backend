@@ -74,6 +74,65 @@ exports.getCompanyUsersAdmin = async (req, res, next) => {
 };
 
 /**
+ * Export all company users as CSV (no pagination)
+ * GET /api/admin/users/export?search=
+ */
+exports.exportCompanyUsers = async (req, res, next) => {
+  try {
+    const { search } = req.query;
+    const adminId = req.user.id;
+
+    const admin = await findUser({ _id: adminId });
+    if (!admin) {
+      return next({ statusCode: STATUS_CODES.UNAUTHORIZED, message: "Unauthorized" });
+    }
+
+    const { model } = require("mongoose");
+    const UserModel = model("User");
+
+    const pipeline = getCompanyUsersAdminQuery(admin.companyId, search || null);
+    const users = await UserModel.aggregate(pipeline);
+
+    const roleDisplayName = { employee: "Member", admin: "Admin", guest: "Guest" };
+
+    const esc = (str) => {
+      if (str == null) return "";
+      const s = String(str);
+      return s.includes(",") || s.includes('"') || s.includes("\n")
+        ? `"${s.replace(/"/g, '""')}"`
+        : s;
+    };
+
+    const rows = [
+      ["Name", "Email", "Role", "Status", "Title", "Last Login", "Joined"].join(","),
+    ];
+
+    for (const u of users) {
+      rows.push([
+        esc(u.name),
+        esc(u.email),
+        esc(roleDisplayName[u.role] || u.role),
+        esc(u.status),
+        esc(u.title || u.designation),
+        u.lastLoginAt ? new Date(u.lastLoginAt).toISOString().split("T")[0] : "",
+        u.createdAt ? new Date(u.createdAt).toISOString().split("T")[0] : "",
+      ].join(","));
+    }
+
+    const filename = `users-${new Date().toISOString().split("T")[0]}.csv`;
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.send(rows.join("\n"));
+  } catch (error) {
+    console.error("Error in exportCompanyUsers:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to export users",
+    });
+  }
+};
+
+/**
  * Get invited users from reserved invite slots
  * Returns only invited users who haven't joined yet
  */

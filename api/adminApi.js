@@ -3,6 +3,7 @@
 const { Router } = require("express");
 const {
   getCompanyUsersAdmin,
+  exportCompanyUsers,
   getInvitedUsers,
   cancelInvite,
   toggleUserSeat,
@@ -28,6 +29,14 @@ class AdminAPI {
 
   setupRoutes() {
     let router = this.router;
+
+    // Export all company users as CSV
+    router.get(
+      "/users/export",
+      Auth([ROLES.ADMIN]),
+      checkPermission("accessUserManagement"),
+      exportCompanyUsers
+    );
 
     // Get all company users for admin management
     router.get(
