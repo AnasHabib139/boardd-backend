@@ -689,7 +689,7 @@ exports.changeUserRole = async (req, res, next) => {
         previousRole: targetUser.role,
         newRole: role,
       },
-      `User role changed from ${targetUser.role} to ${role} successfully`,
+      `User role changed from ${({ employee: "Member", admin: "Admin", guest: "Guest" })[targetUser.role] || targetUser.role} to ${({ employee: "Member", admin: "Admin", guest: "Guest" })[role] || role} successfully`,
       res,
       STATUS_CODES.SUCCESS
     );
