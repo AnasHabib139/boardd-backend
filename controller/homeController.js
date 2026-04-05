@@ -135,8 +135,25 @@ exports.getDashboardStats = async (req, res, next) => {
       hasPrevPage: pageNum > 1,
     };
 
+    const showJobTitle = user.settings?.profile?.showJobTitleInProfile !== false;
+
+    const userDetails = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      image: user.image,
+      coverImage: user.coverImage,
+      role: user.role,
+      nickname: user.nickname,
+      gender: user.gender,
+      dob: user.dob,
+      description: user.description,
+      ...(showJobTitle && { title: user.title, designation: user.designation }),
+    };
+
     return generateResponse(
       {
+        user: userDetails,
         userStats: {
           activeTaskCount: allTasksCount,
           taskCompletedCount: completedTasksCount,
