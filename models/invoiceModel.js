@@ -800,6 +800,47 @@ exports.getTotalRevenueByTab = async (tabId) => {
 };
 
 /**
+ * Get monthly revenue stats for a client (company-scoped, no tabId)
+ */
+exports.getRevenueStatsByClient = async (clientId, year) => {
+  const startOfYear = new Date(year, 0, 1);
+  const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
+  const clientObjectId = new Types.ObjectId(clientId);
+
+  return InvoiceModel.aggregate([
+    {
+      $match: {
+        clientId: clientObjectId,
+        status: "paid",
+        paidAt: { $gte: startOfYear, $lte: endOfYear },
+      },
+    },
+    {
+      $group: {
+        _id: { $month: "$paidAt" },
+        totalAmount: { $sum: "$amountPaid" },
+        largestPayment: { $max: "$amountPaid" },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+};
+
+/**
+ * Get all-time total revenue for a client (company-scoped, no tabId)
+ */
+exports.getTotalRevenueByClient = async (clientId) => {
+  const clientObjectId = new Types.ObjectId(clientId);
+
+  const result = await InvoiceModel.aggregate([
+    { $match: { clientId: clientObjectId, status: "paid" } },
+    { $group: { _id: null, total: { $sum: "$amountPaid" } } },
+  ]);
+
+  return result.length > 0 ? result[0].total : 0;
+};
+
+/**
  * Get monthly revenue stats for a company (for graph display)
  * Returns monthly totals and largest payments for the specified year
  */

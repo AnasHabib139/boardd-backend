@@ -20,6 +20,35 @@ const simplifyClientResponse = (client) => {
   return rest;
 };
 
+/**
+ * Resolve a client by tabId or clientId, and verify access.
+ * Returns { client, resolvedTabId (may be null), isTabScoped } or calls next() with error and returns null.
+ */
+const resolveClientAndAccess = async (id, userId, user, next) => {
+  // Try tab-scoped first
+  const tab = await findChannelTab({ _id: id });
+  if (tab) {
+    if (!tab.members?.includes(userId)) {
+      next({ statusCode: STATUS_CODES.FORBIDDEN, message: "You are not a member of this tab" });
+      return null;
+    }
+    const client = await findClient({ tabId: id });
+    return { client, resolvedTabId: id, isTabScoped: true };
+  }
+
+  // Fallback: treat id as clientId
+  const client = await findClient({ _id: id });
+  if (!client) {
+    next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Client not found" });
+    return null;
+  }
+  if (client.companyId?.toString() !== user.companyId?.toString()) {
+    next({ statusCode: STATUS_CODES.FORBIDDEN, message: "Access denied" });
+    return null;
+  }
+  return { client, resolvedTabId: null, isTabScoped: false };
+};
+
 exports.createOrUpdateClient = async (req, res, next) => {
   try {
     const { tabId, clientDetails, projects } = parseBody(req.body);
@@ -203,7 +232,7 @@ exports.createOrUpdateClient = async (req, res, next) => {
  */
 exports.updateClientData = async (req, res, next) => {
   try {
-    const { tabId } = req.params;
+    const { tabId: paramId } = req.params;
     const { type, id, data } = parseBody(req.body);
 
     // Validate request structure
@@ -222,78 +251,48 @@ exports.updateClientData = async (req, res, next) => {
       });
     }
 
-    // Find and validate tab
-    const tab = await findChannelTab({ _id: tabId });
-    if (!tab) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Tab not found",
-      });
-    }
-
-    // Check if user is member of the tab
     const userId = req.user.id;
-    if (!tab?.members?.includes(userId)) {
-      return next({
-        statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You are not a member of this tab",
-      });
-    }
-
-    // Get user info for activity messages
     const user = await findUser({ _id: userId });
     if (!user) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "User not found",
-      });
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "User not found" });
     }
 
-    // Find the client
-    const client = await findClient({ tabId });
-    if (!client) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Client not found",
-      });
-    }
+    const resolved = await resolveClientAndAccess(paramId, userId, user, next);
+    if (!resolved) return;
 
+    const { client, resolvedTabId } = resolved;
     const userName = user.name || user.email;
+    const clientQuery = resolvedTabId ? { tabId: resolvedTabId } : { _id: client._id };
+
+    if (!client) {
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Client not found" });
+    }
 
     // Update based on type
     let updatedClient;
     let activities = [];
 
     if (type === "clientDetails") {
-      // Find and update specific client details
       const clientDetailsIndex = client.clientDetails.findIndex(
         (cd) => cd._id.toString() === id
       );
 
       if (clientDetailsIndex === -1) {
-        return next({
-          statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Client details not found",
-        });
+        return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Client details not found" });
       }
 
-      // Update the specific client details
-      updatedClient = await updateClient(
-        { tabId },
-        {
-          $set: {
-            [`clientDetails.${clientDetailsIndex}`]: {
-              ...data,
-              _id: client.clientDetails[clientDetailsIndex]._id, // Keep the original ID
-            },
-            updatedAt: new Date(),
+      updatedClient = await updateClient(clientQuery, {
+        $set: {
+          [`clientDetails.${clientDetailsIndex}`]: {
+            ...data,
+            _id: client.clientDetails[clientDetailsIndex]._id,
           },
-        }
-      );
+          updatedAt: new Date(),
+        },
+      });
 
-      // Create activity for client details update
       const clientDetailsActivity = await createClientDetailsActivity({
-        tabId,
+        tabId: resolvedTabId,
         userId,
         userName,
         client: updatedClient,
@@ -302,35 +301,26 @@ exports.updateClientData = async (req, res, next) => {
       });
       activities.push(clientDetailsActivity);
     } else if (type === "projects") {
-      // Find and update specific project
       const projectIndex = client.projects.findIndex(
         (p) => p._id.toString() === id
       );
 
       if (projectIndex === -1) {
-        return next({
-          statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Project not found",
-        });
+        return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Project not found" });
       }
 
-      // Update the specific project
-      updatedClient = await updateClient(
-        { tabId },
-        {
-          $set: {
-            [`projects.${projectIndex}`]: {
-              ...data,
-              _id: client.projects[projectIndex]._id, // Keep the original ID
-            },
-            updatedAt: new Date(),
+      updatedClient = await updateClient(clientQuery, {
+        $set: {
+          [`projects.${projectIndex}`]: {
+            ...data,
+            _id: client.projects[projectIndex]._id,
           },
-        }
-      );
+          updatedAt: new Date(),
+        },
+      });
 
-      // Create activity for project update
       const projectActivity = await createProjectActivity({
-        tabId,
+        tabId: resolvedTabId,
         userId,
         userName,
         client: updatedClient,
@@ -360,7 +350,7 @@ exports.updateClientData = async (req, res, next) => {
  */
 exports.deleteClientData = async (req, res, next) => {
   try {
-    const { tabId } = req.params;
+    const { tabId: paramId } = req.params;
     const { type, id } = parseBody(req.body);
 
     // Validate request structure
@@ -379,73 +369,39 @@ exports.deleteClientData = async (req, res, next) => {
       });
     }
 
-    // Find and validate tab
-    const tab = await findChannelTab({ _id: tabId });
-    if (!tab) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Tab not found",
-      });
-    }
-
-    // Check if user is member of the tab
     const userId = req.user.id;
-    if (!tab?.members?.includes(userId)) {
-      return next({
-        statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You are not a member of this tab",
-      });
-    }
-
-    // Get user info for activity messages
     const user = await findUser({ _id: userId });
     if (!user) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "User not found",
-      });
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "User not found" });
     }
 
-    // Find the client
-    const client = await findClient({ tabId });
-    if (!client) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Client not found",
-      });
-    }
+    const resolved = await resolveClientAndAccess(paramId, userId, user, next);
+    if (!resolved) return;
 
+    const { client, resolvedTabId } = resolved;
     const userName = user.name || user.email;
+    const clientQuery = resolvedTabId ? { tabId: resolvedTabId } : { _id: client._id };
 
     // Delete based on type
     let updatedClient;
     let activities = [];
 
     if (type === "clientDetails") {
-      // Check if client details exists
       const clientDetailsExists = client.clientDetails.some(
         (cd) => cd._id.toString() === id
       );
 
       if (!clientDetailsExists) {
-        return next({
-          statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Client details not found",
-        });
+        return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Client details not found" });
       }
 
-      // Remove the specific client details
-      updatedClient = await updateClient(
-        { tabId },
-        {
-          $pull: { clientDetails: { _id: id } },
-          $set: { updatedAt: new Date() },
-        }
-      );
+      updatedClient = await updateClient(clientQuery, {
+        $pull: { clientDetails: { _id: id } },
+        $set: { updatedAt: new Date() },
+      });
 
-      // Create activity for client details deletion
       const deleteActivity = await createActivity({
-        tabId,
+        tabId: resolvedTabId,
         clientId: client._id,
         userId,
         actionType: ACTION_TYPE.DELETE_CLIENT_DETAILS,
@@ -457,30 +413,21 @@ exports.deleteClientData = async (req, res, next) => {
       });
       activities.push(deleteActivity);
     } else if (type === "projects") {
-      // Check if project exists
       const projectExists = client.projects.some(
         (p) => p._id.toString() === id
       );
 
       if (!projectExists) {
-        return next({
-          statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Project not found",
-        });
+        return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Project not found" });
       }
 
-      // Remove the specific project
-      updatedClient = await updateClient(
-        { tabId },
-        {
-          $pull: { projects: { _id: id } },
-          $set: { updatedAt: new Date() },
-        }
-      );
+      updatedClient = await updateClient(clientQuery, {
+        $pull: { projects: { _id: id } },
+        $set: { updatedAt: new Date() },
+      });
 
-      // Create activity for project deletion
       const deleteActivity = await createActivity({
-        tabId,
+        tabId: resolvedTabId,
         clientId: client._id,
         userId,
         actionType: ACTION_TYPE.DELETE_CLIENT_PROJECT,
@@ -508,18 +455,19 @@ exports.deleteClientData = async (req, res, next) => {
   }
 };
 
-//get client for a tab
-
 exports.getClientForTab = async (req, res, next) => {
   try {
-    const tabId = req.params.tabId;
-    const client = await findClient({ tabId });
-    return generateResponse(
-      client,
-      "Client fetched successfully",
-      res,
-      STATUS_CODES.SUCCESS
-    );
+    const { tabId: paramId } = req.params;
+    const userId = req.user.id;
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "User not found" });
+    }
+
+    const resolved = await resolveClientAndAccess(paramId, userId, user, next);
+    if (!resolved) return;
+
+    return generateResponse(resolved.client, "Client fetched successfully", res, STATUS_CODES.SUCCESS);
   } catch (error) {
     next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
@@ -534,37 +482,28 @@ exports.getClientForTab = async (req, res, next) => {
  */
 exports.getRevenueStats = async (req, res, next) => {
   try {
-    const { tabId } = req.params;
+    const { tabId: paramId } = req.params;
     const year = parseInt(req.query.year) || new Date().getFullYear();
 
-    // Validate tab exists
-    const tab = await findChannelTab({ _id: tabId });
-    if (!tab) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Tab not found",
-      });
-    }
-
-    // Check if user is member of the tab
     const userId = req.user.id;
-    if (!tab?.members?.includes(userId)) {
-      return next({
-        statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You are not a member of this tab",
-      });
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "User not found" });
     }
 
-    // Get revenue data from invoice model
+    const resolved = await resolveClientAndAccess(paramId, userId, user, next);
+    if (!resolved) return;
+
     const {
       getRevenueStatsByTab,
       getTotalRevenueByTab,
+      getRevenueStatsByClient,
+      getTotalRevenueByClient,
     } = require("../models/invoiceModel");
 
-    const [monthlyData, total] = await Promise.all([
-      getRevenueStatsByTab(tabId, year),
-      getTotalRevenueByTab(tabId),
-    ]);
+    const [monthlyData, total] = resolved.isTabScoped
+      ? await Promise.all([getRevenueStatsByTab(paramId, year), getTotalRevenueByTab(paramId)])
+      : await Promise.all([getRevenueStatsByClient(resolved.client._id, year), getTotalRevenueByClient(resolved.client._id)]);
 
     // Month names for display
     const monthNames = [
