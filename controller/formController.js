@@ -193,7 +193,7 @@ exports.createForm = async (req, res, next) => {
       templateCategory: templateCategory || undefined,
       isFolder: isFolder || false,
       tabId,
-      channelId,
+      channelId: channel ? channel._id : channelId, // derive from tab lookup, not raw body
       createdBy: userId,
       fields: processedFields,
       attachments: attachments || [],
@@ -2428,7 +2428,10 @@ exports.shareFormToChannelChat = async (req, res, next) => {
  * File fields → attachments, URL fields → links, everything else → customFields.
  */
 const createTaskFromFormResponse = async (form, validatedResponses, invite) => {
-  const channel = await findChannel({ _id: form.channelId });
+  // Derive channelId from tab if not directly stored on the form
+  const channelId = form.channelId ||
+    (form.tabId ? (await findChannelTab({ _id: form.tabId }))?.channelId : null);
+  const channel = await findChannel({ _id: channelId });
   if (!channel) return;
 
   const FIELD_TYPE_TO_CUSTOM = {
@@ -2480,7 +2483,7 @@ const createTaskFromFormResponse = async (form, validatedResponses, invite) => {
   const taskData = {
     title: form.title,
     description: `Form response from ${invite.invitedName || "Unknown"} (${invite.invitedEmail || ""})`,
-    channelId: form.channelId,
+    channelId,
     tabId: form.tabId,
     companyId: channel.companyId,
     createdBy: form.createdBy,
