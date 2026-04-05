@@ -97,10 +97,10 @@ const createOrUpdateClientSchema = Joi.object({
   tabId: Joi.string()
     .trim()
     .pattern(/^[0-9a-fA-F]{24}$/)
-    .required()
+    .optional()
+    .allow(null, "")
     .messages({
       "string.pattern.base": "Tab ID must be a valid MongoDB ObjectId",
-      "string.empty": "Tab ID is required",
     }),
 
   clientDetails: clientDetailsSchema.optional(),

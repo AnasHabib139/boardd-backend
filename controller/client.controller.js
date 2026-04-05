@@ -32,22 +32,36 @@ exports.createOrUpdateClient = async (req, res, next) => {
       });
     }
 
-    // Find and validate tab
-    const tab = await findChannelTab({ _id: tabId });
-    if (!tab) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Tab not found",
-      });
-    }
-
-    // Check if user is member of the tab
     const userId = req.user.id;
-    if (!tab?.members?.includes(userId)) {
-      return next({
-        statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You are not a member of this tab",
-      });
+    let companyId;
+
+    if (tabId) {
+      // Tab-scoped path: validate tab and membership
+      const tab = await findChannelTab({ _id: tabId });
+      if (!tab) {
+        return next({
+          statusCode: STATUS_CODES.NOT_FOUND,
+          message: "Tab not found",
+        });
+      }
+
+      if (!tab?.members?.includes(userId)) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "You are not a member of this tab",
+        });
+      }
+
+      companyId = tab.companyId;
+    } else {
+      // Company-scoped path: no tab required
+      companyId = req.user.companyId;
+      if (!companyId) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "Company information not found",
+        });
+      }
     }
 
     // Get user info for activity messages
@@ -61,8 +75,13 @@ exports.createOrUpdateClient = async (req, res, next) => {
 
     const userName = user.name || user.email;
 
-    // Check if client already exists for this tab
-    const existingClient = await findClient({ tabId });
+    // Query key: tab-scoped vs company-scoped (no tabId)
+    const clientQuery = tabId
+      ? { tabId }
+      : { companyId, tabId: { $exists: false } };
+
+    // Check if client already exists
+    const existingClient = await findClient(clientQuery);
 
     let client;
     let activities = [];
@@ -110,7 +129,7 @@ exports.createOrUpdateClient = async (req, res, next) => {
       // Add updated timestamp
       updateOperations.$set = { updatedAt: new Date() };
 
-      client = await updateClient({ tabId }, updateOperations);
+      client = await updateClient(clientQuery, updateOperations);
 
       return generateResponse(
         { client: simplifyClientResponse(client), activities },
@@ -124,7 +143,7 @@ exports.createOrUpdateClient = async (req, res, next) => {
         tabId,
         clientDetails: clientDetails ? [clientDetails] : [],
         projects: projects ? [projects] : [],
-        companyId: tab.companyId, // Link to company for payment processing
+        companyId, // Link to company for payment processing
       };
 
       client = await createClient(newClientData);

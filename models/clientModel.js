@@ -39,7 +39,7 @@ const projectSchema = new Schema(
 //client schema
 const clientSchema = new Schema({
   clientDetails: [{ type: clientDetailsSchema }],
-  tabId: { type: Types.ObjectId, ref: "ChannelTab", required: true },
+  tabId: { type: Types.ObjectId, ref: "ChannelTab" },
   projects: [projectSchema],
 
   // Stripe payment information
