@@ -33,6 +33,17 @@ exports.createOrUpdateClient = async (req, res, next) => {
     }
 
     const userId = req.user.id;
+
+    // Get user info first (needed for companyId fallback + activity messages)
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    const userName = user.name || user.email;
     let companyId;
 
     if (tabId) {
@@ -54,8 +65,8 @@ exports.createOrUpdateClient = async (req, res, next) => {
 
       companyId = tab.companyId;
     } else {
-      // Company-scoped path: no tab required
-      companyId = req.user.companyId;
+      // Company-scoped path: get companyId from user document
+      companyId = user.companyId;
       if (!companyId) {
         return next({
           statusCode: STATUS_CODES.FORBIDDEN,
@@ -63,17 +74,6 @@ exports.createOrUpdateClient = async (req, res, next) => {
         });
       }
     }
-
-    // Get user info for activity messages
-    const user = await findUser({ _id: userId });
-    if (!user) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "User not found",
-      });
-    }
-
-    const userName = user.name || user.email;
 
     // Query key: tab-scoped vs company-scoped (no tabId)
     const clientQuery = tabId
