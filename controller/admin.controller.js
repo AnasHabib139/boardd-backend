@@ -635,28 +635,28 @@ exports.changeUserRole = async (req, res, next) => {
     if (targetUser.role === ROLES.EMPLOYEE && role === ROLES.GUEST) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Cannot change employee to guest",
+        message: "Members and Admins with a company email address cannot be assigned the Guest role",
       });
     }
 
     if (targetUser.role === ROLES.GUEST && (role === ROLES.EMPLOYEE || role === ROLES.ADMIN)) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Cannot change guest to employee or admin",
+        message: "Guest users with an external email address cannot be assigned the Member or Admin role",
       });
     }
 
     if (isSameDomain && role === ROLES.GUEST) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Users from company domain cannot be assigned guest role",
+        message: "Users with a company email address cannot be assigned the Guest role",
       });
     }
 
     if (!isSameDomain && (role === ROLES.ADMIN || role === ROLES.EMPLOYEE)) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Users from external domains can only be assigned guest role",
+        message: "Users with an external email address can only be assigned the Guest role",
       });
     }
 
