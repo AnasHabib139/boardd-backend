@@ -40,10 +40,10 @@ const activitySchema = new Schema({
   timestamp: { type: Date, default: Date.now },
 });
 
-// Add validation to ensure either projectId, tabId, or channelId is provided
+// Add validation to ensure either projectId, tabId, channelId, or clientId is provided
 activitySchema.pre("validate", function (next) {
-  if (!this.projectId && !this.tabId && !this.channelId) {
-    next(new Error("Either projectId, tabId, or channelId must be provided"));
+  if (!this.projectId && !this.tabId && !this.channelId && !this.clientId) {
+    next(new Error("Either projectId, tabId, channelId, or clientId must be provided"));
   } else {
     next();
   }
