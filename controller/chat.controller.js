@@ -502,9 +502,23 @@ exports.getConversations = async (req, res, next) => {
         lastMessageAt: selfConvo ? selfConvo.lastMessageAt : null,
         lastMessageText: selfConvo ? selfConvo.lastMessageText : "",
         unreadCount: 0,
-        image: user.image || null,
-        coverImage: user.coverImage || null,
-        participants: [],
+        createdAt: selfConvo ? selfConvo.createdAt : null,
+        updatedAt: selfConvo ? selfConvo.updatedAt : null,
+        participants: [
+          {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            image: user.image || null,
+            coverImage: user.coverImage || null,
+            nickname: user.nickname || null,
+            dob: user.dob || null,
+            gender: user.gender || null,
+            title: user.title || null,
+            designation: user.designation || null,
+            description: user.description || null,
+          },
+        ],
       };
 
       data.conversations = [selfEntry, ...data.conversations];
