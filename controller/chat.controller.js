@@ -142,13 +142,15 @@ exports.resolveConversation = async (req, res, next) => {
       });
     }
 
-    // ==================== SELF DETECTION (dm with "undefined" participant) ====================
-    // Frontend sends participantIds with "undefined" string when user clicks themselves.
-    // Detect: type is "dm", one ID is "undefined", remaining valid ID matches current user.
+    // ==================== SELF DETECTION (dm sent by frontend for self-talk) ====================
+    // Two cases the frontend may send when user clicks themselves:
+    //   Case 1: ["userId", "undefined"]  — one slot was unresolved
+    //   Case 2: ["userId", "userId"]     — both slots resolved to same user
+    // In both cases, after filtering out "undefined", all remaining IDs equal the current user.
     const isSelfDmRequest =
       type === "dm" &&
       Array.isArray(participantIds) &&
-      participantIds.includes("undefined") &&
+      participantIds.length > 0 &&
       participantIds.filter((id) => id !== "undefined").every((id) => id === userId);
 
     // ==================== SELF TYPE ====================
