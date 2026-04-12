@@ -125,10 +125,10 @@ exports.resolveConversation = async (req, res, next) => {
     }
 
     // Validate input
-    if (!type || !["dm", "group_dm", "client"].includes(type)) {
+    if (!type || !["dm", "group_dm", "client", "self"].includes(type)) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Type must be either 'dm', 'group_dm', or 'client'",
+        message: "Type must be either 'dm', 'group_dm', 'client', or 'self'",
       });
     }
 
@@ -140,6 +140,32 @@ exports.resolveConversation = async (req, res, next) => {
         statusCode: STATUS_CODES.NOT_FOUND,
         message: "User not found",
       });
+    }
+
+    // ==================== SELF TYPE ====================
+    if (type === "self") {
+      const { resolveConversation } = require("../models/chatConversationModel");
+      const result = await resolveConversation(
+        {
+          companyId: user.companyId,
+          type: "self",
+          createdBy: userId,
+        },
+        true
+      );
+
+      return generateResponse(
+        {
+          conversation: {
+            ...result.conversation.toObject(),
+            chatName: `${user.name} - Notes to self`,
+          },
+          created: result.created,
+        },
+        result.created ? "Self conversation created successfully" : "Self conversation found",
+        res,
+        STATUS_CODES.SUCCESS
+      );
     }
 
     // ==================== CLIENT CHAT TYPE ====================
@@ -449,6 +475,29 @@ exports.getConversations = async (req, res, next) => {
       totalUnreadCount: 0,
       totalConversations: 0,
     };
+
+    // Inject self entry at the top (page 1 only)
+    if (pageNum === 1) {
+      const { Types: MongoTypes } = require("mongoose");
+      const selfConvo = await findChatConversation({
+        companyId: user.companyId,
+        type: "self",
+        "participants.userId": new MongoTypes.ObjectId(userId),
+      });
+
+      const selfEntry = {
+        _id: selfConvo ? selfConvo._id : null,
+        type: "self",
+        chatName: `${user.name} - Notes to self`,
+        isSelf: true,
+        lastMessageAt: selfConvo ? selfConvo.lastMessageAt : null,
+        lastMessageText: selfConvo ? selfConvo.lastMessageText : "",
+        unreadCount: 0,
+        participants: [],
+      };
+
+      data.conversations = [selfEntry, ...data.conversations];
+    }
 
     // Build pagination metadata
     const pagination = {

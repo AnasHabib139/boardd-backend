@@ -31,7 +31,7 @@ const chatConversationSchema = new Schema(
     },
     type: {
       type: String,
-      enum: ["channel", "dm", "group_dm", "client"],
+      enum: ["channel", "dm", "group_dm", "client", "self"],
       required: true,
     },
     // For channel and client type conversations
@@ -181,6 +181,10 @@ exports.resolveConversation = async (params, createIfMissing = false) => {
       throw new Error("channelId is required for client conversations");
     }
     query.channelId = channelId;
+  } else if (type === "self") {
+    // Self conversation: unique per user per company (single participant)
+    const createdByStr = createdBy.toString();
+    query.participantIds = { $all: [createdByStr], $size: 1 };
   } else {
     // For dm and group_dm
     if (!participantIds || participantIds.length === 0) {
@@ -215,7 +219,12 @@ exports.resolveConversation = async (params, createIfMissing = false) => {
       createdBy,
     };
 
-    if (type === "channel") {
+    if (type === "self") {
+      // Self conversation: single participant (the creator)
+      const selfUserId = new Types.ObjectId(createdBy);
+      conversationData.participantIds = [selfUserId];
+      conversationData.participants = [{ userId: selfUserId, lastReadAt: null }];
+    } else if (type === "channel") {
       conversationData.channelId = channelId;
     } else if (type === "client") {
       // Client conversations include channelId and participantIds (team + client guest users)
@@ -253,13 +262,15 @@ exports.resolveConversation = async (params, createIfMissing = false) => {
         .map((id) => new Types.ObjectId(id));
     }
 
-    // Initialize participants array with read tracking
-    conversationData.participants = conversationData.participantIds
-      ? conversationData.participantIds.map((userId) => ({
-          userId,
-          lastReadAt: null,
-        }))
-      : [];
+    // Initialize participants array with read tracking (skip for self — already set above)
+    if (type !== "self") {
+      conversationData.participants = conversationData.participantIds
+        ? conversationData.participantIds.map((userId) => ({
+            userId,
+            lastReadAt: null,
+          }))
+        : [];
+    }
 
     conversation = await ChatConversation.create(conversationData);
     created = true;
