@@ -142,8 +142,17 @@ exports.resolveConversation = async (req, res, next) => {
       });
     }
 
+    // ==================== SELF DETECTION (dm with "undefined" participant) ====================
+    // Frontend sends participantIds with "undefined" string when user clicks themselves.
+    // Detect: type is "dm", one ID is "undefined", remaining valid ID matches current user.
+    const isSelfDmRequest =
+      type === "dm" &&
+      Array.isArray(participantIds) &&
+      participantIds.includes("undefined") &&
+      participantIds.filter((id) => id !== "undefined").every((id) => id === userId);
+
     // ==================== SELF TYPE ====================
-    if (type === "self") {
+    if (type === "self" || isSelfDmRequest) {
       const { resolveConversation } = require("../models/chatConversationModel");
       const result = await resolveConversation(
         {
@@ -493,6 +502,8 @@ exports.getConversations = async (req, res, next) => {
         lastMessageAt: selfConvo ? selfConvo.lastMessageAt : null,
         lastMessageText: selfConvo ? selfConvo.lastMessageText : "",
         unreadCount: 0,
+        image: user.image || null,
+        coverImage: user.coverImage || null,
         participants: [],
       };
 
