@@ -101,9 +101,9 @@ exports.generateClockupReportPDF = async (entries, userInfo, startDate, endDate,
           month: "long",
           day: "numeric",
           year: "numeric",
-          hour: "numeric",
+          hour: "2-digit",
           minute: "2-digit",
-          hour12: true,
+          hour12: false,
         })}`, 50, doc.y + 5);
 
       doc.fillColor("#000000");
