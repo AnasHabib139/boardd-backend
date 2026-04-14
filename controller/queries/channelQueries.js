@@ -581,7 +581,7 @@ exports.getChannelFilesQuery = (channelId, type, baseUrl) => {
                     taskInfo: {
                       taskId: "$_id",
                       taskTitle: "$title",
-                      projectName: { $ifNull: ["$project.name", "Open"] },
+                      projectName: { $ifNull: ["$project.name", "Uncategorized"] },
                     },
                   },
                 },

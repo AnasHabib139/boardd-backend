@@ -303,7 +303,7 @@ const buildRecentlyViewedTasksQuery = ({ user, limit = 10 }) => {
             " / ",
             { $ifNull: ["$tab.tabName", "Unknown Tab"] },
             " / ",
-            { $ifNull: ["$project.name", "Open"] },
+            { $ifNull: ["$project.name", "Uncategorized"] },
           ],
         },
         contextType: { $literal: "channel" },

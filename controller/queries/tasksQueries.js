@@ -91,7 +91,7 @@ exports.getUserPersonalTasksCalendarQuery = (userId, currentDate) => {
             then: "$project",
             else: {
               _id: "open",
-              name: "Open",
+              name: "Uncategorized",
               color: "#808080",
             },
           },
@@ -533,7 +533,7 @@ exports.getTaskByIdQuery = (taskId, userId = null) => {
             " / ",
             { $ifNull: ["$tab.tabName", "Unknown Tab"] },
             " / ",
-            { $ifNull: ["$project.name", "Open"] },
+            { $ifNull: ["$project.name", "Uncategorized"] },
           ],
         },
       },

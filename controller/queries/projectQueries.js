@@ -156,7 +156,7 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate, search =
                   {
                     project: {
                       _id: "open",
-                      name: "Open",
+                      name: "Uncategorized",
                       color: "#808080",
                     },
                   },

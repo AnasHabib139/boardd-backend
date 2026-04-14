@@ -375,7 +375,7 @@ exports.getProjectsOfTab = async (req, res, next) => {
         const processedOpenTasks = processOpenTasks(openTasks);
         openProject = {
           _id: "open",
-          name: "Open",
+          name: "Uncategorized",
           description: "Tasks without specific project",
           status: "active",
           startDate: null,
@@ -742,7 +742,7 @@ exports.getProjectsList = async (req, res, next) => {
           const processedOpenTasks = processOpenTasks(openTasks);
           openProject = {
             _id: "open",
-            name: "Open",
+            name: "Uncategorized",
             description: "Tasks without specific project",
             status: "active",
             startDate: null,
@@ -1023,7 +1023,7 @@ exports.getProjectBoard = async (req, res, next) => {
 
       const openProject = {
         _id: "open",
-        name: "Open",
+        name: "Uncategorized",
         description: "Tasks without specific project",
         status: "active",
         startDate: null,

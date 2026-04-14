@@ -401,7 +401,7 @@ exports.getMemberTasksQuery = (userId, filter = 'all') => {
           $ifNull: ["$channel.channelName", "Unknown Channel"]
         },
         projectName: {
-          $ifNull: ["$project.name", "Open"]
+          $ifNull: ["$project.name", "Uncategorized"]
         },
         // Context path for better identification
         contextPath: {

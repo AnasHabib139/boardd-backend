@@ -1416,8 +1416,8 @@ const processTaskMove = async (socket, data) => {
     }
 
     // Create activity for the move
-    const sourceName = oldProject ? oldProject.name : "Open";
-    const targetName = newProject ? newProject.name : "Open";
+    const sourceName = oldProject ? oldProject.name : "Uncategorized";
+    const targetName = newProject ? newProject.name : "Uncategorized";
     
     const activityMessage = {
       forCreator: `You moved "${task.title}" from "${sourceName}" to "${targetName}" (${newStatus})`,
@@ -1501,7 +1501,7 @@ const processTaskMove = async (socket, data) => {
         type: "project"
       } : {
         _id: oldChannel._id,
-        name: "Open",
+        name: "Uncategorized",
         type: "channel"
       },
       target: newProject ? {
@@ -1510,7 +1510,7 @@ const processTaskMove = async (socket, data) => {
         type: "project"
       } : {
         _id: newChannel._id,
-        name: "Open",
+        name: "Uncategorized",
         type: "channel"
       },
       activity: {
