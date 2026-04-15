@@ -194,16 +194,15 @@ exports.getActivities = async (req, res, next) => {
         : null,
     };
 
-    // CRITICAL: Only return CHAT notifications, exclude task notifications
-    // Task notifications (MENTION, CHANNEL, WORK_IN_PROGRESS) are a separate system
-    const CHAT_NOTIFICATION_TYPES = [
+    const FEED_NOTIFICATION_TYPES = [
       "CHAT_MESSAGE",
       "CHAT_MENTION",
       "CHAT_THREAD_REPLY",
       "CHAT_REACTION",
       "CHANNEL_INVITATION",
+      "TASK_COMMENT_MENTION",
     ];
-    filter.type = { $in: CHAT_NOTIFICATION_TYPES };
+    filter.type = { $in: FEED_NOTIFICATION_TYPES };
 
     // Apply category filter
     if (type && type !== "all") {
@@ -260,6 +259,7 @@ exports.getActivities = async (req, res, next) => {
           channelId: 1,
           projectId: 1,
           taskId: 1,
+          commentId: 1,
           tabId: 1,
           creator: {
             _id: 1,
@@ -288,11 +288,11 @@ exports.getActivities = async (req, res, next) => {
       formatActivityItem(notification)
     );
 
-    // Calculate unread count (only chat notifications, same as activities filter)
+    // Calculate unread count (same types as the feed filter)
     const unreadCount = await NotificationModel.countDocuments({
       userId: new Types.ObjectId(userId),
       isRead: false,
-      type: { $in: CHAT_NOTIFICATION_TYPES },
+      type: { $in: FEED_NOTIFICATION_TYPES },
     });
 
     return generateResponse(

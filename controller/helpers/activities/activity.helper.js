@@ -19,6 +19,7 @@ exports.getActivityCategory = (type) => {
     CHAT_MENTION: "mention",
     CHAT_REACTION: "reaction",
     CHANNEL_INVITATION: "invitation",
+    TASK_COMMENT_MENTION: "mention",
   };
 
   return categoryMap[type] || "chat";
@@ -31,6 +32,11 @@ exports.getActivityCategory = (type) => {
  */
 exports.getActivitySubtitle = (notification) => {
   const { type, channelName, conversationType, reactionEmoji } = notification;
+
+  // Task comment mention subtitle
+  if (type === "TASK_COMMENT_MENTION") {
+    return "task comment";
+  }
 
   // Reaction-specific subtitle
   if (type === "CHAT_REACTION") {
@@ -132,6 +138,7 @@ exports.formatActivityItem = (notification, actor = null) => {
       channelId: notification.channelId || null,
       projectId: notification.projectId || null,
       taskId: notification.taskId || null,
+      commentId: notification.commentId || null,
       tabId: notification.tabId || null,
     },
 
@@ -213,13 +220,13 @@ exports.mapCategoryFilter = (categoryFilter) => {
 exports.calculateUnreadCounts = async (NotificationModel, userId) => {
   const { Types } = require("mongoose");
 
-  // Only count chat notification types (exclude task notifications)
-  const CHAT_NOTIFICATION_TYPES = [
+  const FEED_NOTIFICATION_TYPES = [
     'CHAT_MESSAGE',
     'CHAT_MENTION',
     'CHAT_THREAD_REPLY',
     'CHAT_REACTION',
-    'CHANNEL_INVITATION'
+    'CHANNEL_INVITATION',
+    'TASK_COMMENT_MENTION',
   ];
 
   // Aggregate unread counts by category
@@ -228,7 +235,7 @@ exports.calculateUnreadCounts = async (NotificationModel, userId) => {
       $match: {
         userId: new Types.ObjectId(userId),
         isRead: false,
-        type: { $in: CHAT_NOTIFICATION_TYPES }, // Only chat notifications
+        type: { $in: FEED_NOTIFICATION_TYPES },
       },
     },
     {
