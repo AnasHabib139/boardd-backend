@@ -17,8 +17,9 @@ const notificationSchema = new Schema({
       "CHAT_MENTION",
       "CHAT_MESSAGE",
       "CHAT_THREAD_REPLY",
-      "CHAT_REACTION",        // NEW: Emoji reactions to messages
-      "CHANNEL_INVITATION"    // NEW: User invited to channel
+      "CHAT_REACTION",            // Emoji reactions to messages
+      "CHANNEL_INVITATION",       // User invited to channel
+      "TASK_COMMENT_MENTION"      // @mention in a task comment
     ],
     required: true,
   },
@@ -28,6 +29,7 @@ const notificationSchema = new Schema({
   channelId: { type: Types.ObjectId, ref: "Channel" },
   tabId: { type: Types.ObjectId, ref: "ChannelTab" },
   taskId: { type: Types.ObjectId, ref: "Task" },
+  commentId: { type: Types.ObjectId, ref: "TaskComment" },
   conversationId: { type: Types.ObjectId, ref: "ChatConversation" },
   messageId: { type: Types.ObjectId, ref: "ChatMessage" },
 

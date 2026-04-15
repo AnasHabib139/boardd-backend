@@ -7,117 +7,172 @@ const { findTask } = require("../models/taskModel");
 const { findProject } = require("../models/projectModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
-const { createTaskComment, findTaskComment, getAllTaskComments, deleteTaskComment: removeTaskComment } = require("../models/taskCommentModel");
+const {
+  createTaskComment,
+  findTaskComment,
+  getAllTaskComments,
+  updateTaskComment,
+  deleteTaskComment: removeTaskComment,
+} = require("../models/taskCommentModel");
 const { createActivity } = require("../models/activityModel");
-const { emitTaskEvent } = require("../utils/socket");
+const { createNotification } = require("../models/notificationModel");
+const { emitTaskEvent, getIO } = require("../utils/socket");
+const { validateAndSanitize, extractMentions } = require("../services/chatContentValidator");
+const { deriveContentText, extractLinks } = require("../services/chatContentProcessor");
+
+/**
+ * Resolve task context (tab, project, channel) and check membership.
+ * Shared by create, update, and get handlers.
+ */
+async function resolveTaskContext(task, userId, next) {
+  let project = null;
+  let tab = null;
+  let channel = null;
+
+  if (task.projectId) {
+    project = await findProject({ _id: task.projectId });
+    if (!project) {
+      next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Project not found" });
+      return null;
+    }
+    [tab, channel] = await Promise.all([
+      findChannelTab({ _id: project.tabId }),
+      findChannel({ _id: project.channelId }),
+    ]);
+    if (!tab || !channel) {
+      next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Tab or channel not found" });
+      return null;
+    }
+  } else if (task.channelId) {
+    channel = await findChannel({ _id: task.channelId });
+    if (!channel) {
+      next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Channel not found" });
+      return null;
+    }
+    if (task.tabId) tab = await findChannelTab({ _id: task.tabId });
+  } else {
+    next({ statusCode: STATUS_CODES.BAD_REQUEST, message: "Task has no project or channel association" });
+    return null;
+  }
+
+  const isTabMember = tab && tab.members.some((id) => id.toString() === userId);
+  const isChannelMember = channel.members.some((id) => id.toString() === userId);
+  if (!isTabMember && !isChannelMember) {
+    next({ statusCode: STATUS_CODES.FORBIDDEN, message: "You must be a tab or channel member to comment on this task" });
+    return null;
+  }
+
+  const contextPath = project
+    ? `${channel.channelName} / ${tab.tabName} / ${project.name}`
+    : tab
+    ? `${channel.channelName} / ${tab.tabName} / Uncategorized`
+    : `${channel.channelName} / Uncategorized`;
+
+  return { project, tab, channel, contextPath };
+}
+
+/**
+ * Send mention notifications to all mentioned users (skip self).
+ * Used by both create and update — edit retriggers for all mentioned users.
+ */
+async function sendMentionNotifications(userMentions, task, comment, author, contextPath) {
+  if (!userMentions || userMentions.length === 0) return;
+
+  const io = getIO();
+
+  for (const mentionedUserId of userMentions) {
+    if (mentionedUserId.toString() === author._id.toString()) continue;
+
+    try {
+      const notification = await createNotification({
+        userId: mentionedUserId,
+        type: "TASK_COMMENT_MENTION",
+        activityCategory: "mention",
+        title: "New mention",
+        message: `${author.name} mentioned you in a comment: ${comment.contentText.substring(0, 100)}`,
+        taskId: task._id,
+        commentId: comment._id,
+        channelId: task.channelId || null,
+        tabId: task.tabId || null,
+        projectId: task.projectId || null,
+        createdBy: author._id,
+        contextPath: contextPath || null,
+      });
+
+      if (io) {
+        io.to(`user:${mentionedUserId}`).emit("activity:new", {
+          _id: notification._id,
+          type: "TASK_COMMENT_MENTION",
+          activityCategory: "mention",
+          title: "New mention",
+          messagePreview: `${author.name} mentioned you: ${comment.contentText.substring(0, 100)}`,
+          actor: {
+            _id: author._id,
+            name: author.name,
+            email: author.email,
+            image: author.image,
+          },
+          timestamp: notification.timestamp,
+          isRead: false,
+          navigationContext: {
+            taskId: task._id,
+            commentId: comment._id,
+            channelId: task.channelId || null,
+            tabId: task.tabId || null,
+            projectId: task.projectId || null,
+            conversationId: null,
+            messageId: null,
+          },
+        });
+      }
+    } catch (err) {
+      console.error(`Error sending mention notification to user ${mentionedUserId}:`, err);
+      // Non-fatal — continue with other mentions
+    }
+  }
+}
 
 /**
  * Create a new comment on a task
- * User must be a tab or channel member to comment
  */
 exports.createTaskComment = async (req, res, next) => {
   try {
     const { taskId } = req.params;
-    const { message, attachments, links } = parseBody(req.body);
+    const { contentDoc, attachments, links } = parseBody(req.body);
     const userId = req.user.id;
 
-    // Find task
     const task = await findTask({ _id: taskId });
-    if (!task) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Task not found",
-      });
-    }
+    if (!task) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Task not found" });
 
-    // Get user
     const user = await findUser({ _id: userId });
-    if (!user) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "User not found",
-      });
+    if (!user) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "User not found" });
+
+    const ctx = await resolveTaskContext(task, userId, next);
+    if (!ctx) return; // next() already called inside
+
+    // Validate and sanitize TipTap contentDoc
+    const { isValid, sanitized, errors } = validateAndSanitize(contentDoc);
+    if (!isValid) {
+      return next({ statusCode: STATUS_CODES.UNPROCESSABLE_ENTITY, message: errors.join(", ") });
     }
 
-    // Get context - tab, project, and channel for permission checks
-    let project = null;
-    let tab = null;
-    let channel = null;
+    const contentText = deriveContentText(sanitized);
+    const autoLinks = extractLinks(sanitized);
+    const mergedLinks = [...new Set([...autoLinks, ...(links || [])])];
 
-    if (task.projectId) {
-      // Project-based task
-      project = await findProject({ _id: task.projectId });
-      if (!project) {
-        return next({
-          statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Project not found",
-        });
-      }
-
-      [tab, channel] = await Promise.all([
-        findChannelTab({ _id: project.tabId }),
-        findChannel({ _id: project.channelId }),
-      ]);
-
-      if (!tab || !channel) {
-        return next({
-          statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Tab or channel not found",
-        });
-      }
-    } else if (task.channelId) {
-      // Channel-based task (Open task)
-      channel = await findChannel({ _id: task.channelId });
-      if (!channel) {
-        return next({
-          statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Channel not found",
-        });
-      }
-
-      // Get tab from task
-      if (task.tabId) {
-        tab = await findChannelTab({ _id: task.tabId });
-      }
-    } else {
-      return next({
-        statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Task has no project or channel association",
-      });
-    }
-
-    // Check permissions: user must be tab or channel member
-    const isTabMember = tab && tab.members.some(id => id.toString() === userId);
-    const isChannelMember = channel.members.some(id => id.toString() === userId);
-
-    if (!isTabMember && !isChannelMember) {
-      return next({
-        statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You must be a tab or channel member to comment on this task",
-      });
-    }
-
-    // Create comment
     const comment = await createTaskComment({
       taskId,
       userId,
-      message: message || "",
+      contentDoc: sanitized,
+      contentText,
       attachments: attachments || [],
-      links: links || [],
+      links: mergedLinks,
     });
 
-    // Populate user details
     const populatedComment = await findTaskComment({ _id: comment._id })
       .populate("userId", "name email image coverImage");
 
-    // Create activity
     const userName = user.name || user.email;
-    const contextPath = project
-      ? `${channel.channelName} / ${tab.tabName} / ${project.name}`
-      : tab
-      ? `${channel.channelName} / ${tab.tabName} / Open`
-      : `${channel.channelName} / Open`;
-
     const activity = await createActivity({
       taskId: task._id,
       userId,
@@ -131,31 +186,26 @@ exports.createTaskComment = async (req, res, next) => {
       channelId: task.channelId || null,
     });
 
-    // Emit socket event for real-time updates
     try {
       emitTaskEvent({
         taskId: task._id,
-        channelId: channel._id,
+        channelId: ctx.channel._id,
         type: "TASK_COMMENT_ADDED",
         payload: {
           comment: populatedComment,
-          task: {
-            _id: task._id,
-            title: task.title,
-          },
-          commentedBy: {
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-          },
+          task: { _id: task._id, title: task.title },
+          commentedBy: { _id: user._id, name: user.name, email: user.email },
           activity,
-          contextPath,
+          contextPath: ctx.contextPath,
         },
       });
     } catch (socketError) {
       console.error("Error emitting comment socket event:", socketError);
-      // Continue even if socket fails
     }
+
+    // Send mention notifications (non-fatal)
+    const { userMentions } = extractMentions(sanitized);
+    await sendMentionNotifications(userMentions, task, populatedComment, user, ctx.contextPath);
 
     return generateResponse(
       { comment: populatedComment },
@@ -165,78 +215,123 @@ exports.createTaskComment = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in createTaskComment:", error);
-    return next({
-      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
-      message: error?.message,
-    });
+    return next({ statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR, message: error?.message });
   }
 };
 
 /**
- * Delete a comment on a task
- * Only the comment author can delete their own comment
+ * Update a comment on a task (only the author can edit)
+ * Mention notifications are retriggered for all mentioned users in the updated comment.
+ */
+exports.updateTaskComment = async (req, res, next) => {
+  try {
+    const { taskId, commentId } = req.params;
+    const { contentDoc, attachments, links } = parseBody(req.body);
+    const userId = req.user.id;
+
+    const comment = await findTaskComment({ _id: commentId, taskId });
+    if (!comment) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Comment not found" });
+
+    if (comment.userId.toString() !== userId) {
+      return next({ statusCode: STATUS_CODES.FORBIDDEN, message: "You can only edit your own comments" });
+    }
+
+    const task = await findTask({ _id: taskId });
+    if (!task) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Task not found" });
+
+    const user = await findUser({ _id: userId });
+    if (!user) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "User not found" });
+
+    const ctx = await resolveTaskContext(task, userId, next);
+    if (!ctx) return;
+
+    const { isValid, sanitized, errors } = validateAndSanitize(contentDoc);
+    if (!isValid) {
+      return next({ statusCode: STATUS_CODES.UNPROCESSABLE_ENTITY, message: errors.join(", ") });
+    }
+
+    const contentText = deriveContentText(sanitized);
+    const autoLinks = extractLinks(sanitized);
+    const mergedLinks = [...new Set([...autoLinks, ...(links || [])])];
+
+    const updatedComment = await updateTaskComment(
+      { _id: commentId },
+      { contentDoc: sanitized, contentText, attachments: attachments || [], links: mergedLinks, updatedAt: new Date() }
+    );
+
+    const populatedComment = await findTaskComment({ _id: updatedComment._id })
+      .populate("userId", "name email image coverImage");
+
+    try {
+      emitTaskEvent({
+        taskId: task._id,
+        channelId: ctx.channel._id,
+        type: "TASK_COMMENT_UPDATED",
+        payload: {
+          comment: populatedComment,
+          task: { _id: task._id, title: task.title },
+          updatedBy: { _id: user._id, name: user.name, email: user.email },
+          contextPath: ctx.contextPath,
+        },
+      });
+    } catch (socketError) {
+      console.error("Error emitting comment update socket event:", socketError);
+    }
+
+    // Retrigger mention notifications for all mentioned users in updated comment
+    const { userMentions } = extractMentions(sanitized);
+    await sendMentionNotifications(userMentions, task, populatedComment, user, ctx.contextPath);
+
+    return generateResponse(
+      { comment: populatedComment },
+      "Comment updated successfully",
+      res
+    );
+  } catch (error) {
+    console.error("Error in updateTaskComment:", error);
+    return next({ statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR, message: error?.message });
+  }
+};
+
+/**
+ * Delete a comment on a task (only the author can delete)
  */
 exports.deleteTaskComment = async (req, res, next) => {
   try {
     const { taskId, commentId } = req.params;
     const userId = req.user.id;
 
-    // Find the comment and verify it belongs to the task
     const comment = await findTaskComment({ _id: commentId, taskId });
-    if (!comment) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Comment not found",
-      });
-    }
+    if (!comment) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Comment not found" });
 
-    // Verify the requesting user is the comment author
     if (comment.userId.toString() !== userId) {
-      return next({
-        statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You can only delete your own comments",
-      });
+      return next({ statusCode: STATUS_CODES.FORBIDDEN, message: "You can only delete your own comments" });
     }
 
-    // Find task for socket event context
     const task = await findTask({ _id: taskId });
 
-    // Hard delete the comment
     await removeTaskComment({ _id: commentId });
 
-    // Emit socket event for real-time updates
     try {
       emitTaskEvent({
         taskId,
         channelId: task?.channelId || task?.projectId,
         type: "TASK_COMMENT_DELETED",
-        payload: {
-          commentId,
-          taskId,
-          deletedBy: userId,
-        },
+        payload: { commentId, taskId, deletedBy: userId },
       });
     } catch (socketError) {
       console.error("Error emitting comment delete socket event:", socketError);
     }
 
-    return generateResponse(
-      { commentId },
-      "Comment deleted successfully",
-      res
-    );
+    return generateResponse({ commentId }, "Comment deleted successfully", res);
   } catch (error) {
     console.error("Error in deleteTaskComment:", error);
-    return next({
-      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
-      message: error?.message,
-    });
+    return next({ statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR, message: error?.message });
   }
 };
 
 /**
  * Get all comments for a specific task
- * User must be a tab or channel member to view comments
  */
 exports.getTaskComments = async (req, res, next) => {
   try {
@@ -244,74 +339,12 @@ exports.getTaskComments = async (req, res, next) => {
     const { page = 1, limit = 20 } = req.query;
     const userId = req.user.id;
 
-    // Find task
     const task = await findTask({ _id: taskId });
-    if (!task) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Task not found",
-      });
-    }
+    if (!task) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Task not found" });
 
-    // Get context - tab, project, and channel for permission checks
-    let project = null;
-    let tab = null;
-    let channel = null;
+    const ctx = await resolveTaskContext(task, userId, next);
+    if (!ctx) return;
 
-    if (task.projectId) {
-      // Project-based task
-      project = await findProject({ _id: task.projectId });
-      if (!project) {
-        return next({
-          statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Project not found",
-        });
-      }
-
-      [tab, channel] = await Promise.all([
-        findChannelTab({ _id: project.tabId }),
-        findChannel({ _id: project.channelId }),
-      ]);
-
-      if (!tab || !channel) {
-        return next({
-          statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Tab or channel not found",
-        });
-      }
-    } else if (task.channelId) {
-      // Channel-based task (Open task)
-      channel = await findChannel({ _id: task.channelId });
-      if (!channel) {
-        return next({
-          statusCode: STATUS_CODES.NOT_FOUND,
-          message: "Channel not found",
-        });
-      }
-
-      // Get tab from task
-      if (task.tabId) {
-        tab = await findChannelTab({ _id: task.tabId });
-      }
-    } else {
-      return next({
-        statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Task has no project or channel association",
-      });
-    }
-
-    // Check permissions: user must be tab or channel member
-    const isTabMember = tab && tab.members.some(id => id.toString() === userId);
-    const isChannelMember = channel.members.some(id => id.toString() === userId);
-
-    if (!isTabMember && !isChannelMember) {
-      return next({
-        statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You must be a tab or channel member to view comments on this task",
-      });
-    }
-
-    // Build aggregation query
     const query = [
       {
         $match: {
@@ -319,7 +352,6 @@ exports.getTaskComments = async (req, res, next) => {
           isActive: true,
         },
       },
-      // Lookup user details
       {
         $lookup: {
           from: "users",
@@ -328,18 +360,13 @@ exports.getTaskComments = async (req, res, next) => {
           as: "user",
         },
       },
-      {
-        $unwind: {
-          path: "$user",
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      // Project fields
+      { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
       {
         $project: {
           _id: 1,
           taskId: 1,
-          message: 1,
+          contentDoc: 1,
+          contentText: 1,
           attachments: 1,
           links: 1,
           createdAt: 1,
@@ -355,29 +382,18 @@ exports.getTaskComments = async (req, res, next) => {
           },
         },
       },
-      // Sort by most recent first
-      {
-        $sort: { createdAt: -1 },
-      },
+      { $sort: { createdAt: -1 } },
     ];
 
-    // Get paginated comments
     const { comments, pagination } = await getAllTaskComments({
       query,
       page: parseInt(page),
       limit: parseInt(limit),
     });
 
-    return generateResponse(
-      { comments, pagination },
-      "Comments retrieved successfully",
-      res
-    );
+    return generateResponse({ comments, pagination }, "Comments retrieved successfully", res);
   } catch (error) {
     console.error("Error in getTaskComments:", error);
-    return next({
-      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
-      message: error?.message,
-    });
+    return next({ statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR, message: error?.message });
   }
 };

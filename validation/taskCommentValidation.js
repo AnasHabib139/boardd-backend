@@ -1,10 +1,11 @@
 const Joi = require("joi");
 const { helpers } = require("./authValidation");
 
-// Create task comment validation schema
+// Create / update task comment validation schema
 const createTaskCommentValidation = Joi.object({
-  message: Joi.string().trim().max(2000).optional().allow("").messages({
-    "string.max": "Comment message cannot exceed 2000 characters",
+  contentDoc: Joi.object().required().messages({
+    "object.base": "contentDoc must be a valid TipTap JSON object",
+    "any.required": "contentDoc is required",
   }),
 
   attachments: Joi.array()
@@ -28,20 +29,6 @@ const createTaskCommentValidation = Joi.object({
       "string.uri": "Each link must be a valid URL",
       "array.max": "Cannot add more than 5 links",
     }),
-}).custom((value, helpers) => {
-  // Ensure at least one field is provided
-  const hasMessage = value.message && value.message.trim().length > 0;
-  const hasAttachments = value.attachments && value.attachments.length > 0;
-  const hasLinks = value.links && value.links.length > 0;
-
-  if (!hasMessage && !hasAttachments && !hasLinks) {
-    return helpers.error("custom.atLeastOne", {
-      message: "At least one of message, attachments, or links is required"
-    });
-  }
-  return value;
-}).messages({
-  "custom.atLeastOne": "At least one of message, attachments, or links is required"
 });
 
 // Task ID parameter validation

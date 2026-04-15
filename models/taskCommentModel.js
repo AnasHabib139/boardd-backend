@@ -8,7 +8,8 @@ const { getMongooseAggregatePaginatedData } = require("../utils");
 const taskCommentSchema = new Schema({
   taskId: { type: Types.ObjectId, ref: "Task", required: true },
   userId: { type: Types.ObjectId, ref: "User", required: true },
-  message: { type: String, default: "" }, // Can contain emojis
+  contentDoc: { type: Schema.Types.Mixed, required: true }, // TipTap JSON document
+  contentText: { type: String, default: "" }, // Derived plaintext for display/search
   attachments: [{ type: String }], // Array of file paths/URLs
   links: [{ type: String }], // Array of URLs
   isActive: { type: Boolean, default: true }, // For soft delete
@@ -16,14 +17,13 @@ const taskCommentSchema = new Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
-// Add validation: at least one of message, attachments, or links must exist
+// Validate: contentDoc or attachments must be present
 taskCommentSchema.pre("validate", function (next) {
-  const hasMessage = this.message && this.message.trim().length > 0;
+  const hasContent = this.contentDoc != null;
   const hasAttachments = this.attachments && this.attachments.length > 0;
-  const hasLinks = this.links && this.links.length > 0;
 
-  if (!hasMessage && !hasAttachments && !hasLinks) {
-    next(new Error("At least one of message, attachments, or links is required"));
+  if (!hasContent && !hasAttachments) {
+    next(new Error("At least contentDoc or attachments is required"));
   } else {
     next();
   }

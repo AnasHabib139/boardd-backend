@@ -1,7 +1,7 @@
 "use strict";
 
 const { Router } = require("express");
-const { createTaskComment, getTaskComments, deleteTaskComment } = require("../controller/taskComment.controller");
+const { createTaskComment, updateTaskComment, getTaskComments, deleteTaskComment } = require("../controller/taskComment.controller");
 const Auth = require("../middlewares/Auth");
 const { checkPermission } = require("../middlewares/checkPermission");
 const { ROLES } = require("../utils/constants");
@@ -38,6 +38,16 @@ class TaskCommentApi {
       validateTaskIdParam,
       validateCreateTaskComment,
       createTaskComment
+    );
+
+    // Update a comment on a task (author only, retriggers mention notifications)
+    router.put(
+      "/:taskId/comments/:commentId",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("makeComments"),
+      validateDeleteTaskCommentParams,
+      validateCreateTaskComment,
+      updateTaskComment
     );
 
     // Delete a comment on a task
