@@ -2014,6 +2014,16 @@ const generateTabNotificationMessage = (type, payload) => {
       };
     }
 
+    case "TASK_COMMENT_UPDATED": {
+      const commenter = payload.updatedBy?.name || "Someone";
+      return {
+        title: "Comment Updated",
+        message: `${commenter} edited a comment on "${taskTitle}"`,
+        icon: "💬",
+        color: "info",
+      };
+    }
+
     default:
       return {
         title: "Activity Update",
@@ -2030,7 +2040,7 @@ exports.emitTaskEvent = (data) => {
     throw new Error("Socket.io not initialized!");
   }
 
-  const { taskId, channelId, type, payload, excludeUserId } = data;
+  const { taskId, channelId, type, payload, excludeUserId, excludeUserIds } = data;
 
   // Emit task-specific update to users viewing the task
   if (taskId) {
@@ -2045,9 +2055,16 @@ exports.emitTaskEvent = (data) => {
   if (channelId) {
     const notificationMessage = generateTabNotificationMessage(type, payload);
 
+    // Build exclusion list: supports both excludeUserIds (array) and legacy excludeUserId (string)
+    const exclusions = excludeUserIds
+      ? excludeUserIds.map((id) => id.toString())
+      : excludeUserId
+      ? [excludeUserId.toString()]
+      : [];
+
     let target = io.to(`channel:${channelId}`);
-    if (excludeUserId) {
-      target = target.except(`user:${excludeUserId}`);
+    for (const uid of exclusions) {
+      target = target.except(`user:${uid}`);
     }
 
     target.emit("tab-activity", {

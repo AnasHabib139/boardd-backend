@@ -186,11 +186,17 @@ exports.createTaskComment = async (req, res, next) => {
       channelId: task.channelId || null,
     });
 
+    // Extract mentions before emitting so mentioned users can be excluded from the generic toast
+    const { userMentions } = extractMentions(sanitized);
+
     try {
       emitTaskEvent({
         taskId: task._id,
         channelId: ctx.channel._id,
         type: "TASK_COMMENT_ADDED",
+        // Exclude the commenter (already knows they posted) and mentioned users
+        // (they get a targeted "mentioned you" activity:new instead)
+        excludeUserIds: [userId, ...userMentions.map((id) => id.toString())],
         payload: {
           comment: populatedComment,
           task: { _id: task._id, title: task.title },
@@ -204,7 +210,6 @@ exports.createTaskComment = async (req, res, next) => {
     }
 
     // Send mention notifications (non-fatal)
-    const { userMentions } = extractMentions(sanitized);
     await sendMentionNotifications(userMentions, task, populatedComment, user, ctx.contextPath);
 
     return generateResponse(
@@ -262,11 +267,16 @@ exports.updateTaskComment = async (req, res, next) => {
     const populatedComment = await findTaskComment({ _id: updatedComment._id })
       .populate("userId", "name email image coverImage");
 
+    // Extract mentions before emitting so mentioned users can be excluded from the generic toast
+    const { userMentions } = extractMentions(sanitized);
+
     try {
       emitTaskEvent({
         taskId: task._id,
         channelId: ctx.channel._id,
         type: "TASK_COMMENT_UPDATED",
+        // Exclude the commenter and mentioned users from the generic "edited a comment" toast
+        excludeUserIds: [userId, ...userMentions.map((id) => id.toString())],
         payload: {
           comment: populatedComment,
           task: { _id: task._id, title: task.title },
@@ -279,7 +289,6 @@ exports.updateTaskComment = async (req, res, next) => {
     }
 
     // Retrigger mention notifications for all mentioned users in updated comment
-    const { userMentions } = extractMentions(sanitized);
     await sendMentionNotifications(userMentions, task, populatedComment, user, ctx.contextPath);
 
     return generateResponse(
