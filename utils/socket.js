@@ -2004,6 +2004,16 @@ const generateTabNotificationMessage = (type, payload) => {
         color: "error",
       };
 
+    case "TASK_COMMENT_ADDED": {
+      const commenter = payload.commentedBy?.name || "Someone";
+      return {
+        title: "New Comment",
+        message: `${commenter} commented on "${taskTitle}"`,
+        icon: "💬",
+        color: "info",
+      };
+    }
+
     default:
       return {
         title: "Activity Update",
