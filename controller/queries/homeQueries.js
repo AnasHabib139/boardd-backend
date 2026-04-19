@@ -492,7 +492,37 @@ exports.getDashboardStatsQuery = (userId, companyId, channelSearch = null, page 
       }
     },
 
-    // Stage 6: Project final structure
+    // Stage 6: Lookup the task management tab for each channel
+    {
+      $lookup: {
+        from: "channeltabs",
+        let: { channelId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$channelId", "$$channelId"] },
+                  { $eq: ["$tabName", "task management"] },
+                  { $eq: ["$isActive", true] },
+                ],
+              },
+            },
+          },
+          { $project: { _id: 1 } },
+        ],
+        as: "taskManagementTab",
+      },
+    },
+
+    // Stage 7: Extract tabId from lookup result
+    {
+      $addFields: {
+        taskManagementTabId: { $arrayElemAt: ["$taskManagementTab._id", 0] },
+      },
+    },
+
+    // Stage 8: Project final structure
     {
       $project: {
         _id: 1,
@@ -500,15 +530,16 @@ exports.getDashboardStatsQuery = (userId, companyId, channelSearch = null, page 
         totalTasks: 1,
         completedTasks: 1,
         progress: 1,
+        taskManagementTabId: 1,
       }
     },
 
-    // Stage 7: Sort by channel name alphabetically
+    // Stage 9: Sort by channel name alphabetically
     {
       $sort: { channelName: 1 }
     },
 
-    // Stage 8: Use $facet to get both paginated data and total count
+    // Stage 10: Use $facet to get both paginated data and total count
     {
       $facet: {
         channels: [
