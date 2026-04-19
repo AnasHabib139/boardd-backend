@@ -199,9 +199,12 @@ const buildTasksSearchPipeline = (filters) => {
     },
   });
 
+  // Resolve status key to display name; fall back to raw key if not found
   pipeline.push({
     $addFields: {
-      statusDetail: { $arrayElemAt: ["$statusDetail", 0] },
+      status: {
+        $ifNull: [{ $arrayElemAt: ["$statusDetail.statusName", 0] }, "$status"],
+      },
     },
   });
 
@@ -219,7 +222,6 @@ const buildTasksSearchPipeline = (filters) => {
       title: 1,
       description: 1,
       status: 1,
-      statusDetail: 1,
       priority: 1,
       dueDate: 1,
       tags: 1,
@@ -1653,8 +1655,13 @@ const buildSubtasksSearchPipeline = (filters) => {
     },
   });
 
+  // Resolve status key to display name; fall back to raw key if not found
   pipeline.push({
-    $addFields: { statusDetail: { $arrayElemAt: ["$statusDetail", 0] } },
+    $addFields: {
+      status: {
+        $ifNull: [{ $arrayElemAt: ["$statusDetail.statusName", 0] }, "$status"],
+      },
+    },
   });
 
   // Lookup assigned users
@@ -1701,7 +1708,6 @@ const buildSubtasksSearchPipeline = (filters) => {
       title: 1,
       description: 1,
       status: 1,
-      statusDetail: 1,
       priority: 1,
       dueDate: 1,
       tags: 1,
