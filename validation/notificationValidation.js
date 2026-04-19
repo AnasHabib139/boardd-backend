@@ -55,11 +55,31 @@ const validateRequest = (schema, source = "body") => {
   };
 };
 
+// Per-channel mute body validation (duration is optional — omit for indefinite mute)
+const muteChannelValidation = Joi.object({
+  duration: Joi.string()
+    .valid("30min", "1hour", "2hours", "4hours", "8hours", "24hours", "168hours")
+    .optional(),
+});
+
+// Channel ID param validation
+const channelIdParamValidation = Joi.object({
+  channelId: Joi.string().hex().length(24).required().messages({
+    "string.hex": "channelId must be a valid ObjectId",
+    "string.length": "channelId must be 24 characters",
+    "any.required": "channelId is required",
+  }),
+});
+
 module.exports = {
   validateMuteNotifications: validateRequest(muteNotificationsValidation),
-  
+  validateMuteChannel: validateRequest(muteChannelValidation, "body"),
+  validateChannelIdParam: validateRequest(channelIdParamValidation, "params"),
+
   // Export schemas for testing or custom usage
   schemas: {
     muteNotificationsValidation,
+    muteChannelValidation,
+    channelIdParamValidation,
   },
 };

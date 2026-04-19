@@ -9,7 +9,11 @@ const {
   findUserMutePreferences,
   updateUserMutePreferences,
   deleteUserMutePreferences,
+  upsertChannelMute,
+  removeChannelMute,
+  findChannelMuteEntry,
 } = require("../models/userMutePreferencesModel");
+const { findChannel } = require("../models/channelModel");
 
 // Helper function to calculate mute duration in milliseconds
 const getMuteDurationMs = (duration) => {
@@ -108,6 +112,190 @@ const addUserToSocketRooms = async (userId, mutedChannels, io) => {
     console.error("Error adding user back to socket rooms:", error);
   }
 };
+
+// ─── Per-channel socket helpers ───────────────────────────────────────────────
+
+const removeUserFromChannelRoom = (userId, channelId, io) => {
+  try {
+    const userRoom = `user:${userId}`;
+    const socketsInRoom = io.sockets.adapter.rooms.get(userRoom);
+
+    if (socketsInRoom) {
+      socketsInRoom.forEach((socketId) => {
+        const socket = io.sockets.sockets.get(socketId);
+        if (socket) {
+          socket.leave(`channel:${channelId}`);
+          socket.emit("channel-mute-status", {
+            isMuted: true,
+            channelId,
+            message: "Channel notifications muted",
+          });
+        }
+      });
+    }
+  } catch (error) {
+    console.error("Error removing user from channel room:", error);
+  }
+};
+
+const addUserToChannelRoom = (userId, channelId, io) => {
+  try {
+    const userRoom = `user:${userId}`;
+    const socketsInRoom = io.sockets.adapter.rooms.get(userRoom);
+
+    if (socketsInRoom) {
+      socketsInRoom.forEach((socketId) => {
+        const socket = io.sockets.sockets.get(socketId);
+        if (socket) {
+          socket.join(`channel:${channelId}`);
+          socket.emit("channel-unmute-complete", {
+            isMuted: false,
+            channelId,
+            message: "Channel notifications resumed",
+          });
+        }
+      });
+    }
+  } catch (error) {
+    console.error("Error adding user to channel room:", error);
+  }
+};
+
+// ─── Per-channel mute endpoints ───────────────────────────────────────────────
+
+/**
+ * Mute notifications for a specific channel
+ * POST /api/notifications/channels/:channelId/mute
+ */
+exports.muteChannel = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const { duration } = parseBody(req.body);
+    const userId = req.user.id;
+
+    // Verify channel exists and user is a member
+    const channel = await findChannel({ _id: channelId });
+    if (!channel) {
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Channel not found" });
+    }
+    const isMember = channel.members.some((m) => m.toString() === userId);
+    if (!isMember) {
+      return next({ statusCode: STATUS_CODES.FORBIDDEN, message: "You are not a member of this channel" });
+    }
+
+    // Calculate muteUntil (null = indefinite)
+    const muteUntil = duration ? new Date(Date.now() + getMuteDurationMs(duration)) : null;
+
+    await upsertChannelMute(userId, channelId, muteUntil);
+
+    // Remove user's socket from channel room
+    const io = req.app.get("io");
+    if (io) removeUserFromChannelRoom(userId, channelId, io);
+
+    return generateResponse(
+      {
+        channelId,
+        isMuted: true,
+        muteUntil: muteUntil?.toISOString() || null,
+        timeRemaining: muteUntil ? getTimeRemaining(muteUntil) : "Until unmuted",
+      },
+      "Channel notifications muted successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in muteChannel:", error);
+    return next({ statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR, message: error?.message });
+  }
+};
+
+/**
+ * Unmute notifications for a specific channel
+ * POST /api/notifications/channels/:channelId/unmute
+ */
+exports.unmuteChannel = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const userId = req.user.id;
+
+    const entry = await findChannelMuteEntry(userId, channelId);
+    if (!entry) {
+      return generateResponse(
+        { channelId, isMuted: false },
+        "Channel is not muted",
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+
+    await removeChannelMute(userId, channelId);
+
+    // Re-add user's socket to channel room
+    const io = req.app.get("io");
+    if (io) addUserToChannelRoom(userId, channelId, io);
+
+    return generateResponse(
+      { channelId, isMuted: false, resumedAt: new Date().toISOString() },
+      "Channel notifications resumed successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in unmuteChannel:", error);
+    return next({ statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR, message: error?.message });
+  }
+};
+
+/**
+ * Get mute status for a specific channel
+ * GET /api/notifications/channels/:channelId/mute-status
+ */
+exports.getChannelMuteStatus = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const userId = req.user.id;
+
+    const entry = await findChannelMuteEntry(userId, channelId);
+
+    if (!entry) {
+      return generateResponse(
+        { channelId, isMuted: false, muteUntil: null, timeRemaining: null },
+        "Channel is not muted",
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+
+    // Auto-clean if expired
+    if (entry.muteUntil && entry.muteUntil <= new Date()) {
+      await removeChannelMute(userId, channelId);
+      return generateResponse(
+        { channelId, isMuted: false, muteUntil: null, timeRemaining: null },
+        "Channel mute has expired",
+        res,
+        STATUS_CODES.SUCCESS
+      );
+    }
+
+    return generateResponse(
+      {
+        channelId,
+        isMuted: true,
+        muteUntil: entry.muteUntil?.toISOString() || null,
+        timeRemaining: entry.muteUntil ? getTimeRemaining(entry.muteUntil) : "Until unmuted",
+        mutedAt: entry.mutedAt?.toISOString(),
+      },
+      "Channel mute status retrieved",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in getChannelMuteStatus:", error);
+    return next({ statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR, message: error?.message });
+  }
+};
+
+// ─── Global mute endpoints ────────────────────────────────────────────────────
 
 /**
  * Mute notifications for a specific duration

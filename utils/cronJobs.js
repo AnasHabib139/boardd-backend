@@ -1,9 +1,11 @@
 "use strict";
 
 const cron = require("node-cron");
-const { 
-  findExpiredMutePreferences, 
-  updateUserMutePreferences 
+const {
+  findExpiredMutePreferences,
+  updateUserMutePreferences,
+  findExpiredChannelMutes,
+  removeChannelMute,
 } = require("../models/userMutePreferencesModel");
 const {
   findExpiredStatuses,
@@ -87,6 +89,58 @@ const autoUnmuteExpiredUsers = async (io) => {
     console.log('Auto-unmute check completed');
   } catch (error) {
     console.error('Error in auto-unmute cron job:', error);
+  }
+};
+
+// Auto-unmute expired per-channel mutes
+const autoUnmuteExpiredChannels = async (io) => {
+  try {
+    const docs = await findExpiredChannelMutes();
+    if (docs.length === 0) return;
+
+    console.log(`Auto-unmuting expired channel mutes for ${docs.length} user(s)`);
+
+    for (const prefs of docs) {
+      const userId = prefs.userId;
+      const now = new Date();
+
+      // Identify only the expired entries (skip indefinite muteUntil: null)
+      const expiredEntries = prefs.channelMutes.filter(
+        (m) => m.muteUntil && m.muteUntil <= now
+      );
+
+      for (const entry of expiredEntries) {
+        const channelId = entry.channelId.toString();
+        try {
+          await removeChannelMute(userId, channelId);
+
+          if (io) {
+            const userRoom = `user:${userId}`;
+            const socketsInRoom = io.sockets.adapter.rooms.get(userRoom);
+            if (socketsInRoom) {
+              socketsInRoom.forEach((socketId) => {
+                const socket = io.sockets.sockets.get(socketId);
+                if (socket) {
+                  socket.join(`channel:${channelId}`);
+                  socket.emit("channel-unmute-complete", {
+                    isMuted: false,
+                    channelId,
+                    message: "Channel mute period has expired. Notifications resumed.",
+                    unmuteReason: "expired",
+                  });
+                }
+              });
+            }
+          }
+
+          console.log(`Auto-unmuted channel ${channelId} for user ${userId}`);
+        } catch (err) {
+          console.error(`Error auto-unmuting channel ${channelId} for user ${userId}:`, err);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error in auto-unmute channel cron job:", error);
   }
 };
 
@@ -179,9 +233,10 @@ const cleanupUsedPasswordResets = async () => {
 
 // Initialize cron jobs
 const initializeCronJobs = (io) => {
-  // Check for expired mute preferences every minute
+  // Check for expired global mute preferences every minute
   const autoUnmuteJob = cron.schedule('* * * * *', () => {
     autoUnmuteExpiredUsers(io);
+    autoUnmuteExpiredChannels(io);
   }, {
     scheduled: false,
     timezone: "UTC"
@@ -228,6 +283,7 @@ const initializeCronJobs = (io) => {
     usedPasswordResetCleanupJob,
     // Method to manually trigger jobs (useful for testing)
     triggerAutoUnmute: () => autoUnmuteExpiredUsers(io),
+    triggerAutoUnmuteChannels: () => autoUnmuteExpiredChannels(io),
     triggerAutoClearStatus: () => autoClearExpiredStatuses(),
     triggerPasswordResetCleanup: () => cleanupExpiredPasswordResets(),
     triggerUsedPasswordResetCleanup: () => cleanupUsedPasswordResets()
@@ -237,6 +293,7 @@ const initializeCronJobs = (io) => {
 module.exports = {
   initializeCronJobs,
   autoUnmuteExpiredUsers,
+  autoUnmuteExpiredChannels,
   autoClearExpiredStatuses,
   cleanupExpiredPasswordResets,
   cleanupUsedPasswordResets

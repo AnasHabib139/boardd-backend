@@ -5,6 +5,9 @@ const {
   muteNotifications,
   unmuteNotifications,
   getMuteStatus,
+  muteChannel,
+  unmuteChannel,
+  getChannelMuteStatus,
 } = require("../controller/notificationController");
 const {
   getActivities,
@@ -16,6 +19,8 @@ const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
 const {
   validateMuteNotifications,
+  validateMuteChannel,
+  validateChannelIdParam,
 } = require("../validation/notificationValidation");
 
 class NotificationApi {
@@ -54,6 +59,33 @@ class NotificationApi {
       "/mute-status",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       getMuteStatus
+    );
+
+    // ========== Per-Channel Mute Endpoints ==========
+
+    // Mute notifications for a specific channel (duration optional — omit for indefinite)
+    router.post(
+      "/channels/:channelId/mute",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateChannelIdParam,
+      validateMuteChannel,
+      muteChannel
+    );
+
+    // Unmute notifications for a specific channel
+    router.post(
+      "/channels/:channelId/unmute",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateChannelIdParam,
+      unmuteChannel
+    );
+
+    // Get mute status for a specific channel
+    router.get(
+      "/channels/:channelId/mute-status",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateChannelIdParam,
+      getChannelMuteStatus
     );
 
     // ========== Activity Feed Endpoints ==========

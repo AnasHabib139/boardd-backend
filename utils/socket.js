@@ -1725,7 +1725,7 @@ exports.initSocket = (server) => {
             return;
           }
           
-          // If mute has expired, clear it automatically
+          // If global mute has expired, clear it automatically
           if (mutePrefs && mutePrefs.isMuted && mutePrefs.muteUntil && mutePrefs.muteUntil <= now) {
             const { updateUserMutePreferences } = require("../models/userMutePreferencesModel");
             await updateUserMutePreferences(
@@ -1738,6 +1738,30 @@ exports.initSocket = (server) => {
               }
             );
             console.log(`Auto-unmuted expired user ${userId}`);
+          }
+
+          // Check per-channel mute for this specific channel
+          if (mutePrefs && mutePrefs.channelMutes?.length) {
+            const channelMuteEntry = mutePrefs.channelMutes.find(
+              (m) => m.channelId.toString() === channelId
+            );
+            if (channelMuteEntry) {
+              const isStillMuted = !channelMuteEntry.muteUntil || channelMuteEntry.muteUntil > now;
+              if (isStillMuted) {
+                console.log(`User ${userId} has channel ${channelId} muted - not joining channel room`);
+                socket.emit("channel-mute-status", {
+                  isMuted: true,
+                  channelId,
+                  muteUntil: channelMuteEntry.muteUntil?.toISOString() || null,
+                  message: "Channel notifications are muted",
+                });
+                return;
+              }
+              // Channel mute expired — clean it up
+              const { removeChannelMute } = require("../models/userMutePreferencesModel");
+              await removeChannelMute(userId, channelId);
+              console.log(`Auto-removed expired channel mute for user ${userId} channel ${channelId}`);
+            }
           }
         } catch (error) {
           console.error(`Error checking mute preferences for user ${userId}:`, error);
