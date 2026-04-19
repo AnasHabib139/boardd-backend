@@ -19,7 +19,6 @@ exports.getActivityCategory = (type) => {
     CHAT_MENTION: "mention",
     CHAT_REACTION: "reaction",
     CHANNEL_INVITATION: "invitation",
-    TASK_COMMENT_MENTION: "mention",
   };
 
   return categoryMap[type] || "chat";
@@ -32,11 +31,6 @@ exports.getActivityCategory = (type) => {
  */
 exports.getActivitySubtitle = (notification) => {
   const { type, channelName, conversationType, reactionEmoji } = notification;
-
-  // Task comment mention subtitle
-  if (type === "TASK_COMMENT_MENTION") {
-    return "task comment";
-  }
 
   // Reaction-specific subtitle
   if (type === "CHAT_REACTION") {
@@ -226,7 +220,6 @@ exports.calculateUnreadCounts = async (NotificationModel, userId) => {
     'CHAT_THREAD_REPLY',
     'CHAT_REACTION',
     'CHANNEL_INVITATION',
-    'TASK_COMMENT_MENTION',
   ];
 
   // Aggregate unread counts by category
