@@ -176,6 +176,35 @@ const buildTasksSearchPipeline = (filters) => {
     }
   });
 
+  // Lookup status name/color from TabTaskStatus
+  pipeline.push({
+    $lookup: {
+      from: "tabtaskstatuses",
+      let: { projectId: "$projectId", statusKey: "$status" },
+      pipeline: [
+        {
+          $match: {
+            $expr: {
+              $and: [
+                { $eq: ["$projectId", "$$projectId"] },
+                { $eq: ["$statusKey", "$$statusKey"] },
+                { $eq: ["$isActive", true] },
+              ],
+            },
+          },
+        },
+        { $project: { _id: 0, statusKey: 1, statusName: 1, color: 1 } },
+      ],
+      as: "statusDetail",
+    },
+  });
+
+  pipeline.push({
+    $addFields: {
+      statusDetail: { $arrayElemAt: ["$statusDetail", 0] },
+    },
+  });
+
   // Sort by search relevance or date
   if (searchQuery) {
     pipeline.push({ $sort: { searchScore: -1, createdAt: -1 } });
@@ -190,6 +219,7 @@ const buildTasksSearchPipeline = (filters) => {
       title: 1,
       description: 1,
       status: 1,
+      statusDetail: 1,
       priority: 1,
       dueDate: 1,
       tags: 1,
@@ -1497,6 +1527,250 @@ const buildTemplatesCountPipeline = (filters) => {
   return pipeline;
 };
 
+/**
+ * Build subtasks search pipeline
+ */
+const buildSubtasksSearchPipeline = (filters) => {
+  const {
+    searchQuery,
+    companyId,
+    userId,
+    assignedTo,
+    createdBy,
+    status,
+    startDate,
+    endDate,
+    page = 1,
+    limit = 10,
+  } = filters;
+
+  const pipeline = [];
+
+  const matchStage = {
+    companyId: new Types.ObjectId(companyId),
+    isActive: true,
+  };
+
+  if (searchQuery) {
+    matchStage.$text = { $search: searchQuery };
+  }
+
+  pipeline.push({ $match: matchStage });
+
+  // Apply additional filters
+  const additionalFilters = {};
+
+  if (assignedTo) {
+    additionalFilters.assignedTo = new Types.ObjectId(assignedTo);
+  }
+
+  if (createdBy) {
+    additionalFilters.createdBy = new Types.ObjectId(createdBy);
+  }
+
+  if (status) {
+    additionalFilters.status = status;
+  }
+
+  if (startDate || endDate) {
+    additionalFilters.createdAt = {};
+    if (startDate) additionalFilters.createdAt.$gte = new Date(startDate);
+    if (endDate) additionalFilters.createdAt.$lte = new Date(endDate);
+  }
+
+  if (Object.keys(additionalFilters).length > 0) {
+    pipeline.push({ $match: additionalFilters });
+  }
+
+  if (searchQuery) {
+    pipeline.push({ $addFields: { searchScore: { $meta: "textScore" } } });
+  }
+
+  // Lookup parent task
+  pipeline.push({
+    $lookup: {
+      from: "tasks",
+      localField: "taskId",
+      foreignField: "_id",
+      as: "parentTask",
+      pipeline: [
+        {
+          $project: {
+            _id: 1,
+            title: 1,
+            status: 1,
+            priority: 1,
+            dueDate: 1,
+            channelId: 1,
+            projectId: 1,
+          },
+        },
+      ],
+    },
+  });
+
+  pipeline.push({
+    $unwind: { path: "$parentTask", preserveNullAndEmptyArrays: true },
+  });
+
+  // Lookup project
+  pipeline.push({
+    $lookup: {
+      from: "projects",
+      localField: "projectId",
+      foreignField: "_id",
+      as: "project",
+      pipeline: [
+        { $project: { _id: 1, name: 1, color: 1, description: 1 } },
+      ],
+    },
+  });
+
+  pipeline.push({
+    $unwind: { path: "$project", preserveNullAndEmptyArrays: true },
+  });
+
+  // Lookup status detail from TabTaskStatus
+  pipeline.push({
+    $lookup: {
+      from: "tabtaskstatuses",
+      let: { projectId: "$projectId", statusKey: "$status" },
+      pipeline: [
+        {
+          $match: {
+            $expr: {
+              $and: [
+                { $eq: ["$projectId", "$$projectId"] },
+                { $eq: ["$statusKey", "$$statusKey"] },
+                { $eq: ["$isActive", true] },
+              ],
+            },
+          },
+        },
+        { $project: { _id: 0, statusKey: 1, statusName: 1, color: 1 } },
+      ],
+      as: "statusDetail",
+    },
+  });
+
+  pipeline.push({
+    $addFields: { statusDetail: { $arrayElemAt: ["$statusDetail", 0] } },
+  });
+
+  // Lookup assigned users
+  pipeline.push({
+    $lookup: {
+      from: "users",
+      localField: "assignedTo",
+      foreignField: "_id",
+      as: "assignedToUsers",
+      pipeline: [
+        { $project: { _id: 1, name: 1, email: 1, image: 1, role: 1, designation: 1 } },
+      ],
+    },
+  });
+
+  // Lookup creator
+  pipeline.push({
+    $lookup: {
+      from: "users",
+      localField: "createdBy",
+      foreignField: "_id",
+      as: "creator",
+      pipeline: [
+        { $project: { _id: 1, name: 1, email: 1, image: 1, role: 1 } },
+      ],
+    },
+  });
+
+  pipeline.push({
+    $unwind: { path: "$creator", preserveNullAndEmptyArrays: true },
+  });
+
+  // Sort
+  if (searchQuery) {
+    pipeline.push({ $sort: { searchScore: -1, createdAt: -1 } });
+  } else {
+    pipeline.push({ $sort: { createdAt: -1 } });
+  }
+
+  // Project final fields
+  pipeline.push({
+    $project: {
+      _id: 1,
+      title: 1,
+      description: 1,
+      status: 1,
+      statusDetail: 1,
+      priority: 1,
+      dueDate: 1,
+      tags: 1,
+      strokeColor: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      assignedToUsers: 1,
+      creator: 1,
+      parentTask: 1,
+      project: 1,
+      searchScore: 1,
+    },
+  });
+
+  const skip = (page - 1) * limit;
+  pipeline.push({ $skip: skip });
+  pipeline.push({ $limit: limit });
+
+  return pipeline;
+};
+
+/**
+ * Build count pipeline for subtasks
+ */
+const buildSubtasksCountPipeline = (filters) => {
+  const {
+    searchQuery,
+    companyId,
+    assignedTo,
+    createdBy,
+    status,
+    startDate,
+    endDate,
+  } = filters;
+
+  const pipeline = [];
+
+  const matchStage = {
+    companyId: new Types.ObjectId(companyId),
+    isActive: true,
+  };
+
+  if (searchQuery) {
+    matchStage.$text = { $search: searchQuery };
+  }
+
+  pipeline.push({ $match: matchStage });
+
+  const additionalFilters = {};
+
+  if (assignedTo) additionalFilters.assignedTo = new Types.ObjectId(assignedTo);
+  if (createdBy) additionalFilters.createdBy = new Types.ObjectId(createdBy);
+  if (status) additionalFilters.status = status;
+
+  if (startDate || endDate) {
+    additionalFilters.createdAt = {};
+    if (startDate) additionalFilters.createdAt.$gte = new Date(startDate);
+    if (endDate) additionalFilters.createdAt.$lte = new Date(endDate);
+  }
+
+  if (Object.keys(additionalFilters).length > 0) {
+    pipeline.push({ $match: additionalFilters });
+  }
+
+  pipeline.push({ $count: "total" });
+
+  return pipeline;
+};
+
 module.exports = {
   buildTasksSearchPipeline,
   buildMembersSearchPipeline,
@@ -1511,5 +1785,7 @@ module.exports = {
   buildDocumentsSearchPipeline,
   buildDocumentsCountPipeline,
   buildTemplatesSearchPipeline,
-  buildTemplatesCountPipeline
+  buildTemplatesCountPipeline,
+  buildSubtasksSearchPipeline,
+  buildSubtasksCountPipeline,
 };

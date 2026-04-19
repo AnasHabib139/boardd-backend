@@ -1,6 +1,7 @@
 "use strict";
 
 const { aggregateTasks } = require("../models/taskModel");
+const { aggregateSubtasks } = require("../models/subtaskModel");
 const { aggregateUsers, findUser } = require("../models/userModel");
 const { aggregateChatMessages } = require("../models/chatMessageModel");
 const { aggregateForms } = require("../models/formModel");
@@ -21,7 +22,9 @@ const {
   buildDocumentsSearchPipeline,
   buildDocumentsCountPipeline,
   buildTemplatesSearchPipeline,
-  buildTemplatesCountPipeline
+  buildTemplatesCountPipeline,
+  buildSubtasksSearchPipeline,
+  buildSubtasksCountPipeline,
 } = require("./queries/searchQueries");
 const { getUniqueDesignationsQuery } = require("./queries/userQueries");
 
@@ -60,7 +63,7 @@ const globalSearch = async (req, res) => {
     // Determine which entity types to search
     let typesToSearch = [];
     if (types === "all") {
-      typesToSearch = ["tasks", "members", "chats", "files", "folders", "documents", "templates"];
+      typesToSearch = ["tasks", "subtasks", "members", "chats", "files", "folders", "documents", "templates"];
     } else {
       typesToSearch = types.split(",");
     }
@@ -113,6 +116,38 @@ const globalSearch = async (req, res) => {
           total: 0,
           data: [],
           error: "Failed to search tasks"
+        };
+      }
+    }
+
+    // Search subtasks
+    if (typesToSearch.includes("subtasks")) {
+      try {
+        const subtasksPipeline = buildSubtasksSearchPipeline(filters);
+        const subtasksCountPipeline = buildSubtasksCountPipeline(filters);
+
+        const [subtasksData, subtasksCountData] = await Promise.all([
+          aggregateSubtasks(subtasksPipeline),
+          aggregateSubtasks(subtasksCountPipeline),
+        ]);
+
+        const subtasksTotal = subtasksCountData.length > 0 ? subtasksCountData[0].total : 0;
+
+        results.subtasks = {
+          total: subtasksTotal,
+          data: subtasksData,
+          page,
+          limit,
+          totalPages: Math.ceil(subtasksTotal / limit),
+        };
+
+        totalResults += subtasksTotal;
+      } catch (error) {
+        console.error("Error searching subtasks:", error);
+        results.subtasks = {
+          total: 0,
+          data: [],
+          error: "Failed to search subtasks",
         };
       }
     }

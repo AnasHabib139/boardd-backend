@@ -136,6 +136,8 @@ exports.updateSubtask = (query, update, options = {}) =>
 exports.deleteSubtask = (query) => SubtaskModel.findOneAndDelete(query);
 
 // get all subtasks
+exports.aggregateSubtasks = (pipeline) => SubtaskModel.aggregate(pipeline);
+
 exports.getAllSubtasks = async ({
   query,
   page,
