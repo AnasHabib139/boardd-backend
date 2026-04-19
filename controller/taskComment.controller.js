@@ -100,29 +100,29 @@ async function sendMentionNotifications(userMentions, task, comment, author, con
       });
 
       if (io) {
-        io.to(`user:${mentionedUserId}`).emit("activity:new", {
-          _id: notification._id,
+        io.to(`user:${mentionedUserId}`).emit("tab-activity", {
           type: "TASK_COMMENT_MENTION",
+          notification: {
+            title: "New mention",
+            message: `${author.name} mentioned you in a comment on "${task.title}"`,
+            icon: "💬",
+            color: "info",
+          },
+          _id: notification._id,
           activityCategory: "mention",
-          title: "New mention",
-          messagePreview: `${author.name} mentioned you: ${comment.contentText.substring(0, 100)}`,
           actor: {
             _id: author._id,
             name: author.name,
             email: author.email,
             image: author.image,
           },
+          taskId: task._id,
+          commentId: comment._id,
+          channelId: task.channelId || null,
+          tabId: task.tabId || null,
+          projectId: task.projectId || null,
           timestamp: notification.timestamp,
           isRead: false,
-          navigationContext: {
-            taskId: task._id,
-            commentId: comment._id,
-            channelId: task.channelId || null,
-            tabId: task.tabId || null,
-            projectId: task.projectId || null,
-            conversationId: null,
-            messageId: null,
-          },
         });
       }
     } catch (err) {

@@ -200,6 +200,7 @@ exports.getActivities = async (req, res, next) => {
       "CHAT_THREAD_REPLY",
       "CHAT_REACTION",
       "CHANNEL_INVITATION",
+      "TASK_COMMENT_MENTION",
     ];
     filter.type = { $in: FEED_NOTIFICATION_TYPES };
 
