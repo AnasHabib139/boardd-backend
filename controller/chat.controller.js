@@ -526,6 +526,32 @@ exports.getConversations = async (req, res, next) => {
       data.conversations = [selfEntry, ...data.conversations];
     }
 
+    // Enrich participants with real-time online status from Redis
+    try {
+      const { getOnlineStatuses } = require("../utils/redis");
+
+      const participantIds = new Set();
+      data.conversations.forEach((conv) => {
+        conv.participants?.forEach((p) => {
+          if (p._id) participantIds.add(p._id.toString());
+        });
+      });
+
+      if (participantIds.size > 0) {
+        const onlineMap = await getOnlineStatuses([...participantIds]);
+        data.conversations = data.conversations.map((conv) => ({
+          ...conv,
+          participants: conv.participants?.map((p) => ({
+            ...p,
+            isOnline: conv.isSelf ? true : (onlineMap[p._id.toString()] || false),
+          })),
+        }));
+      }
+    } catch (err) {
+      console.error("Failed to enrich isOnline:", err);
+      // Non-fatal — conversations return without isOnline rather than failing
+    }
+
     // Build pagination metadata
     const pagination = {
       page: pageNum,

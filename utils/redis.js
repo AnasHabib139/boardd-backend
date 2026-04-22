@@ -61,4 +61,41 @@ const closeRedis = async () => {
   }
 };
 
-module.exports = { initRedis, getRedis, closeRedis };
+/**
+ * Add a socket ID to a user's presence set
+ * Returns the new socket count for that user
+ */
+const addUserSocket = async (userId, socketId) => {
+  const redis = getRedis();
+  await redis.sadd(`user:presence:${userId}`, socketId);
+  return redis.scard(`user:presence:${userId}`);
+};
+
+/**
+ * Remove a socket ID from a user's presence set
+ * Returns the remaining socket count for that user
+ */
+const removeUserSocket = async (userId, socketId) => {
+  const redis = getRedis();
+  await redis.srem(`user:presence:${userId}`, socketId);
+  return redis.scard(`user:presence:${userId}`);
+};
+
+/**
+ * Bulk check online status for multiple users
+ * Returns a map of { userId: boolean }
+ */
+const getOnlineStatuses = async (userIds) => {
+  if (!userIds.length) return {};
+  const redis = getRedis();
+  const pipeline = redis.pipeline();
+  userIds.forEach((id) => pipeline.scard(`user:presence:${id}`));
+  const results = await pipeline.exec();
+  const map = {};
+  userIds.forEach((id, i) => {
+    map[id] = (results[i][1] || 0) > 0;
+  });
+  return map;
+};
+
+module.exports = { initRedis, getRedis, closeRedis, addUserSocket, removeUserSocket, getOnlineStatuses };

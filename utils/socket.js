@@ -1771,13 +1771,41 @@ exports.initSocket = (server) => {
         // Join the current channel room (covers all tabs and open tasks)
         console.log(`Socket ${socket.id} joining channel room: ${channelId}`);
         socket.join(`channel:${channelId}`);
-        
+
         // Emit confirmation
         socket.emit("channel-joined", {
           success: true,
           channelId,
           message: "Successfully joined channel"
         });
+      }
+
+      // Track presence — store userId on socket for disconnect cleanup
+      if (userId) {
+        socket.data.userId = userId;
+        try {
+          const presenceUser = await findUser({ _id: userId });
+          if (presenceUser?.companyId) {
+            const companyId = presenceUser.companyId.toString();
+            socket.data.companyId = companyId;
+
+            // Join company room so presence broadcasts reach all teammates
+            socket.join(`company:${companyId}`);
+
+            // Add socket to user's presence set; emit online if this is their first socket
+            const { addUserSocket } = require("./redis");
+            const count = await addUserSocket(userId, socket.id);
+            if (count === 1) {
+              io.to(`company:${companyId}`).emit("user:status:changed", {
+                userId,
+                isOnline: true,
+              });
+            }
+          }
+        } catch (err) {
+          console.error("Presence tracking error on join:", err);
+          // Non-fatal — don't block channel join
+        }
       }
     });
 
@@ -1828,12 +1856,28 @@ exports.initSocket = (server) => {
       await processTaskMove(socket, data);
     });
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
       console.log("Client disconnected:", socket.id);
       // Clean up any pending updates for this socket
       for (const [key, value] of pendingUpdates.entries()) {
         if (value.socketId === socket.id) {
           pendingUpdates.delete(key);
+        }
+      }
+      // Remove socket from presence set; emit offline if no sockets remain
+      const { userId, companyId } = socket.data || {};
+      if (userId && companyId) {
+        try {
+          const { removeUserSocket } = require("./redis");
+          const count = await removeUserSocket(userId, socket.id);
+          if (count === 0) {
+            io.to(`company:${companyId}`).emit("user:status:changed", {
+              userId,
+              isOnline: false,
+            });
+          }
+        } catch (err) {
+          console.error("Presence tracking error on disconnect:", err);
         }
       }
     });
