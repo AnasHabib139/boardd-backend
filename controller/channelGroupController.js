@@ -14,6 +14,7 @@ const { findManyChannels } = require("../models/channelModel");
 const {
   getAllChannelGroupsQuery,
 } = require("./queries/channelGroupQueries");
+const { findUserMutePreferences } = require("../models/userMutePreferencesModel");
 
 /**
  * Create a new channel group
@@ -273,8 +274,15 @@ exports.getAllChannelGroups = async (req, res, next) => {
       });
     }
 
+    // Fetch user's active per-channel mutes to inject into aggregation
+    const now = new Date();
+    const mutePrefs = await findUserMutePreferences({ userId });
+    const activeMutes = (mutePrefs?.channelMutes || []).filter(
+      (m) => m.muteUntil === null || m.muteUntil > now
+    );
+
     // Get the aggregation query filtered by user's channel membership
-    const query = getAllChannelGroupsQuery(user.companyId.toString(), userId);
+    const query = getAllChannelGroupsQuery(user.companyId.toString(), userId, activeMutes);
 
     // Fetch channel groups with pagination
     const result = await getAllChannelGroups({

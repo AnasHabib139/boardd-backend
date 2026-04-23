@@ -8,7 +8,7 @@ const { UNASSIGNED_CHANNEL_GROUP_ID } = require("../../utils/constants");
  * @param {string} userId - User ID to filter by channel membership
  * @returns {Array} Aggregation pipeline
  */
-exports.getAllChannelGroupsQuery = (companyId, userId) => {
+exports.getAllChannelGroupsQuery = (companyId, userId, activeMutes = []) => {
   return [
     {
       $facet: {
@@ -190,7 +190,7 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
             },
           },
 
-          // Clean up channels field (remove members for response, include conversationId, unreadCount, and creator)
+          // Clean up channels field (remove members for response, include conversationId, unreadCount, creator, and mute info)
           {
             $addFields: {
               channels: {
@@ -198,21 +198,40 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                   input: "$userChannels",
                   as: "channel",
                   in: {
-                    _id: "$$channel._id",
-                    channelName: "$$channel.channelName",
-                    channelDescription: "$$channel.channelDescription",
-                    createdAt: "$$channel.createdAt",
-                    conversationId: "$$channel.conversationId",
-                    unreadCount: "$$channel.unreadCount",
-                    creator: {
-                      _id: "$$channel.creator._id",
-                      name: "$$channel.creator.name",
-                      email: "$$channel.creator.email",
-                      image: "$$channel.creator.image",
-                      coverImage: "$$channel.creator.coverImage",
-                      role: "$$channel.creator.role",
-                      designation: "$$channel.creator.designation",
-                      title: "$$channel.creator.title"
+                    $let: {
+                      vars: {
+                        muteEntry: {
+                          $arrayElemAt: [
+                            {
+                              $filter: {
+                                input: activeMutes,
+                                cond: { $eq: ["$$this.channelId", "$$channel._id"] }
+                              }
+                            },
+                            0
+                          ]
+                        }
+                      },
+                      in: {
+                        _id: "$$channel._id",
+                        channelName: "$$channel.channelName",
+                        channelDescription: "$$channel.channelDescription",
+                        createdAt: "$$channel.createdAt",
+                        conversationId: "$$channel.conversationId",
+                        unreadCount: "$$channel.unreadCount",
+                        creator: {
+                          _id: "$$channel.creator._id",
+                          name: "$$channel.creator.name",
+                          email: "$$channel.creator.email",
+                          image: "$$channel.creator.image",
+                          coverImage: "$$channel.creator.coverImage",
+                          role: "$$channel.creator.role",
+                          designation: "$$channel.creator.designation",
+                          title: "$$channel.creator.title"
+                        },
+                        isMuted: { $ne: ["$$muteEntry", null] },
+                        muteUntil: { $ifNull: ["$$muteEntry.muteUntil", null] }
+                      }
                     }
                   }
                 }
@@ -519,7 +538,40 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                   updatedAt: new Date(),
                   creator: null,
                   channelCount: { $size: { $ifNull: ["$$unassignedChannels", []] } },
-                  channels: { $ifNull: ["$$unassignedChannels", []] },
+                  channels: {
+                    $map: {
+                      input: { $ifNull: ["$$unassignedChannels", []] },
+                      as: "uch",
+                      in: {
+                        $let: {
+                          vars: {
+                            muteEntry: {
+                              $arrayElemAt: [
+                                {
+                                  $filter: {
+                                    input: activeMutes,
+                                    cond: { $eq: ["$$this.channelId", "$$uch._id"] }
+                                  }
+                                },
+                                0
+                              ]
+                            }
+                          },
+                          in: {
+                            _id: "$$uch._id",
+                            channelName: "$$uch.channelName",
+                            channelDescription: "$$uch.channelDescription",
+                            createdAt: "$$uch.createdAt",
+                            conversationId: "$$uch.conversationId",
+                            unreadCount: "$$uch.unreadCount",
+                            creator: "$$uch.creator",
+                            isMuted: { $ne: ["$$muteEntry", null] },
+                            muteUntil: { $ifNull: ["$$muteEntry.muteUntil", null] }
+                          }
+                        }
+                      }
+                    }
+                  },
                   isRuntimeGroup: true, // Mark as runtime group
                 },
                 else: null
