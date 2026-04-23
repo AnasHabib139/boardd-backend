@@ -14,7 +14,6 @@ const { findManyChannels } = require("../models/channelModel");
 const {
   getAllChannelGroupsQuery,
 } = require("./queries/channelGroupQueries");
-const { findUserMutePreferences } = require("../models/userMutePreferencesModel");
 
 /**
  * Create a new channel group
@@ -274,17 +273,8 @@ exports.getAllChannelGroups = async (req, res, next) => {
       });
     }
 
-    // Fetch user's active per-channel mutes to inject into aggregation
-    const now = new Date();
-    const mutePrefs = await findUserMutePreferences({ userId });
-    // Convert Mongoose subdocuments to plain objects so the MongoDB driver
-    // serializes them correctly when used as literals inside the pipeline.
-    const activeMutes = (mutePrefs?.channelMutes || [])
-      .filter((m) => m.muteUntil === null || m.muteUntil > now)
-      .map((m) => ({ channelId: m.channelId, muteUntil: m.muteUntil ?? null }));
-
     // Get the aggregation query filtered by user's channel membership
-    const query = getAllChannelGroupsQuery(user.companyId.toString(), userId, activeMutes);
+    const query = getAllChannelGroupsQuery(user.companyId.toString(), userId);
 
     // Fetch channel groups with pagination
     const result = await getAllChannelGroups({
