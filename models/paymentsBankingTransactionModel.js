@@ -14,7 +14,6 @@ const bankingTransactionSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "Company",
       required: true,
-      index: true
     },
 
     // ==================== Stripe References ====================
@@ -22,14 +21,11 @@ const bankingTransactionSchema = new Schema(
     stripeTransactionId: {
       type: String,
       required: true,
-      unique: true,
-      index: true
     },
 
     stripeAccountId: {
       type: String,
       required: true,
-      index: true
     },
 
     // ==================== Transaction Details ====================

@@ -15,27 +15,22 @@ const issuedCardSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "PaymentsCardholder",
       required: true,
-      index: true
     },
 
     companyId: {
       type: Schema.Types.ObjectId,
       ref: "Company",
       required: true,
-      index: true
     },
 
     stripeAccountId: {
       type: String,
       required: true,
-      index: true
     },
 
     stripeCardId: {
       type: String,
       required: true,
-      unique: true,
-      index: true
     },
 
     // ==================== Card Details ====================

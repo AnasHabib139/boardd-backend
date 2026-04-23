@@ -11,7 +11,7 @@ const formInviteSchema = new Schema({
   invitedBy: { type: Types.ObjectId, ref: "User", required: true },
   invitedEmail: { type: String, required: true, lowercase: true },
   invitedName: { type: String, required: true }, // Name of the person invited
-  inviteToken: { type: String, unique: true, default: uuidv4 }, // Unique token for tracking
+  inviteToken: { type: String, default: uuidv4 }, // Unique token for tracking
 
   // Email tracking (simplified)
   emailSent: { type: Boolean, default: false },

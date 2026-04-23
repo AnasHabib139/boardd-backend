@@ -30,8 +30,6 @@ const CompanyPermissionPolicySchema = new Schema(
       type: Types.ObjectId,
       ref: "Company",
       required: true,
-      unique: true,
-      index: true,
     },
 
     // ==================== ACCOUNT AND CHANNELS ====================

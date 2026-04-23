@@ -31,15 +31,12 @@ const paymentsStripeAccountSchema = new Schema(
       type: Types.ObjectId,
       ref: "Company",
       required: true,
-      index: true,
     },
 
     // Stripe Account Details
     stripeAccountId: {
       type: String,
       required: true,
-      unique: true,
-      index: true,
     },
 
     country: {

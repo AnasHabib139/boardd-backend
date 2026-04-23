@@ -15,7 +15,6 @@ const financialAccountSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "Company",
       required: true,
-      index: true,
       unique: true // One Financial Account per company
     },
 
@@ -24,14 +23,11 @@ const financialAccountSchema = new Schema(
     stripeAccountId: {
       type: String,
       required: true,
-      index: true
     },
 
     stripeFinancialAccountId: {
       type: String,
       required: true,
-      unique: true,
-      index: true
     },
 
     // ==================== Account Details ====================

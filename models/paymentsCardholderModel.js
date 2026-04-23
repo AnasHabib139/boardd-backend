@@ -15,7 +15,6 @@ const cardholderSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "Company",
       required: true,
-      index: true,
       unique: true // One cardholder per company
     },
 
@@ -24,14 +23,11 @@ const cardholderSchema = new Schema(
     stripeAccountId: {
       type: String,
       required: true,
-      index: true
     },
 
     stripeCardholderId: {
       type: String,
       required: true,
-      unique: true,
-      index: true
     },
 
     // ==================== Cardholder Details ====================

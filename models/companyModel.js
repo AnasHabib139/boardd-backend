@@ -48,13 +48,13 @@ const CompanySchema = new Schema(
     // Multi-tenant Twilio Configuration
     twilioConfig: {
       // Subaccount Credentials (ENCRYPTED - use select: false)
-      subAccountSid: { type: String, index: true },
+      subAccountSid: { type: String },
       authToken: { type: String, select: false }, // Used for webhook signature verification
       apiKeySid: { type: String }, // Preferred over authToken
       apiKeySecret: { type: String, select: false }, // ENCRYPTED
 
       // Messaging Service
-      messagingServiceSid: { type: String, index: true },
+      messagingServiceSid: { type: String },
 
       // Phone Numbers
       fromNumbers: [{ type: String }], // E.164 format: ['+15551234567']
