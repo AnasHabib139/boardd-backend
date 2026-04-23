@@ -49,7 +49,7 @@ module.exports = {
             staleCount: {
               $size: {
                 $filter: {
-                  input: "$channelMutes",
+                  input: { $ifNull: ["$channelMutes", []] },
                   as: "m",
                   cond: { $eq: ["$$m.muteUntil", null] },
                 },
