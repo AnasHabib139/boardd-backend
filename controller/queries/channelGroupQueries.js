@@ -205,7 +205,8 @@ exports.getAllChannelGroupsQuery = (companyId, userId, activeMutes = []) => {
                             {
                               $filter: {
                                 input: activeMutes,
-                                cond: { $eq: ["$$this.channelId", "$$channel._id"] }
+                                as: "muteItem",
+                                cond: { $eq: ["$$muteItem.channelId", "$$channel._id"] }
                               }
                             },
                             0
@@ -550,7 +551,8 @@ exports.getAllChannelGroupsQuery = (companyId, userId, activeMutes = []) => {
                                 {
                                   $filter: {
                                     input: activeMutes,
-                                    cond: { $eq: ["$$this.channelId", "$$uch._id"] }
+                                    as: "muteItem",
+                                    cond: { $eq: ["$$muteItem.channelId", "$$uch._id"] }
                                   }
                                 },
                                 0
