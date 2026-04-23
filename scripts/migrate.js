@@ -10,6 +10,7 @@ const { getExecutedMigrations } = require("../models/migrationModel");
 require("../models/clientModel");
 require("../models/channelTabsModel");
 require("../models/invoiceModel");
+require("../models/userMutePreferencesModel");
 
 const commands = {
   // Run pending migrations
