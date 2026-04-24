@@ -165,6 +165,7 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                                   cond: {
                                     $and: [
                                       { $eq: ["$$cm.channelId", "$$channelId"] },
+                                      { $eq: [{ $type: "$$cm.muteUntil" }, "date"] },
                                       { $gt: ["$$cm.muteUntil", new Date()] }
                                     ]
                                   }
@@ -475,6 +476,7 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                                   cond: {
                                     $and: [
                                       { $eq: ["$$cm.channelId", "$$channelId"] },
+                                      { $eq: [{ $type: "$$cm.muteUntil" }, "date"] },
                                       { $gt: ["$$cm.muteUntil", new Date()] }
                                     ]
                                   }
