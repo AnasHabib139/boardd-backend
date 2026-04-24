@@ -1,5 +1,5 @@
 const { Types } = require("mongoose");
-const { UNASSIGNED_CHANNEL_GROUP_ID, INDEFINITE_MUTE_DATE } = require("../../utils/constants");
+const { UNASSIGNED_CHANNEL_GROUP_ID } = require("../../utils/constants");
 
 /**
  * Get all channel groups of a company with populated channel information filtered by user's channel membership
@@ -143,43 +143,6 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                     preserveNullAndEmptyArrays: true,
                   },
                 },
-                // Lookup mute info for this channel directly from DB (avoids JS/BSON serialization issues)
-                {
-                  $lookup: {
-                    from: "usermutepreferences",
-                    let: { channelId: "$_id" },
-                    pipeline: [
-                      {
-                        $match: {
-                          $expr: { $eq: ["$userId", Types.ObjectId.createFromHexString(userId)] }
-                        }
-                      },
-                      {
-                        $project: {
-                          activeMute: {
-                            $arrayElemAt: [
-                              {
-                                $filter: {
-                                  input: "$channelMutes",
-                                  as: "cm",
-                                  cond: {
-                                    $and: [
-                                      { $eq: ["$$cm.channelId", "$$channelId"] },
-                                      { $eq: [{ $type: "$$cm.muteUntil" }, "date"] },
-                                      { $gt: ["$$cm.muteUntil", new Date()] }
-                                    ]
-                                  }
-                                }
-                              },
-                              0
-                            ]
-                          }
-                        }
-                      }
-                    ],
-                    as: "muteInfo"
-                  }
-                },
                 {
                   $project: {
                     _id: 1,
@@ -197,19 +160,8 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                         0 // Default to 0 if no conversation exists
                       ]
                     },
-                    isMuted: { $ne: [{ $arrayElemAt: ["$muteInfo.activeMute", 0] }, null] },
-                    muteUntil: {
-                      $let: {
-                        vars: { raw: { $arrayElemAt: ["$muteInfo.activeMute.muteUntil", 0] } },
-                        in: {
-                          $cond: {
-                            if: { $gte: ["$$raw", INDEFINITE_MUTE_DATE] },
-                            then: null,
-                            else: { $ifNull: ["$$raw", null] }
-                          }
-                        }
-                      }
-                    }
+                    isMuted: { $literal: false },
+                    muteUntil: { $literal: null }
                   },
                 },
               ],
@@ -454,43 +406,6 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                     preserveNullAndEmptyArrays: true,
                   },
                 },
-                // Lookup mute info for this channel directly from DB
-                {
-                  $lookup: {
-                    from: "usermutepreferences",
-                    let: { channelId: "$_id" },
-                    pipeline: [
-                      {
-                        $match: {
-                          $expr: { $eq: ["$userId", Types.ObjectId.createFromHexString(userId)] }
-                        }
-                      },
-                      {
-                        $project: {
-                          activeMute: {
-                            $arrayElemAt: [
-                              {
-                                $filter: {
-                                  input: "$channelMutes",
-                                  as: "cm",
-                                  cond: {
-                                    $and: [
-                                      { $eq: ["$$cm.channelId", "$$channelId"] },
-                                      { $eq: [{ $type: "$$cm.muteUntil" }, "date"] },
-                                      { $gt: ["$$cm.muteUntil", new Date()] }
-                                    ]
-                                  }
-                                }
-                              },
-                              0
-                            ]
-                          }
-                        }
-                      }
-                    ],
-                    as: "muteInfo"
-                  }
-                },
                 {
                   $project: {
                     _id: 1,
@@ -507,19 +422,8 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                         0 // Default to 0 if no conversation exists
                       ]
                     },
-                    isMuted: { $ne: [{ $arrayElemAt: ["$muteInfo.activeMute", 0] }, null] },
-                    muteUntil: {
-                      $let: {
-                        vars: { raw: { $arrayElemAt: ["$muteInfo.activeMute.muteUntil", 0] } },
-                        in: {
-                          $cond: {
-                            if: { $gte: ["$$raw", INDEFINITE_MUTE_DATE] },
-                            then: null,
-                            else: { $ifNull: ["$$raw", null] }
-                          }
-                        }
-                      }
-                    }
+                    isMuted: { $literal: false },
+                    muteUntil: { $literal: null }
                   },
                 },
               ],

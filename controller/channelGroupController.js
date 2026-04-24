@@ -1,7 +1,7 @@
 "use strict";
 
 const { parseBody, generateResponse } = require("../utils");
-const { STATUS_CODES, UNASSIGNED_CHANNEL_GROUP_ID } = require("../utils/constants");
+const { STATUS_CODES, UNASSIGNED_CHANNEL_GROUP_ID, isIndefiniteMute } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const {
   createChannelGroup,
@@ -14,6 +14,9 @@ const { findManyChannels } = require("../models/channelModel");
 const {
   getAllChannelGroupsQuery,
 } = require("./queries/channelGroupQueries");
+const {
+  findUserMutePreferences,
+} = require("../models/userMutePreferencesModel");
 
 /**
  * Create a new channel group
@@ -283,6 +286,35 @@ exports.getAllChannelGroups = async (req, res, next) => {
       limit: parseInt(limit) || 10,
       responseKey: "channelGroups",
     });
+
+    // Overlay mute status from JS (avoids BSON undefined issues in aggregation)
+    const mutePrefs = await findUserMutePreferences({ userId });
+    if (mutePrefs?.channelMutes?.length && result?.channelGroups?.length) {
+      const now = new Date();
+      // Build a map: channelId -> { isMuted, muteUntil }
+      const muteMap = new Map();
+      for (const entry of mutePrefs.channelMutes) {
+        // Only real Date values that are in the future count as active mutes
+        if (entry.muteUntil instanceof Date && entry.muteUntil > now) {
+          muteMap.set(entry.channelId.toString(), {
+            isMuted: true,
+            muteUntil: isIndefiniteMute(entry.muteUntil) ? null : entry.muteUntil,
+          });
+        }
+      }
+      // Apply mute status to each channel in every group
+      for (const group of result.channelGroups) {
+        if (group.channels?.length) {
+          for (const channel of group.channels) {
+            const mute = muteMap.get(channel._id.toString());
+            if (mute) {
+              channel.isMuted = true;
+              channel.muteUntil = mute.muteUntil;
+            }
+          }
+        }
+      }
+    }
 
     return generateResponse(
       result,
