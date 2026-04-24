@@ -1,7 +1,7 @@
 "use strict";
 
 const { generateResponse, parseBody } = require("../utils");
-const { STATUS_CODES } = require("../utils/constants");
+const { STATUS_CODES, INDEFINITE_MUTE_DATE, isIndefiniteMute } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const { findManyChannels } = require("../models/channelModel");
 const {
@@ -183,8 +183,8 @@ exports.muteChannel = async (req, res, next) => {
       return next({ statusCode: STATUS_CODES.FORBIDDEN, message: "You are not a member of this channel" });
     }
 
-    // Calculate muteUntil (null = indefinite)
-    const muteUntil = duration ? new Date(Date.now() + getMuteDurationMs(duration)) : null;
+    // Calculate muteUntil (indefinite = far-future sentinel date)
+    const muteUntil = duration ? new Date(Date.now() + getMuteDurationMs(duration)) : INDEFINITE_MUTE_DATE;
 
     await upsertChannelMute(userId, channelId, muteUntil);
 
@@ -192,12 +192,14 @@ exports.muteChannel = async (req, res, next) => {
     const io = req.app.get("io");
     if (io) removeUserFromChannelRoom(userId, channelId, io);
 
+    const indefinite = isIndefiniteMute(muteUntil);
+
     return generateResponse(
       {
         channelId,
         isMuted: true,
-        muteUntil: muteUntil?.toISOString() || null,
-        timeRemaining: muteUntil ? getTimeRemaining(muteUntil) : "Until unmuted",
+        muteUntil: indefinite ? null : muteUntil.toISOString(),
+        timeRemaining: indefinite ? "Until unmuted" : getTimeRemaining(muteUntil),
       },
       "Channel notifications muted successfully",
       res,
@@ -266,8 +268,8 @@ exports.getChannelMuteStatus = async (req, res, next) => {
       );
     }
 
-    // Auto-clean if expired
-    if (entry.muteUntil && entry.muteUntil <= new Date()) {
+    // Auto-clean if expired (skip sentinel dates — those are indefinite)
+    if (entry.muteUntil && !isIndefiniteMute(entry.muteUntil) && entry.muteUntil <= new Date()) {
       await removeChannelMute(userId, channelId);
       return generateResponse(
         { channelId, isMuted: false, muteUntil: null, timeRemaining: null },
@@ -277,12 +279,14 @@ exports.getChannelMuteStatus = async (req, res, next) => {
       );
     }
 
+    const indefinite = isIndefiniteMute(entry.muteUntil);
+
     return generateResponse(
       {
         channelId,
         isMuted: true,
-        muteUntil: entry.muteUntil?.toISOString() || null,
-        timeRemaining: entry.muteUntil ? getTimeRemaining(entry.muteUntil) : "Until unmuted",
+        muteUntil: indefinite ? null : (entry.muteUntil?.toISOString() || null),
+        timeRemaining: indefinite ? "Until unmuted" : (entry.muteUntil ? getTimeRemaining(entry.muteUntil) : "Until unmuted"),
         mutedAt: entry.mutedAt?.toISOString(),
       },
       "Channel mute status retrieved",

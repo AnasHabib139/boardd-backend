@@ -1,5 +1,5 @@
 const { Types } = require("mongoose");
-const { UNASSIGNED_CHANNEL_GROUP_ID } = require("../../utils/constants");
+const { UNASSIGNED_CHANNEL_GROUP_ID, INDEFINITE_MUTE_DATE } = require("../../utils/constants");
 
 /**
  * Get all channel groups of a company with populated channel information filtered by user's channel membership
@@ -165,12 +165,7 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                                   cond: {
                                     $and: [
                                       { $eq: ["$$cm.channelId", "$$channelId"] },
-                                      {
-                                        $or: [
-                                          { $eq: ["$$cm.muteUntil", null] },
-                                          { $gt: ["$$cm.muteUntil", new Date()] }
-                                        ]
-                                      }
+                                      { $gt: ["$$cm.muteUntil", new Date()] }
                                     ]
                                   }
                                 }
@@ -202,7 +197,18 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                       ]
                     },
                     isMuted: { $ne: [{ $arrayElemAt: ["$muteInfo.activeMute", 0] }, null] },
-                    muteUntil: { $ifNull: [{ $arrayElemAt: ["$muteInfo.activeMute.muteUntil", 0] }, null] }
+                    muteUntil: {
+                      $let: {
+                        vars: { raw: { $arrayElemAt: ["$muteInfo.activeMute.muteUntil", 0] } },
+                        in: {
+                          $cond: {
+                            if: { $gte: ["$$raw", INDEFINITE_MUTE_DATE] },
+                            then: null,
+                            else: { $ifNull: ["$$raw", null] }
+                          }
+                        }
+                      }
+                    }
                   },
                 },
               ],
@@ -469,12 +475,7 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                                   cond: {
                                     $and: [
                                       { $eq: ["$$cm.channelId", "$$channelId"] },
-                                      {
-                                        $or: [
-                                          { $eq: ["$$cm.muteUntil", null] },
-                                          { $gt: ["$$cm.muteUntil", new Date()] }
-                                        ]
-                                      }
+                                      { $gt: ["$$cm.muteUntil", new Date()] }
                                     ]
                                   }
                                 }
@@ -505,7 +506,18 @@ exports.getAllChannelGroupsQuery = (companyId, userId) => {
                       ]
                     },
                     isMuted: { $ne: [{ $arrayElemAt: ["$muteInfo.activeMute", 0] }, null] },
-                    muteUntil: { $ifNull: [{ $arrayElemAt: ["$muteInfo.activeMute.muteUntil", 0] }, null] }
+                    muteUntil: {
+                      $let: {
+                        vars: { raw: { $arrayElemAt: ["$muteInfo.activeMute.muteUntil", 0] } },
+                        in: {
+                          $cond: {
+                            if: { $gte: ["$$raw", INDEFINITE_MUTE_DATE] },
+                            then: null,
+                            else: { $ifNull: ["$$raw", null] }
+                          }
+                        }
+                      }
+                    }
                   },
                 },
               ],

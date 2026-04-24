@@ -240,6 +240,15 @@ exports.TASK_STATUS = Object.freeze({
 // This is a fixed ObjectId that represents the virtual "Unassigned Channels" group
 exports.UNASSIGNED_CHANNEL_GROUP_ID = "000000000000000000000000";
 
+// Sentinel date used for indefinite mutes instead of null.
+// Using a far-future date makes mute queries simpler ($gt: now) and immune to
+// stale data where muteUntil was stored as BSON undefined/null.
+exports.INDEFINITE_MUTE_DATE = new Date("9999-12-31T23:59:59.999Z");
+
+// Check whether a muteUntil value represents an indefinite mute
+exports.isIndefiniteMute = (date) =>
+  date && date.getTime && date.getTime() >= new Date("9999-01-01").getTime();
+
 // Task priority constants
 exports.TASK_PRIORITY = Object.freeze({
   LOW: "low",

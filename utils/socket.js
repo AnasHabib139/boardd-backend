@@ -1746,18 +1746,21 @@ exports.initSocket = (server) => {
               (m) => m.channelId.toString() === channelId
             );
             if (channelMuteEntry) {
-              const isStillMuted = !channelMuteEntry.muteUntil || channelMuteEntry.muteUntil > now;
+              // Only consider muted if muteUntil is a real future date (handles stale null/undefined entries)
+              const isStillMuted = channelMuteEntry.muteUntil && channelMuteEntry.muteUntil > now;
               if (isStillMuted) {
+                const { isIndefiniteMute } = require("./constants");
+                const indefinite = isIndefiniteMute(channelMuteEntry.muteUntil);
                 console.log(`User ${userId} has channel ${channelId} muted - not joining channel room`);
                 socket.emit("channel-mute-status", {
                   isMuted: true,
                   channelId,
-                  muteUntil: channelMuteEntry.muteUntil?.toISOString() || null,
+                  muteUntil: indefinite ? null : channelMuteEntry.muteUntil.toISOString(),
                   message: "Channel notifications are muted",
                 });
                 return;
               }
-              // Channel mute expired — clean it up
+              // Channel mute expired or stale — clean it up
               const { removeChannelMute } = require("../models/userMutePreferencesModel");
               await removeChannelMute(userId, channelId);
               console.log(`Auto-removed expired channel mute for user ${userId} channel ${channelId}`);
