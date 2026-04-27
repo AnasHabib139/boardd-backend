@@ -9,7 +9,7 @@ const { Types } = require("mongoose");
  * @param {string} search - Optional search term for task title
  * @returns {Array} Aggregation pipeline
  */
-exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate, search = null) => {
+exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate, search = null, priority = null) => {
   // Calculate start and end of the month
   const monthStart = new Date(
     currentDate.getFullYear(),
@@ -64,6 +64,8 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate, search =
                     },
                     // Add search condition for task title if provided
                     ...(search && search.trim() ? { title: { $regex: search.trim(), $options: "i" } } : {}),
+                    // Add priority filter if provided
+                    ...(priority ? { priority } : {}),
                   },
                 },
                 // Sort by dueDate
@@ -128,6 +130,8 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate, search =
                     },
                     // Add search condition for task title if provided
                     ...(search && search.trim() ? { title: { $regex: search.trim(), $options: "i" } } : {}),
+                    // Add priority filter if provided
+                    ...(priority ? { priority } : {}),
                   },
                 },
                 // Sort by dueDate

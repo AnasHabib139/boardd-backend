@@ -820,7 +820,7 @@ exports.getProjectsList = async (req, res, next) => {
 exports.getProjectsCalendar = async (req, res, next) => {
   try {
     const { channelId, tabId } = req.params;
-    const { currentDate, search } = req.query;
+    const { currentDate, search, priority } = req.query;
     const userId = req.user.id;
 
     // Validate user exists
@@ -885,8 +885,17 @@ exports.getProjectsCalendar = async (req, res, next) => {
       parsedCurrentDate = new Date();
     }
 
-    // Get calendar query for tasks with search
-    const query = getTasksCalendarQuery(channelId, tabId, userId, parsedCurrentDate, search);
+    // Validate priority if provided
+    const VALID_PRIORITIES = ["none", "low", "medium", "high", "urgent", "critical"];
+    if (priority && !VALID_PRIORITIES.includes(priority)) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: `Invalid priority value. Must be one of: ${VALID_PRIORITIES.join(", ")}`,
+      });
+    }
+
+    // Get calendar query for tasks with search and priority filter
+    const query = getTasksCalendarQuery(channelId, tabId, userId, parsedCurrentDate, search, priority);
 
     // Execute query without pagination to get all tasks for the month
     const tasks = await getAllProjectsWithoutPagination(query);
@@ -902,6 +911,7 @@ exports.getProjectsCalendar = async (req, res, next) => {
       tasks: tasks || [],
       view: "calendar",
       search: search || null,
+      priority: priority || null,
       totalTasks: tasks ? tasks.length : 0,
       monthInfo: {
         currentDate: parsedCurrentDate.toISOString().split("T")[0],
