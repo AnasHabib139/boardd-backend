@@ -234,4 +234,30 @@ exports.getTasksNeedingInboxEntries = async (userId) => {
   return tasks.map(task => task._id.toString());
 };
 
+/**
+ * Bulk mark all inbox entries as read for a user
+ * @param {string} userId - User ID
+ * @param {string[]} taskIds - Array of task ID strings
+ * @returns {Promise<Object>} bulkWrite result
+ */
+exports.bulkMarkAllAsRead = async (userId, taskIds) => {
+  if (!taskIds.length) return { modifiedCount: 0, upsertedCount: 0 };
+
+  const userObjectId = Types.ObjectId.createFromHexString(userId);
+  const now = new Date();
+
+  const ops = taskIds.map(taskId => ({
+    updateOne: {
+      filter: {
+        userId: userObjectId,
+        taskId: Types.ObjectId.createFromHexString(taskId)
+      },
+      update: { $set: { isRead: true, updatedAt: now } },
+      upsert: true
+    }
+  }));
+
+  return await TaskInbox.bulkWrite(ops, { ordered: false });
+};
+
 exports.TaskInbox = TaskInbox;

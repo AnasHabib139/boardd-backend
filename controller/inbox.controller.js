@@ -3,8 +3,8 @@
 const { parseBody, generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
-const { getAllTasks, findTask } = require("../models/taskModel");
-const { bulkCreateTaskInboxEntries, findTaskInboxEntry, upsertTaskInboxEntry, findUserTaskInboxEntries } = require("../models/taskInboxModel");
+const { getAllTasks, findTask, findManyTasks } = require("../models/taskModel");
+const { bulkCreateTaskInboxEntries, findTaskInboxEntry, upsertTaskInboxEntry, findUserTaskInboxEntries, bulkMarkAllAsRead } = require("../models/taskInboxModel");
 const {
   getUserInboxTasksQuery,
   getImportantInboxUnreadCountQuery,
@@ -286,6 +286,53 @@ exports.toggleClearedStatus = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in toggleClearedStatus:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Mark all inbox/outbox tasks as read for the current user
+ */
+exports.markAllAsRead = async (req, res, next) => {
+  try {
+    const { filter = "important" } = req.query;
+    const userId = req.user.id;
+
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "User not found" });
+    }
+
+    // Build task query based on filter
+    const taskQuery = filter === "outbox"
+      ? { isActive: true, createdBy: userId }
+      : { isActive: true, assignedTo: userId };
+
+    const tasks = await findManyTasks(taskQuery).select("_id");
+    const taskIds = tasks.map(t => t._id.toString());
+
+    await bulkMarkAllAsRead(userId, taskIds);
+
+    try {
+      const io = getIO();
+      await emitInboxUnreadUpdate(userId, io);
+    } catch (socketError) {
+      console.error("Socket error in markAllAsRead:", socketError);
+    }
+
+    const filterLabel = filter === "outbox" ? "outbox" : "inbox";
+
+    return generateResponse(
+      { filter, markedCount: taskIds.length },
+      `All ${filterLabel} tasks marked as read`,
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in markAllAsRead:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

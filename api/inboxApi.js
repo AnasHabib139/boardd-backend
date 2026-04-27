@@ -1,10 +1,10 @@
 "use strict";
 
 const { Router } = require("express");
-const { getUserInbox, getInboxUnreadCount, toggleReadStatus, toggleClearedStatus } = require("../controller/inbox.controller");
+const { getUserInbox, getInboxUnreadCount, toggleReadStatus, toggleClearedStatus, markAllAsRead } = require("../controller/inbox.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
-const { validateInboxQuery, validateTaskIdParam } = require("../validation/inboxValidation");
+const { validateInboxQuery, validateTaskIdParam, validateMarkAllAsReadQuery } = require("../validation/inboxValidation");
 
 class InboxApi {
   constructor() {
@@ -28,6 +28,15 @@ class InboxApi {
       "/unread-count",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       getInboxUnreadCount
+    );
+
+    // Mark all inbox tasks as read for a filter (important or outbox)
+    // Must be before /:taskId/read to avoid "read-all" being matched as a taskId
+    router.patch(
+      "/read-all",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateMarkAllAsReadQuery,
+      markAllAsRead
     );
 
     // Toggle read status of inbox entry (read/unread)

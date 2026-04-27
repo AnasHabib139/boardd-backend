@@ -62,6 +62,16 @@ const inboxQueryValidation = Joi.object({
   limit: Joi.number().integer().min(1).max(50).default(20),
 });
 
+// Mark all as read query validation (important or outbox only — cleared has no unread concept)
+const markAllAsReadQueryValidation = Joi.object({
+  filter: Joi.string()
+    .valid("important", "outbox")
+    .default("important")
+    .messages({
+      "any.only": "Filter must be one of: important, outbox",
+    }),
+});
+
 // Task ID parameter validation
 const taskIdParamValidation = Joi.object({
   taskId: objectIdValidation.required().messages({
@@ -73,10 +83,12 @@ const taskIdParamValidation = Joi.object({
 module.exports = {
   validateInboxQuery: validateRequest(inboxQueryValidation, "query"),
   validateTaskIdParam: validateRequest(taskIdParamValidation, "params"),
+  validateMarkAllAsReadQuery: validateRequest(markAllAsReadQueryValidation, "query"),
 
   // Export schemas for testing or custom usage
   schemas: {
     inboxQueryValidation,
     taskIdParamValidation,
+    markAllAsReadQueryValidation,
   },
 };
