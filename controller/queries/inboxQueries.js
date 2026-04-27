@@ -581,12 +581,16 @@ exports.getOutboxInboxTasksQuery = (userId) => {
  * @returns {Array} Aggregation pipeline
  */
 exports.getClearedInboxTasksQuery = (userId) => {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
   return [
     // Start from taskinboxes collection and match cleared entries for user
+    // Only show items cleared within the last 30 days
     {
       $match: {
         userId: Types.ObjectId.createFromHexString(userId),
-        isCleared: true
+        isCleared: true,
+        clearedAt: { $gte: thirtyDaysAgo }
       }
     },
     // Lookup task details

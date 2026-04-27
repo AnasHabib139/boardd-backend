@@ -28,6 +28,11 @@ const taskInboxSchema = new Schema({
     default: false,
     index: true
   },
+  clearedAt: {
+    type: Date,
+    default: null,
+    index: true
+  },
   createdAt: {
     type: Date,
     default: Date.now,

@@ -250,9 +250,10 @@ exports.toggleClearedStatus = async (req, res, next) => {
       newClearedStatus = true;
     }
 
-    // Upsert with toggled status
+    // Upsert with toggled status — set clearedAt when clearing, unset when restoring
     const updatedEntry = await upsertTaskInboxEntry(userId, taskId, {
-      isCleared: newClearedStatus
+      isCleared: newClearedStatus,
+      clearedAt: newClearedStatus ? new Date() : null
     });
 
     // Emit updated inbox unread counts via socket
@@ -267,14 +268,19 @@ exports.toggleClearedStatus = async (req, res, next) => {
     const task = await findTask({ _id: taskId });
     const source = task && task.createdBy?.toString() === userId.toString() ? "outbox" : "inbox";
 
+    const message = newClearedStatus
+      ? `Task cleared from ${source}. It will be permanently removed from your cleared list after 30 days.`
+      : `Task restored to ${source}`;
+
     return generateResponse(
       {
         taskId,
         isRead: updatedEntry.isRead,
         isCleared: updatedEntry.isCleared,
+        clearedAt: updatedEntry.clearedAt,
         updatedAt: updatedEntry.updatedAt
       },
-      `Task ${newClearedStatus ? 'cleared from' : 'restored to'} ${source}`,
+      message,
       res,
       STATUS_CODES.SUCCESS
     );
