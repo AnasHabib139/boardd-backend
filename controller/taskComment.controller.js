@@ -346,13 +346,17 @@ exports.getTaskComments = async (req, res, next) => {
   try {
     const { taskId } = req.params;
     const { page = 1, limit = 20 } = req.query;
-    const userId = req.user.id;
+    const userId = req.user?.id;
 
     const task = await findTask({ _id: taskId });
     if (!task) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Task not found" });
 
-    const ctx = await resolveTaskContext(task, userId, next);
-    if (!ctx) return;
+    // Enforce membership check only for authenticated users
+    // Unauthenticated users (shared task links) can read comments freely
+    if (userId) {
+      const ctx = await resolveTaskContext(task, userId, next);
+      if (!ctx) return;
+    }
 
     const query = [
       {

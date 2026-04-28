@@ -3,6 +3,7 @@
 const { Router } = require("express");
 const { createTaskComment, updateTaskComment, getTaskComments, deleteTaskComment } = require("../controller/taskComment.controller");
 const Auth = require("../middlewares/Auth");
+const OptionalAuth = require("../middlewares/OptionalAuth");
 const { checkPermission } = require("../middlewares/checkPermission");
 const { ROLES } = require("../utils/constants");
 const {
@@ -21,10 +22,10 @@ class TaskCommentApi {
   registerRoutes() {
     let router = this.router;
 
-    // Get all comments for a specific task
+    // Get all comments for a specific task (supports unauthenticated access for shared task links)
     router.get(
       "/:taskId/comments",
-      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      OptionalAuth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateTaskIdParam,
       validateGetTaskCommentsQuery,
       getTaskComments
