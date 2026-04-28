@@ -23,7 +23,6 @@ const { getIO } = require("../utils/socket");
 exports.getProjectStatuses = async (req, res, next) => {
   try {
     const { projectId } = req.params;
-    const userId = req.user.id;
 
     // Verify project exists and user has access
     const project = await findProject({ _id: projectId, isActive: true });

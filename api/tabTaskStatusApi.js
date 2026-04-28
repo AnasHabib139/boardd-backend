@@ -9,6 +9,7 @@ const {
   reorderStatuses,
 } = require("../controller/tabTaskStatusController");
 const Auth = require("../middlewares/Auth");
+const OptionalAuth = require("../middlewares/OptionalAuth");
 const { ROLES } = require("../utils/constants");
 const {
   validateCreateStatus,
@@ -30,7 +31,7 @@ class TabTaskStatusApi {
     // Get all statuses for a project
     router.get(
       "/projects/:projectId/statuses",
-      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      OptionalAuth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateProjectId,
       getProjectStatuses
     );

@@ -8,6 +8,7 @@ const {
   searchTasksForConnection,
 } = require("../controller/taskConnection.controller");
 const Auth = require("../middlewares/Auth");
+const OptionalAuth = require("../middlewares/OptionalAuth");
 const { ROLES } = require("../utils/constants");
 const {
   validateCreateTaskConnection,
@@ -44,7 +45,7 @@ class TaskConnectionApi {
     // Get all connections for a task
     router.get(
       "/:taskId",
-      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      OptionalAuth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       validateTaskIdParam,
       getConnections
     );
