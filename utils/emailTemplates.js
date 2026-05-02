@@ -2,6 +2,8 @@
  * Email templates for various notifications
  */
 
+const { LOGO_DATA_URI } = require("./emailLogo");
+
 /**
  * Generate invite email template
  * @param {Object} params Parameters for the template
@@ -19,8 +21,6 @@ exports.generateInviteEmail = ({
   adminName,
   adminEmail,
 }) => {
-  const baseUrl = process.env.BACKEND_URL;
-  const logoUrl = `${baseUrl}/assets/images/boardd-logo.png`;
 
   // HTML email with modern professional styling
   const html = `
@@ -255,7 +255,7 @@ exports.generateInviteEmail = ({
   <div class="email-container">
     <!-- Header -->
     <div class="email-header">
-      <img src="${logoUrl}" alt="Boarddd" class="logo" />
+      <img src="${LOGO_DATA_URI}" alt="Boarddd" class="logo" />
       <h1 class="header-title">You're invited!</h1>
     </div>
     
@@ -445,8 +445,6 @@ exports.generateTaskShareEmail = ({
   contextPath,
   customMessage,
 }) => {
-  const baseUrl = process.env.BACKEND_URL;
-  const logoUrl = `${baseUrl}/assets/images/boardd-logo.png`;
 
   // Professional HTML email with dark mode support and responsive design
   const html = `
@@ -942,7 +940,7 @@ exports.generateTaskShareEmail = ({
       <!-- Header -->
       <div class="email-header">
         <div class="header-top">
-          <img src="${logoUrl}" alt="Boarddd" class="logo" />
+          <img src="${LOGO_DATA_URI}" alt="Boarddd" class="logo" />
           <div class="header-brand">Boarddd</div>
         </div>
         <h1 class="header-title">Task shared with you</h1>
@@ -1081,8 +1079,6 @@ exports.generateChannelInviteEmail = ({
   channelDescription = null,
   isGuestInvite = false,
 }) => {
-  const baseUrl = process.env.BACKEND_URL;
-  const logoUrl = `${baseUrl}/assets/images/boardd-logo.png`;
 
   const inviteType = isGuestInvite ? "Guest Access" : "Team Member";
   const accessDuration = isGuestInvite ? "3 months" : "unlimited";
@@ -1365,7 +1361,7 @@ exports.generateChannelInviteEmail = ({
 <body>
   <div class="email-container">
     <div class="email-header">
-      <img src="${logoUrl}" alt="Boarddd Logo" class="logo">
+      <img src="${LOGO_DATA_URI}" alt="Boarddd Logo" class="logo">
       <h1 class="header-title">You're invited!</h1>
     </div>
     
@@ -1495,8 +1491,6 @@ exports.generateFormInviteEmail = ({
   customMessage,
   recipientName,
 }) => {
-  const baseUrl = process.env.BACKEND_URL;
-  const logoUrl = `${baseUrl}/assets/images/boardd-logo.png`;
 
   // Professional HTML email
   const html = `
@@ -1724,7 +1718,7 @@ exports.generateFormInviteEmail = ({
   <div class="email-container">
     <!-- Header -->
     <div class="email-header">
-      <img src="${logoUrl}" alt="Boarddd" class="logo" />
+      <img src="${LOGO_DATA_URI}" alt="Boarddd" class="logo" />
       <h1 class="header-title">Form shared with you</h1>
     </div>
     
@@ -1824,8 +1818,6 @@ exports.generateOwnershipTransferEmail = ({
   companyName,
   confirmationLink,
 }) => {
-  const baseUrl = process.env.BACKEND_URL;
-  const logoUrl = `${baseUrl}/assets/images/boardd-logo.png`;
 
   // HTML email with professional styling
   const html = `
@@ -2107,7 +2099,7 @@ exports.generateOwnershipTransferEmail = ({
   <div class="email-container">
     <!-- Header -->
     <div class="email-header">
-      <img src="${logoUrl}" alt="Boarddd" class="logo" />
+      <img src="${LOGO_DATA_URI}" alt="Boarddd" class="logo" />
       <h1 class="header-title">Confirm Ownership Transfer</h1>
       <div class="header-subtitle">Important action required</div>
     </div>

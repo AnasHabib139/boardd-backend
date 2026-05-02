@@ -2,6 +2,8 @@
  * Registration success email template
  */
 
+const { LOGO_DATA_URI } = require("../emailLogo");
+
 /**
  * Generate registration success email template
  * @param {Object} params Parameters for the template
@@ -15,8 +17,6 @@ exports.generateRegistrationSuccessEmail = ({
   companyName,
   loginLink,
 }) => {
-  const baseUrl = process.env.BACKEND_URL;
-  const logoUrl = `${baseUrl}/assets/images/boardd-logo.png`;
 
   const html = `
 <!DOCTYPE html>
@@ -344,7 +344,7 @@ exports.generateRegistrationSuccessEmail = ({
 
       <!-- Hero -->
       <div class="hero">
-        <img src="${logoUrl}" alt="Boarddd" class="logo" />
+        <img src="${LOGO_DATA_URI}" alt="Boarddd" class="logo" />
         <div class="hero-badge">Account Created</div>
         <h1 class="hero-title">Welcome to Boarddd!</h1>
         <p class="hero-sub">You're all set. Let's build something great.</p>
