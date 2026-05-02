@@ -11,7 +11,7 @@ class Mailer {
     });
 
     const mailOptions = {
-      from: `Boardd <${process.env.EMAIL}>`, // Professional styling with Gmail
+      from: `Boardddd <${process.env.EMAIL}>`, // Professional styling with Gmail
       to: email,
       subject,
       text: message,

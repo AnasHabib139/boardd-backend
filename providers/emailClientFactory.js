@@ -167,7 +167,7 @@ function getLegacySendGridClient() {
     client: sg,
     from: {
       email: process.env.SENDGRID_FROM_EMAIL,
-      name: process.env.SENDGRID_FROM_NAME || "Boardd Team",
+      name: process.env.SENDGRID_FROM_NAME || "Boardddd Team",
     },
     replyTo: null,
     companyId: null,

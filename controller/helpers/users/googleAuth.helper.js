@@ -154,7 +154,7 @@ exports.handleGoogleAdminSignup = async (
 
       await Mailer.sendEmail({
         email: googlePayload.email,
-        subject: "Welcome to Boarddd!",
+        subject: "Welcome to Boardddd!",
         message: emailTemplate.text,
         html: emailTemplate.html,
       });
