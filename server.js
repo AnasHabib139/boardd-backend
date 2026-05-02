@@ -102,7 +102,7 @@ app.use(
   })
 );
 
-app.get("/", (req, res) => res.json({ message: "Welcome to the Boardddd" }));
+app.get("/", (req, res) => res.json({ message: "Welcome to the Boarddd" }));
 
 app.use(log);
 new API(app).registerGroups();

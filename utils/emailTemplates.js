@@ -29,7 +29,7 @@ exports.generateInviteEmail = ({
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Join ${companyName} on Boarddddd</title>
+  <title>Join ${companyName} on Boarddd</title>
   <style>
     * {
       margin: 0;
@@ -255,7 +255,7 @@ exports.generateInviteEmail = ({
   <div class="email-container">
     <!-- Header -->
     <div class="email-header">
-      <img src="${logoUrl}" alt="Boardddd" class="logo" />
+      <img src="${logoUrl}" alt="Boarddd" class="logo" />
       <h1 class="header-title">You're invited!</h1>
     </div>
     
@@ -264,9 +264,9 @@ exports.generateInviteEmail = ({
       <div class="greeting">Hello there! 👋</div>
       
       <div class="invite-message">
-        You've been invited to join <span class="company-highlight">${companyName}</span> as a <span class="role-highlight">${role}</span> on Boarddddd.
+        You've been invited to join <span class="company-highlight">${companyName}</span> as a <span class="role-highlight">${role}</span> on Boarddd.
         <br><br>
-        Boardddd is a powerful collaboration platform that helps teams stay organized, communicate effectively, and achieve their goals together.
+        Boarddd is a powerful collaboration platform that helps teams stay organized, communicate effectively, and achieve their goals together.
       </div>
       
       ${
@@ -306,7 +306,7 @@ exports.generateInviteEmail = ({
         The ${companyName} Team
       </div>
       <div class="footer-branding">
-        Powered by <a href="${process.env.FRONTEND_URL}">Boardddd</a>
+        Powered by <a href="${process.env.FRONTEND_URL}">Boarddd</a>
       </div>
     </div>
   </div>
@@ -320,7 +320,7 @@ exports.generateInviteEmail = ({
 
 Hello!
 
-You've been invited to join ${companyName} as a ${role} on Boarddddd.
+You've been invited to join ${companyName} as a ${role} on Boarddd.
 
 ${
   adminName
@@ -329,7 +329,7 @@ ${
 }
 ${adminName ? "💬 You can reply to this email to contact them directly." : ""}
 
-Boardddd is a powerful collaboration platform that helps teams stay organized, communicate effectively, and achieve their goals together.
+Boarddd is a powerful collaboration platform that helps teams stay organized, communicate effectively, and achieve their goals together.
 
 🚀 Accept your invitation:
 ${inviteLink}
@@ -342,7 +342,7 @@ Best regards,
 The ${companyName} Team
 
 ---
-Powered by Boardddd
+Powered by Boarddd
   `;
 
   return { html, text };
@@ -942,8 +942,8 @@ exports.generateTaskShareEmail = ({
       <!-- Header -->
       <div class="email-header">
         <div class="header-top">
-          <img src="${logoUrl}" alt="Boardddd" class="logo" />
-          <div class="header-brand">Boardddd</div>
+          <img src="${logoUrl}" alt="Boarddd" class="logo" />
+          <div class="header-brand">Boarddd</div>
         </div>
         <h1 class="header-title">Task shared with you</h1>
         <div class="header-subtitle">You have a new task to review</div>
@@ -954,7 +954,7 @@ exports.generateTaskShareEmail = ({
         <div class="greeting">Hi there 👋</div>
         
         <div class="share-intro">
-          <span class="sharer-name">${sharedByName}</span> has shared a task with you on Boarddddd.
+          <span class="sharer-name">${sharedByName}</span> has shared a task with you on Boarddd.
         </div>
         
         <!-- Task Card -->
@@ -1011,12 +1011,12 @@ exports.generateTaskShareEmail = ({
       <!-- Footer -->
       <div class="footer-content">
         <div class="footer-text">
-          This task was shared via Boardddd
+          This task was shared via Boarddd
         </div>
         <div class="footer-branding">
           <a href="${
             process.env.FRONTEND_URL || "https://boardd.io"
-          }">Powered by Boardddd</a>
+          }">Powered by Boarddd</a>
         </div>
       </div>
     </div>
@@ -1033,7 +1033,7 @@ exports.generateTaskShareEmail = ({
 
 Hi there!
 
-${sharedByName} has shared a task with you on Boarddddd.
+${sharedByName} has shared a task with you on Boarddd.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1053,8 +1053,8 @@ ${shareLink}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-This task was shared via Boarddddd.
-Powered by Boardddd - ${process.env.FRONTEND_URL || "https://boardd.io"}
+This task was shared via Boarddd.
+Powered by Boarddd - ${process.env.FRONTEND_URL || "https://boardd.io"}
   `;
 
   return { html, text };
@@ -1097,7 +1097,7 @@ exports.generateChannelInviteEmail = ({
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Join ${channelName} on Boardddd</title>
+  <title>Join ${channelName} on Boarddd</title>
   <style>
     * {
       margin: 0;
@@ -1365,7 +1365,7 @@ exports.generateChannelInviteEmail = ({
 <body>
   <div class="email-container">
     <div class="email-header">
-      <img src="${logoUrl}" alt="Boardddd Logo" class="logo">
+      <img src="${logoUrl}" alt="Boarddd Logo" class="logo">
       <h1 class="header-title">You're invited!</h1>
     </div>
     
@@ -1430,9 +1430,9 @@ exports.generateChannelInviteEmail = ({
     
     <div class="footer">
       <div class="footer-text">
-        This invitation was sent by ${companyName} via Boarddddd.
+        This invitation was sent by ${companyName} via Boarddd.
         <br>
-        © ${new Date().getFullYear()} Boardddd. All rights reserved.
+        © ${new Date().getFullYear()} Boarddd. All rights reserved.
       </div>
     </div>
   </div>
@@ -1441,7 +1441,7 @@ exports.generateChannelInviteEmail = ({
 
   // Plain text version
   const text = `
-Join ${channelName} on Boardddd
+Join ${channelName} on Boarddd
 
 Hello! 
 
@@ -1469,8 +1469,8 @@ Click here to join: ${inviteLink}
 
 Invited by: ${inviterName} (${inviterEmail})
 
-This invitation was sent by ${companyName} via Boarddddd.
-© ${new Date().getFullYear()} Boardddd. All rights reserved.
+This invitation was sent by ${companyName} via Boarddd.
+© ${new Date().getFullYear()} Boarddd. All rights reserved.
 `;
 
   return { html, text };
@@ -1724,7 +1724,7 @@ exports.generateFormInviteEmail = ({
   <div class="email-container">
     <!-- Header -->
     <div class="email-header">
-      <img src="${logoUrl}" alt="Boardddd" class="logo" />
+      <img src="${logoUrl}" alt="Boarddd" class="logo" />
       <h1 class="header-title">Form shared with you</h1>
     </div>
     
@@ -1769,12 +1769,12 @@ exports.generateFormInviteEmail = ({
     <!-- Footer -->
     <div class="email-footer">
       <div class="footer-text">
-        This form was shared with you via Boarddddd.
+        This form was shared with you via Boarddd.
         <br>
         Thank you for taking the time to respond!
       </div>
       <div class="footer-branding">
-        Powered by <a href="${process.env.FRONTEND_URL}">Boardddd</a>
+        Powered by <a href="${process.env.FRONTEND_URL}">Boarddd</a>
       </div>
     </div>
   </div>
@@ -1798,10 +1798,10 @@ ${customMessage ? `💬 Message from ${sharedByName}:\n"${customMessage}"` : ""}
 🔗 Fill out the form here:
 ${shareLink}
 
-This form was shared with you via Boarddddd.
+This form was shared with you via Boarddd.
 Thank you for taking the time to respond!
 
-Powered by Boardddd - ${process.env.FRONTEND_URL}
+Powered by Boarddd - ${process.env.FRONTEND_URL}
   `;
 
   return { html, text };
@@ -2107,7 +2107,7 @@ exports.generateOwnershipTransferEmail = ({
   <div class="email-container">
     <!-- Header -->
     <div class="email-header">
-      <img src="${logoUrl}" alt="Boardddd" class="logo" />
+      <img src="${logoUrl}" alt="Boarddd" class="logo" />
       <h1 class="header-title">Confirm Ownership Transfer</h1>
       <div class="header-subtitle">Important action required</div>
     </div>
@@ -2171,7 +2171,7 @@ exports.generateOwnershipTransferEmail = ({
         For security concerns, contact our support team immediately.
       </div>
       <div class="footer-branding">
-        Powered by <a href="${process.env.FRONTEND_URL}">Boardddd</a>
+        Powered by <a href="${process.env.FRONTEND_URL}">Boarddd</a>
       </div>
     </div>
   </div>
@@ -2209,7 +2209,7 @@ ${confirmationLink}
 If you did not request this transfer, please ignore this email.
 For security concerns, contact our support team immediately.
 
-Powered by Boardddd - ${process.env.FRONTEND_URL}
+Powered by Boarddd - ${process.env.FRONTEND_URL}
   `;
 
   return { html, text };

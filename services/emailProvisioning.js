@@ -984,7 +984,7 @@ exports.testEmailConfiguration = async (companyId, testRecipient = null) => {
         <p><strong>Provider:</strong> Managed Email Service</p>
         <p>You can now send emails to clients from your chat interface.</p>
         <hr>
-        <p style="color: #666; font-size: 12px;">This is a test email sent from your Boardddd messaging configuration.</p>
+        <p style="color: #666; font-size: 12px;">This is a test email sent from your Boarddd messaging configuration.</p>
       `,
       textContent: `Email Configuration Test\n\nCongratulations! Your email messaging is configured correctly.\n\nSender: ${fromName} <${fromEmail}>\nProvider: Managed Email Service\n\nYou can now send emails to clients from your chat interface.`,
       conversationId: null,

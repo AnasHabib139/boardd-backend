@@ -261,7 +261,7 @@ exports.signup = async (req, res, next) => {
 
       await Mailer.sendEmail({
         email: email,
-        subject: "Welcome to Boardddd!",
+        subject: "Welcome to Boarddd!",
         message: emailTemplate.text,
         html: emailTemplate.html,
       });

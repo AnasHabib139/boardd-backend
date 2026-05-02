@@ -24,7 +24,7 @@ exports.generateRegistrationSuccessEmail = ({
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to Boardddd!</title>
+  <title>Welcome to Boarddd!</title>
   <!--[if mso]>
   <noscript>
     <xml>
@@ -344,9 +344,9 @@ exports.generateRegistrationSuccessEmail = ({
 
       <!-- Hero -->
       <div class="hero">
-        <img src="${logoUrl}" alt="Boardddd" class="logo" />
+        <img src="${logoUrl}" alt="Boarddd" class="logo" />
         <div class="hero-badge">Account Created</div>
-        <h1 class="hero-title">Welcome to Boardddd!</h1>
+        <h1 class="hero-title">Welcome to Boarddd!</h1>
         <p class="hero-sub">You're all set. Let's build something great.</p>
       </div>
 
@@ -409,10 +409,10 @@ exports.generateRegistrationSuccessEmail = ({
       <!-- Footer -->
       <div class="footer">
         <div class="footer-text">
-          You're receiving this because you created a Boardddd account.
+          You're receiving this because you created a Boarddd account.
         </div>
         <div class="footer-brand">
-          Powered by <a href="${process.env.FRONTEND_URL}">Boardddd</a>
+          Powered by <a href="${process.env.FRONTEND_URL}">Boarddd</a>
         </div>
       </div>
 
@@ -442,8 +442,8 @@ GET STARTED: ${loginLink}
 Questions? Just reply to this email or reach out to our support team.
 
 ---
-You're receiving this because you created a Boardddd account.
-Powered by Boardddd - ${process.env.FRONTEND_URL}
+You're receiving this because you created a Boarddd account.
+Powered by Boarddd - ${process.env.FRONTEND_URL}
   `;
 
   return { html, text };
