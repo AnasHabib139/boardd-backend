@@ -2,8 +2,6 @@
  * Password reset email template
  */
 
-const { LOGO_DATA_URI } = require("../emailLogo");
-
 /**
  * Generate password reset email template
  * @param {Object} params Parameters for the template
@@ -13,6 +11,8 @@ const { LOGO_DATA_URI } = require("../emailLogo");
  * @returns {Object} Object containing HTML and text versions of the email
  */
 exports.generatePasswordResetEmail = ({ code, userName, userEmail }) => {
+  const baseUrl = process.env.BACKEND_URL;
+  const logoUrl = `${baseUrl}/assets/images/boardd-logo.png`;
 
   // HTML email with modern professional styling
   const html = `
@@ -267,7 +267,7 @@ exports.generatePasswordResetEmail = ({ code, userName, userEmail }) => {
   <div class="email-container">
     <!-- Header -->
     <div class="email-header">
-      <img src="${LOGO_DATA_URI}" alt="Boarddd" class="logo" />
+      <img src="${logoUrl}" alt="Boarddd" class="logo" />
       <h1 class="header-title">Reset Your Password</h1>
       <div class="header-subtitle">We received a request to reset your password</div>
     </div>
