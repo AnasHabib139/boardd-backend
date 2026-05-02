@@ -60,6 +60,7 @@ const processChatMessageSend = async (socket, data, io) => {
     deliveryModes = [],
     emailSubject,
     recipient = {},
+    sender: senderFromClient = {},
     whatsappTemplate,
   } = data;
 
@@ -209,10 +210,13 @@ const processChatMessageSend = async (socket, data, io) => {
     // Route message to external channels (email, SMS, WhatsApp) if requested
     if (conversation.type === "client" && deliveryModes.length > 0) {
       try {
-        // Use the conversation's assigned Twilio number as the SMS sender so
-        // outbound goes from the channel-selected number, not fromNumbers[0].
-        const sender = {};
-        if (conversation.twilioNumber) {
+        // Sender selection priority for SMS:
+        //   1. Per-message override from the client (senderFromClient.smsNumber)
+        //   2. Conversation's assigned twilioNumber
+        // clientMessageRouter.validateSender() rejects numbers not in the
+        // company's fromNumbers, so unauthorized values still get blocked.
+        const sender = { ...senderFromClient };
+        if (!sender.smsNumber && conversation.twilioNumber) {
           sender.smsNumber = conversation.twilioNumber;
         }
 
