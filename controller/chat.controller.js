@@ -113,7 +113,7 @@ exports.getConversationMessages = async (req, res, next) => {
  */
 exports.resolveConversation = async (req, res, next) => {
   try {
-    const { type, participantIds, channelId, clientContact } = req.body;
+    const { type, participantIds, channelId, clientContact, twilioNumber } = req.body;
     const userId = req.user.id.toString();
 
     // Verify user is authenticated
@@ -271,43 +271,50 @@ exports.resolveConversation = async (req, res, next) => {
         }
       }
 
-      // Validate phone numbers and emails for uniqueness in channel (if provided)
+      // Validate phone numbers and emails for uniqueness across the company.
+      // SMS routing relies on (twilioNumber, clientPhone) being unique — a phone
+      // attached to two channels would silently land in the wrong inbox on reply.
       if (clientContact) {
-        const { isPhoneNumberAvailable, isEmailAvailable } = require("../models/chatConversationModel");
+        const {
+          isPhoneNumberAvailableInCompany,
+          isEmailAvailable,
+        } = require("../models/chatConversationModel");
+        const { findChannel } = require("../models/channelModel");
 
-        // Check phone number
+        const buildPhoneConflictMessage = async (phone, existingConversation) => {
+          const otherChannel = await findChannel({ _id: existingConversation.channelId });
+          const channelName = otherChannel?.channelName || "another channel";
+          return `Phone number ${phone} is already connected to client chat in channel "${channelName}". A phone number can only be used in one channel per company.`;
+        };
+
         if (clientContact.phoneE164) {
-          const { available, existingConversation } = await isPhoneNumberAvailable(
+          const { available, existingConversation } = await isPhoneNumberAvailableInCompany(
             clientContact.phoneE164,
-            channelId,
             user.companyId
           );
           if (!available) {
             return next({
               statusCode: STATUS_CODES.BAD_REQUEST,
-              message: `Phone number ${clientContact.phoneE164} is already connected to another client conversation in this channel`,
+              message: await buildPhoneConflictMessage(clientContact.phoneE164, existingConversation),
             });
           }
         }
 
-        // Check WhatsApp number
         if (clientContact.whatsappE164) {
-          const { available, existingConversation } = await isPhoneNumberAvailable(
+          const { available, existingConversation } = await isPhoneNumberAvailableInCompany(
             clientContact.whatsappE164,
-            channelId,
             user.companyId
           );
           if (!available) {
             return next({
               statusCode: STATUS_CODES.BAD_REQUEST,
-              message: `WhatsApp number ${clientContact.whatsappE164} is already connected to another client conversation in this channel`,
+              message: await buildPhoneConflictMessage(clientContact.whatsappE164, existingConversation),
             });
           }
         }
 
-        // Check email
         if (clientContact.email) {
-          const { available, existingConversation } = await isEmailAvailable(
+          const { available } = await isEmailAvailable(
             clientContact.email,
             channelId,
             user.companyId
@@ -321,6 +328,26 @@ exports.resolveConversation = async (req, res, next) => {
         }
       }
 
+      // Resolve which Twilio "from" number this client conversation will use.
+      // If caller supplied one, it must be in company.twilioConfig.fromNumbers.
+      // Otherwise default to fromNumbers[0] (preserves prior behavior).
+      let resolvedTwilioNumber = null;
+      const { findCompany } = require("../models/companyModel");
+      const company = await findCompany({ _id: user.companyId });
+      const fromNumbers = company?.twilioConfig?.fromNumbers || [];
+
+      if (twilioNumber) {
+        if (!fromNumbers.includes(twilioNumber)) {
+          return next({
+            statusCode: STATUS_CODES.BAD_REQUEST,
+            message: `Twilio number ${twilioNumber} is not configured for this company`,
+          });
+        }
+        resolvedTwilioNumber = twilioNumber;
+      } else if (fromNumbers.length > 0) {
+        resolvedTwilioNumber = fromNumbers[0];
+      }
+
       // Resolve client conversation
       const { resolveConversation } = require("../models/chatConversationModel");
       const result = await resolveConversation(
@@ -331,6 +358,7 @@ exports.resolveConversation = async (req, res, next) => {
           participantIds,
           clientContact: clientContact || null,
           createdBy: userId,
+          twilioNumber: resolvedTwilioNumber,
         },
         true // createIfMissing = true
       );
@@ -433,6 +461,79 @@ exports.resolveConversation = async (req, res, next) => {
     );
   } catch (error) {
     console.error("Error in resolveConversation:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+/**
+ * Update the Twilio "from" number used for outbound SMS on a client conversation.
+ * PATCH /api/chat/conversations/:conversationId/twilio-number
+ */
+exports.updateConversationTwilioNumber = async (req, res, next) => {
+  try {
+    const { conversationId } = req.params;
+    const { twilioNumber } = req.body;
+    const userId = req.user.id.toString();
+
+    const { findUser } = require("../models/userModel");
+    const user = await findUser({ _id: userId });
+    if (!user) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    const conversation = await findChatConversation({ _id: conversationId });
+    if (!conversation) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Conversation not found",
+      });
+    }
+
+    if (conversation.type !== "client") {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "Twilio number can only be set on client conversations",
+      });
+    }
+
+    if (conversation.companyId.toString() !== user.companyId.toString()) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "You don't have access to this conversation",
+      });
+    }
+
+    const { findCompany } = require("../models/companyModel");
+    const company = await findCompany({ _id: user.companyId });
+    const fromNumbers = company?.twilioConfig?.fromNumbers || [];
+    if (!fromNumbers.includes(twilioNumber)) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: `Twilio number ${twilioNumber} is not configured for this company`,
+      });
+    }
+
+    const { updateClientTwilioNumber } = require("../models/chatConversationModel");
+    const updated = await updateClientTwilioNumber(
+      conversationId,
+      twilioNumber,
+      user.companyId
+    );
+
+    return generateResponse(
+      { conversation: updated },
+      "Twilio number updated successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in updateConversationTwilioNumber:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

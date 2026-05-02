@@ -80,6 +80,12 @@ const chatConversationSchema = new Schema(
       type: Date,
       default: null,
     },
+    // Twilio "from" number used for outbound SMS on this client conversation.
+    // Must be one of company.twilioConfig.fromNumbers. Only meaningful for type: "client".
+    twilioNumber: {
+      type: String,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -166,7 +172,7 @@ exports.aggregateChatConversations = (pipeline) =>
  * @returns {Promise<Object>} Conversation document
  */
 exports.resolveConversation = async (params, createIfMissing = false) => {
-  const { companyId, type, channelId, participantIds, createdBy, clientContact } = params;
+  const { companyId, type, channelId, participantIds, createdBy, clientContact, twilioNumber } = params;
 
   let query = { companyId, type };
 
@@ -247,6 +253,11 @@ exports.resolveConversation = async (params, createIfMissing = false) => {
       // Store client contact info for display
       if (clientContact) {
         conversationData.clientContact = clientContact;
+      }
+
+      // Twilio "from" number for outbound SMS (validated by caller)
+      if (twilioNumber) {
+        conversationData.twilioNumber = twilioNumber;
       }
     } else {
       // Sort and store participantIds for dm/group_dm
@@ -563,6 +574,48 @@ exports.isPhoneNumberAvailable = async (
     available: !existingConversation,
     existingConversation: existingConversation || null,
   };
+};
+
+/**
+ * Check if a phone number is already used in any client conversation across the company.
+ * Broader than isPhoneNumberAvailable — used to enforce one-channel-per-phone for SMS routing.
+ */
+exports.isPhoneNumberAvailableInCompany = async (
+  phoneNumber,
+  companyId,
+  excludeConversationId = null
+) => {
+  const query = {
+    companyId,
+    type: "client",
+    $or: [
+      { "externalContacts.whatsappE164s": phoneNumber },
+      { "externalContacts.phoneE164s": phoneNumber },
+    ],
+  };
+
+  if (excludeConversationId) {
+    query._id = { $ne: excludeConversationId };
+  }
+
+  const existingConversation = await ChatConversation.findOne(query);
+
+  return {
+    available: !existingConversation,
+    existingConversation: existingConversation || null,
+  };
+};
+
+/**
+ * Update the Twilio "from" number on a client conversation.
+ * Caller is responsible for validating the number against company.twilioConfig.fromNumbers.
+ */
+exports.updateClientTwilioNumber = async (conversationId, twilioNumber, companyId) => {
+  return ChatConversation.findOneAndUpdate(
+    { _id: conversationId, companyId, type: "client" },
+    { $set: { twilioNumber } },
+    { new: true }
+  );
 };
 
 /**

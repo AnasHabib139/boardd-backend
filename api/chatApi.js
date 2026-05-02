@@ -4,6 +4,10 @@ const { Router } = require("express");
 const chatController = require("../controller/chat.controller");
 const Auth = require("../middlewares/Auth");
 const { ROLES } = require("../utils/constants");
+const {
+  validateUpdateTwilioNumber,
+  validateConversationIdParam,
+} = require("../validation/chatValidation");
 
 class ChatApi {
   constructor() {
@@ -33,6 +37,15 @@ class ChatApi {
       "/conversations",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       chatController.getConversations
+    );
+
+    // Update Twilio "from" number for a client conversation
+    router.patch(
+      "/conversations/:conversationId/twilio-number",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateConversationIdParam,
+      validateUpdateTwilioNumber,
+      chatController.updateConversationTwilioNumber
     );
   }
 

@@ -209,11 +209,19 @@ const processChatMessageSend = async (socket, data, io) => {
     // Route message to external channels (email, SMS, WhatsApp) if requested
     if (conversation.type === "client" && deliveryModes.length > 0) {
       try {
+        // Use the conversation's assigned Twilio number as the SMS sender so
+        // outbound goes from the channel-selected number, not fromNumbers[0].
+        const sender = {};
+        if (conversation.twilioNumber) {
+          sender.smsNumber = conversation.twilioNumber;
+        }
+
         await clientMessageRouter.routeMessage({
           messageId: message._id.toString(),
           conversationId: conversation._id.toString(),
           deliveryModes,
           recipient,
+          sender,
           emailSubject,
           whatsappTemplate,
           content: validation.sanitized, // TipTap JSON content
