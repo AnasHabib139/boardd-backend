@@ -729,21 +729,28 @@ const processTaskUpdate = async (socket, data) => {
     }
 
     // Emit to channel room (covers all tabs and open tasks)
-    io.to(`channel:${channel._id}`).emit("tab-activity", {
-      type: "TASK_UPDATED",
-      task: taskWithColumnValues,
-      activities: [activity],
-      field,
-      previousValue,
-      newValue: processedValue,
-      updatedBy: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-      },
-      notification: notificationMessage,
-      timestamp: new Date(),
-    });
+    // Deduplicate: skip if same (channel, task, field, user) emitted within 2s
+    const _dedupKey = `${channel._id}:${taskId}:${field}:${user._id}`;
+    const _lastEmit = _recentTabActivityEmits.get(_dedupKey);
+    const _now = Date.now();
+    if (!_lastEmit || _now - _lastEmit >= TAB_ACTIVITY_DEDUP_MS) {
+      _recentTabActivityEmits.set(_dedupKey, _now);
+      io.to(`channel:${channel._id}`).emit("tab-activity", {
+        type: "TASK_UPDATED",
+        task: taskWithColumnValues,
+        activities: [activity],
+        field,
+        previousValue,
+        newValue: processedValue,
+        updatedBy: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+        },
+        notification: notificationMessage,
+        timestamp: new Date(),
+      });
+    }
 
     // Emit notifications to assigned users
     notifications.forEach((notification) => {
@@ -2038,9 +2045,27 @@ const generateTabNotificationMessage = (type, payload) => {
           }
           break;
         }
-        case "checklist":
-          updateMessage = `updated checklist`;
+        case "checklist": {
+          const prev = Array.isArray(previousValue) ? previousValue : [];
+          const next = Array.isArray(newValue) ? newValue : [];
+          const oldCompleted = prev.filter((i) => i.isCompleted).length;
+          const newCompleted = next.filter((i) => i.isCompleted).length;
+          if (newCompleted !== oldCompleted) {
+            if (newCompleted > oldCompleted) {
+              const n = newCompleted - oldCompleted;
+              updateMessage = `marked ${n} checklist item${n > 1 ? "s" : ""} as done`;
+            } else {
+              const n = oldCompleted - newCompleted;
+              updateMessage = `unmarked ${n} checklist item${n > 1 ? "s" : ""}`;
+            }
+          } else {
+            const diff = next.length - prev.length;
+            if (diff > 0) updateMessage = `added ${diff} checklist item${diff > 1 ? "s" : ""}`;
+            else if (diff < 0) updateMessage = `removed ${Math.abs(diff)} checklist item${Math.abs(diff) > 1 ? "s" : ""}`;
+            else updateMessage = `updated checklist`;
+          }
           break;
+        }
         case "customFields":
           updateMessage = `updated custom fields`;
           break;
@@ -2112,6 +2137,11 @@ const generateTabNotificationMessage = (type, payload) => {
   }
 };
 
+// Deduplication map: prevents duplicate tab-activity notifications within a 2s window
+// Key: "channelId:taskId:field:userId" → timestamp of last emit
+const _recentTabActivityEmits = new Map();
+const TAB_ACTIVITY_DEDUP_MS = 2000;
+
 // Single function to emit any task-related updates
 exports.emitTaskEvent = (data) => {
   if (!io) {
@@ -2131,6 +2161,22 @@ exports.emitTaskEvent = (data) => {
 
   // Emit to channel for activity feed with notification message
   if (channelId) {
+    // Deduplicate: skip if the same (channel, task, field, updatedBy) was emitted within 2s
+    const dedupKey = `${channelId}:${taskId}:${payload?.field || type}:${payload?.updatedBy?._id || ""}`;
+    const lastEmit = _recentTabActivityEmits.get(dedupKey);
+    const now = Date.now();
+    if (lastEmit && now - lastEmit < TAB_ACTIVITY_DEDUP_MS) {
+      return;
+    }
+    _recentTabActivityEmits.set(dedupKey, now);
+    // Cleanup old entries to prevent unbounded growth
+    if (_recentTabActivityEmits.size > 500) {
+      const cutoff = now - TAB_ACTIVITY_DEDUP_MS;
+      for (const [k, t] of _recentTabActivityEmits) {
+        if (t < cutoff) _recentTabActivityEmits.delete(k);
+      }
+    }
+
     const notificationMessage = generateTabNotificationMessage(type, payload);
 
     // Build exclusion list: supports both excludeUserIds (array) and legacy excludeUserId (string)
