@@ -1,5 +1,6 @@
 "use strict";
 const socketIO = require("socket.io");
+const { sendPushIfNotMuted } = require("../services/pushNotificationService");
 const { Types } = require("mongoose");
 const { createActivity } = require("../models/activityModel");
 const { initChatSocket } = require("./chatSocket");
@@ -623,6 +624,12 @@ const processTaskUpdate = async (socket, data) => {
               contextPath,
             })
           );
+          sendPushIfNotMuted(assigneeId, {
+            title: "Task assigned to you",
+            body: `${userName} assigned you to "${task.title}"`,
+            icon: "/main-logo.svg",
+            url: `/dashboard/tasks/${task._id}`,
+          }).catch(() => {});
         }
       }
 

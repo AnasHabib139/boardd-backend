@@ -6,6 +6,7 @@
  */
 
 const { Types } = require("mongoose");
+const { isUserMuted, sendPushIfNotMuted } = require("../services/pushNotificationService");
 const {
   findChatConversation,
   updateLastMessage,
@@ -942,8 +943,7 @@ const handleMentionNotifications = async (
       // Notify all channel members except author
       for (const memberId of memberIds) {
         if (memberId !== author._id.toString()) {
-          // Emit to user room
-          io.to(`user:${memberId}`).emit("chat:notification", {
+          const notifPayload = {
             type: "CHAT_MENTION",
             conversationId: conversation._id,
             messageId: message._id,
@@ -956,7 +956,16 @@ const handleMentionNotifications = async (
             conversationType: conversation.type,
             mentionType: "channel",
             timestamp: new Date(),
-          });
+          };
+          if (!(await isUserMuted(memberId, conversation.channelId))) {
+            io.to(`user:${memberId}`).emit("chat:notification", notifPayload);
+            sendPushIfNotMuted(memberId, {
+              title: `${author.name} mentioned @channel`,
+              body: notifPayload.messagePreview,
+              icon: "/main-logo.svg",
+              url: `/dashboard/chat/${conversation._id}`,
+            }, conversation.channelId).catch(() => {});
+          }
 
           // Create persistent notification
           const notification = await createNotification({
@@ -1024,8 +1033,7 @@ const handleMentionNotifications = async (
     // Notify all participants except author
     for (const participantId of participantIds) {
       if (participantId !== author._id.toString()) {
-        // Emit to user room
-        io.to(`user:${participantId}`).emit("chat:notification", {
+        const notifPayload = {
           type: "CHAT_MENTION",
           conversationId: conversation._id,
           messageId: message._id,
@@ -1038,7 +1046,16 @@ const handleMentionNotifications = async (
           conversationType: conversation.type,
           mentionType: "all",
           timestamp: new Date(),
-        });
+        };
+        if (!(await isUserMuted(participantId))) {
+          io.to(`user:${participantId}`).emit("chat:notification", notifPayload);
+          sendPushIfNotMuted(participantId, {
+            title: `${author.name} mentioned @all`,
+            body: notifPayload.messagePreview,
+            icon: "/main-logo.svg",
+            url: `/dashboard/chat/${conversation._id}`,
+          }).catch(() => {});
+        }
 
         // Create persistent notification
         const notification = await createNotification({
@@ -1096,8 +1113,7 @@ const handleMentionNotifications = async (
   if (userMentions.length > 0) {
     for (const mentionedUserId of userMentions) {
       if (mentionedUserId.toString() !== author._id.toString()) {
-        // Emit to user room
-        io.to(`user:${mentionedUserId}`).emit("chat:notification", {
+        const notifPayload = {
           type: "CHAT_MENTION",
           conversationId: conversation._id,
           messageId: message._id,
@@ -1110,7 +1126,16 @@ const handleMentionNotifications = async (
           conversationType: conversation.type,
           mentionType: "user",
           timestamp: new Date(),
-        });
+        };
+        if (!(await isUserMuted(mentionedUserId, conversation.channelId || null))) {
+          io.to(`user:${mentionedUserId}`).emit("chat:notification", notifPayload);
+          sendPushIfNotMuted(mentionedUserId, {
+            title: `${author.name} mentioned you`,
+            body: notifPayload.messagePreview,
+            icon: "/main-logo.svg",
+            url: `/dashboard/chat/${conversation._id}`,
+          }, conversation.channelId || null).catch(() => {});
+        }
 
         // Create persistent notification
         // Get channelName if this is a channel conversation
@@ -1228,7 +1253,7 @@ const notifyDMParticipants = async (
       }
 
       if (!isInRoom) {
-        io.to(`user:${participantId}`).emit("chat:notification", {
+        const notifPayload = {
           type: "CHAT_MESSAGE",
           conversationId: conversation._id,
           messageId: message._id,
@@ -1240,7 +1265,16 @@ const notifyDMParticipants = async (
           messagePreview: contentText.substring(0, 100),
           conversationType: conversation.type,
           timestamp: new Date(),
-        });
+        };
+        if (!(await isUserMuted(participantId))) {
+          io.to(`user:${participantId}`).emit("chat:notification", notifPayload);
+          sendPushIfNotMuted(participantId, {
+            title: `${author.name} sent a message`,
+            body: notifPayload.messagePreview,
+            icon: "/main-logo.svg",
+            url: `/dashboard/chat/${conversation._id}`,
+          }).catch(() => {});
+        }
       }
 
       // Create persistent activity feed notification (ALWAYS, even if user is viewing)
@@ -1355,7 +1389,7 @@ const notifyChannelMembers = async (
       }
 
       if (!isInRoom) {
-        io.to(`user:${memberId}`).emit("chat:notification", {
+        const notifPayload = {
           type: "CHAT_MESSAGE",
           conversationId: conversation._id,
           messageId: message._id,
@@ -1367,7 +1401,16 @@ const notifyChannelMembers = async (
           messagePreview: contentText.substring(0, 100),
           conversationType: conversation.type,
           timestamp: new Date(),
-        });
+        };
+        if (!(await isUserMuted(memberId, channel._id))) {
+          io.to(`user:${memberId}`).emit("chat:notification", notifPayload);
+          sendPushIfNotMuted(memberId, {
+            title: `${author.name} sent a message`,
+            body: notifPayload.messagePreview,
+            icon: "/main-logo.svg",
+            url: `/dashboard/chat/${conversation._id}`,
+          }, channel._id).catch(() => {});
+        }
       }
 
       // Create persistent activity feed notification (ALWAYS, even if user is viewing)
@@ -1475,8 +1518,7 @@ const notifyThreadParticipants = async (
     }
 
     if (!isInThread) {
-      // Emit notification
-      io.to(`user:${userId}`).emit("chat:notification", {
+      const notifPayload = {
         type: "CHAT_THREAD_REPLY",
         conversationId: conversation._id,
         messageId: message._id,
@@ -1489,7 +1531,16 @@ const notifyThreadParticipants = async (
         messagePreview: contentText.substring(0, 100),
         conversationType: conversation.type,
         timestamp: new Date(),
-      });
+      };
+      if (!(await isUserMuted(userId, conversation.channelId || null))) {
+        io.to(`user:${userId}`).emit("chat:notification", notifPayload);
+        sendPushIfNotMuted(userId, {
+          title: `${author.name} replied in a thread`,
+          body: notifPayload.messagePreview,
+          icon: "/main-logo.svg",
+          url: `/dashboard/chat/${conversation._id}`,
+        }, conversation.channelId || null).catch(() => {});
+      }
 
       // Create persistent notification
       // Get channelName if this is a channel conversation
