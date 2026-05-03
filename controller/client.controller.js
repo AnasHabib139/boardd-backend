@@ -2,6 +2,8 @@ const {
   findClient,
   updateClient,
   createClient,
+  isClientPhoneAvailable,
+  isClientEmailAvailable,
 } = require("../models/clientModel");
 const { parseBody, generateResponse } = require("../utils");
 const { STATUS_CODES, ACTION_TYPE } = require("../utils/constants");
@@ -111,6 +113,33 @@ exports.createOrUpdateClient = async (req, res, next) => {
 
     // Check if client already exists
     const existingClient = await findClient(clientQuery);
+
+    // Cross-company duplicate guard: a phone or email may not belong to two clients in the same company.
+    // Inbound SMS / chat client list rely on this — duplicates make routing ambiguous.
+    if (clientDetails) {
+      const excludeId = existingClient?._id || null;
+
+      if (clientDetails.phone?.countryCode && clientDetails.phone?.number) {
+        const phoneE164 = `${clientDetails.phone.countryCode}${clientDetails.phone.number}`.replace(/[\s-]/g, "");
+        const { available } = await isClientPhoneAvailable(phoneE164, companyId, excludeId);
+        if (!available) {
+          return next({
+            statusCode: STATUS_CODES.BAD_REQUEST,
+            message: `Phone ${phoneE164} is already used by another client in this company. A phone number can only belong to one client.`,
+          });
+        }
+      }
+
+      if (clientDetails.email) {
+        const { available } = await isClientEmailAvailable(clientDetails.email, companyId, excludeId);
+        if (!available) {
+          return next({
+            statusCode: STATUS_CODES.BAD_REQUEST,
+            message: `Email ${clientDetails.email} is already used by another client in this company.`,
+          });
+        }
+      }
+    }
 
     let client;
     let activities = [];

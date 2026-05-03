@@ -278,9 +278,6 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
       $addFields: {
         conversationType: "$conversationDetails.type",
 
-        // DEBUG: Show what clientDetails contains
-        DEBUG_clientDetails: "$clientDetails",
-
         // Company messaging channels (only for client conversations)
         messagingChannels: {
           $cond: {
@@ -499,7 +496,6 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
         conversationType: 1,
         messagingChannels: 1,
         clientContactInfo: 1,
-        DEBUG_clientDetails: 1,
       },
     },
 

@@ -588,9 +588,14 @@ exports.isPhoneNumberAvailableInCompany = async (
   const query = {
     companyId,
     type: "client",
+    // Cover clientContact.* (set at create time, before any message) AND
+    // externalContacts.*E164s (populated when messages flow). Skipping the
+    // clientContact side lets a fresh duplicate slip through pre-first-message.
     $or: [
       { "externalContacts.whatsappE164s": phoneNumber },
       { "externalContacts.phoneE164s": phoneNumber },
+      { "clientContact.phoneE164": phoneNumber },
+      { "clientContact.whatsappE164": phoneNumber },
     ],
   };
 

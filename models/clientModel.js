@@ -102,6 +102,60 @@ exports.updateClient = (query, updateData, options = {}) =>
 
 exports.deleteClient = (query) => ClientModel.findOneAndDelete(query);
 
+/**
+ * Check if a phone (E.164) is already used by any other client in the same company.
+ * Phone is stored split as { countryCode, number }; we compose and compare against the candidate.
+ */
+exports.isClientPhoneAvailable = async (phoneE164, companyId, excludeClientId = null) => {
+  const match = { companyId };
+  if (excludeClientId) match._id = { $ne: new Types.ObjectId(excludeClientId) };
+
+  const result = await ClientModel.aggregate([
+    { $match: match },
+    { $unwind: "$clientDetails" },
+    {
+      $match: {
+        "clientDetails.phone.countryCode": { $exists: true, $ne: null, $ne: "" },
+        "clientDetails.phone.number": { $exists: true, $ne: null, $ne: "" },
+      },
+    },
+    {
+      $project: {
+        _id: 1,
+        tabId: 1,
+        clientDetails: 1,
+        composed: {
+          $concat: ["$clientDetails.phone.countryCode", "$clientDetails.phone.number"],
+        },
+      },
+    },
+    { $match: { composed: phoneE164 } },
+    { $limit: 1 },
+  ]);
+
+  return {
+    available: result.length === 0,
+    existingClient: result[0] || null,
+  };
+};
+
+/**
+ * Check if an email is already used by any other client in the same company (case-insensitive).
+ */
+exports.isClientEmailAvailable = async (email, companyId, excludeClientId = null) => {
+  const query = {
+    companyId,
+    "clientDetails.email": new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
+  };
+  if (excludeClientId) query._id = { $ne: excludeClientId };
+
+  const existingClient = await ClientModel.findOne(query);
+  return {
+    available: !existingClient,
+    existingClient: existingClient || null,
+  };
+};
+
 // Get all clients with pagination
 exports.getAllClients = async ({
   query,
