@@ -28,6 +28,8 @@ const {
   removeAllReactionsForMessage,
 } = require("../models/chatReactionModel");
 const { findChannel } = require("../models/channelModel");
+const { findChannelTab } = require("../models/channelTabsModel");
+const { DEFAULT_TABS } = require("./constants");
 const { findUser } = require("../models/userModel");
 const { createNotification } = require("../models/notificationModel");
 const { emitUnreadCountsUpdate } = require("./activityNotifications");
@@ -42,6 +44,17 @@ const {
   generatePreview,
 } = require("../services/chatContentProcessor");
 const clientMessageRouter = require("../services/clientMessageRouter");
+
+const getNotificationUrl = async (conversation) => {
+  if (conversation.type === "dm" || conversation.type === "group_dm" || conversation.type === "client") {
+    return `/chats/${conversation._id}`;
+  }
+  if (conversation.type === "channel" && conversation.channelId) {
+    const tab = await findChannelTab({ channelId: conversation.channelId, tabName: DEFAULT_TABS.TEAM_CHAT });
+    if (tab) return `/dashboard?tab=${tab._id}`;
+  }
+  return `/chats/${conversation._id}`;
+};
 
 /**
  * Process: Send Message
@@ -975,7 +988,7 @@ const handleMentionNotifications = async (
               title: `${author.name} mentioned @channel`,
               body: notifPayload.messagePreview,
               icon: "/main-logo.svg",
-              url: `/dashboard/chat/${conversation._id}`,
+              url: await getNotificationUrl(conversation),
             }, conversation.channelId).catch(() => {});
           }
 
@@ -1065,7 +1078,7 @@ const handleMentionNotifications = async (
             title: `${author.name} mentioned @all`,
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
-            url: `/dashboard/chat/${conversation._id}`,
+            url: await getNotificationUrl(conversation),
           }).catch(() => {});
         }
 
@@ -1145,7 +1158,7 @@ const handleMentionNotifications = async (
             title: `${author.name} mentioned you`,
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
-            url: `/dashboard/chat/${conversation._id}`,
+            url: await getNotificationUrl(conversation),
           }, conversation.channelId || null).catch(() => {});
         }
 
@@ -1284,7 +1297,7 @@ const notifyDMParticipants = async (
             title: `${author.name} sent a message`,
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
-            url: `/dashboard/chat/${conversation._id}`,
+            url: await getNotificationUrl(conversation),
           }).catch(() => {});
         }
       }
@@ -1420,7 +1433,7 @@ const notifyChannelMembers = async (
             title: `${author.name} sent a message`,
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
-            url: `/dashboard/chat/${conversation._id}`,
+            url: await getNotificationUrl(conversation),
           }, channel._id).catch(() => {});
         }
       }
@@ -1550,7 +1563,7 @@ const notifyThreadParticipants = async (
           title: `${author.name} replied in a thread`,
           body: notifPayload.messagePreview,
           icon: "/main-logo.svg",
-          url: `/dashboard/chat/${conversation._id}`,
+          url: await getNotificationUrl(conversation),
         }, conversation.channelId || null).catch(() => {});
       }
 
