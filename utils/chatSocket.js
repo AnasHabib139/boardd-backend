@@ -45,8 +45,11 @@ const {
 } = require("../services/chatContentProcessor");
 const clientMessageRouter = require("../services/clientMessageRouter");
 
-const getNotificationUrl = async (conversation) => {
-  if (conversation.type === "dm" || conversation.type === "group_dm" || conversation.type === "client") {
+const getNotificationUrl = async (conversation, senderId) => {
+  if (conversation.type === "dm") {
+    return `/chats/${senderId}`;
+  }
+  if (conversation.type === "group_dm" || conversation.type === "client") {
     return `/chats/${conversation._id}`;
   }
   if (conversation.type === "channel" && conversation.channelId) {
@@ -988,7 +991,7 @@ const handleMentionNotifications = async (
               title: `${author.name} mentioned @channel`,
               body: notifPayload.messagePreview,
               icon: "/main-logo.svg",
-              url: await getNotificationUrl(conversation),
+              url: await getNotificationUrl(conversation, author._id),
             }, conversation.channelId).catch(() => {});
           }
 
@@ -1078,7 +1081,7 @@ const handleMentionNotifications = async (
             title: `${author.name} mentioned @all`,
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
-            url: await getNotificationUrl(conversation),
+            url: await getNotificationUrl(conversation, author._id),
           }).catch(() => {});
         }
 
@@ -1158,7 +1161,7 @@ const handleMentionNotifications = async (
             title: `${author.name} mentioned you`,
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
-            url: await getNotificationUrl(conversation),
+            url: await getNotificationUrl(conversation, author._id),
           }, conversation.channelId || null).catch(() => {});
         }
 
@@ -1297,7 +1300,7 @@ const notifyDMParticipants = async (
             title: `${author.name} sent a message`,
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
-            url: await getNotificationUrl(conversation),
+            url: await getNotificationUrl(conversation, author._id),
           }).catch(() => {});
         }
       }
@@ -1433,7 +1436,7 @@ const notifyChannelMembers = async (
             title: `${author.name} sent a message`,
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
-            url: await getNotificationUrl(conversation),
+            url: await getNotificationUrl(conversation, author._id),
           }, channel._id).catch(() => {});
         }
       }
@@ -1563,7 +1566,7 @@ const notifyThreadParticipants = async (
           title: `${author.name} replied in a thread`,
           body: notifPayload.messagePreview,
           icon: "/main-logo.svg",
-          url: await getNotificationUrl(conversation),
+          url: await getNotificationUrl(conversation, author._id),
         }, conversation.channelId || null).catch(() => {});
       }
 
