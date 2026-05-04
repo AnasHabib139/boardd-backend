@@ -628,7 +628,7 @@ const processTaskUpdate = async (socket, data) => {
             title: "Task assigned to you",
             body: `${userName} assigned you to "${task.title}"`,
             icon: "/main-logo.svg",
-            url: `/dashboard/tasks/${task._id}`,
+            url: `/dashboard?task=${task._id}`,
           }).catch(() => {});
         }
       }
