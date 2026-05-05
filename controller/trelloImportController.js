@@ -7,7 +7,7 @@ const { createProject, getNextProjectOrderIndex } = require("../models/projectMo
 const { createManyTabTaskStatuses } = require("../models/tabTaskStatusModel");
 const { createTask, getNextOrderIndex } = require("../models/taskModel");
 const { findUserIntegration, updateUserIntegration, deleteUserIntegration } = require("../models/userIntegrationModel");
-const { findManyUsers } = require("../models/userModel");
+const { findUser, findManyUsers } = require("../models/userModel");
 const trello = require("../services/trelloService");
 const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
@@ -123,7 +123,7 @@ exports.importTrelloBoard = async (req, res, next) => {
   try {
     const { boardId } = req.body;
     const userId = req.user.id;
-    const user = req.user;
+    const user = await findUser({ _id: userId });
 
     // 1. Get stored token
     const integration = await findUserIntegration({ userId, platform: "trello", isActive: true });
