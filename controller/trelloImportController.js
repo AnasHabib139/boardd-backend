@@ -1,7 +1,7 @@
 "use strict";
 
-const { createChannel, updateChannel } = require("../models/channelModel");
-const { createChannelTab } = require("../models/channelTabsModel");
+const { createChannel, updateChannel, findChannel } = require("../models/channelModel");
+const { createChannelTab, findChannelTab } = require("../models/channelTabsModel");
 const { createChatConversation } = require("../models/chatConversationModel");
 const { createProject, getNextProjectOrderIndex } = require("../models/projectModel");
 const { createManyTabTaskStatuses } = require("../models/tabTaskStatusModel");
@@ -42,14 +42,113 @@ const flattenChecklists = (checklists = []) => {
   let order = 1;
   for (const cl of checklists) {
     for (const item of cl.checkItems || []) {
-      items.push({
-        name: item.name,
-        isCompleted: item.state === "complete",
-        order: order++,
-      });
+      items.push({ name: item.name, isCompleted: item.state === "complete", order: order++ });
     }
   }
   return items;
+};
+
+// Imports a single Trello board as one Project inside the given channel/tab
+const importSingleBoard = async ({ token, boardId, channel, tab, userId, user }) => {
+  const [board, lists, cards, trelloMembers] = await Promise.all([
+    trello.getBoardInfo(token, boardId),
+    trello.getBoardLists(token, boardId),
+    trello.getBoardCards(token, boardId),
+    trello.getBoardMembers(token, boardId),
+  ]);
+
+  // Build statusKey map preserving Trello list order
+  const sortedLists = [...lists].sort((a, b) => a.pos - b.pos);
+  const seenSlugs = new Set();
+  const listStatusMap = {};
+  const statusDocs = sortedLists.map((list, index) => {
+    const slug = ensureUniqueSlug(slugify(list.name), seenSlugs);
+    listStatusMap[list.id] = slug;
+    return { statusKey: slug, statusName: list.name, color: assignColor(index), order: index + 1, isSystem: false };
+  });
+
+  // Match Trello members to existing Boardd users by email
+  const trelloEmailMap = {};
+  for (const m of trelloMembers) {
+    if (m.email) trelloEmailMap[m.email.toLowerCase()] = m.id;
+  }
+  const trelloEmails = Object.keys(trelloEmailMap);
+  const existingUsers = trelloEmails.length
+    ? await findManyUsers({ email: { $in: trelloEmails }, companyId: user.companyId })
+    : [];
+  const memberMap = {};
+  for (const u of existingUsers) {
+    const tid = trelloEmailMap[u.email.toLowerCase()];
+    if (tid) memberMap[tid] = u._id;
+  }
+
+  // Create Project (model fn directly — skips initializeSystemStatuses)
+  const today = new Date();
+  const projectOrderIndex = await getNextProjectOrderIndex(tab._id);
+  const project = await createProject({
+    name: board.name,
+    description: board.desc || "",
+    createdBy: userId,
+    companyId: user.companyId,
+    channelId: channel._id,
+    tabId: tab._id,
+    startDate: today,
+    endDate: new Date(today.getFullYear(), today.getMonth() + 1, today.getDate()),
+    color: "#6C63FF",
+    priority: "medium",
+    orderIndex: projectOrderIndex,
+  });
+
+  // Create custom statuses from Trello lists
+  await createManyTabTaskStatuses(statusDocs.map((s) => ({ ...s, projectId: project._id })));
+
+  // Create Tasks (skip closed cards)
+  let tasksImported = 0;
+  let tasksSkipped = 0;
+
+  for (const card of cards) {
+    if (card.closed) { tasksSkipped++; continue; }
+
+    const statusKey = listStatusMap[card.idList] || statusDocs[0]?.statusKey || "todo";
+    const assignedTo = (card.idMembers || []).map((mid) => memberMap[mid]).filter(Boolean);
+    const taskOrderIndex = await getNextOrderIndex(project._id, null, statusKey);
+
+    await createTask({
+      title: card.name,
+      description: card.desc || "",
+      projectId: project._id,
+      companyId: user.companyId,
+      tabId: tab._id,
+      createdBy: userId,
+      assignedTo,
+      status: statusKey,
+      priority: "medium",
+      dueDate: card.due ? new Date(card.due) : undefined,
+      tags: (card.labels || []).map((l) => l.name).filter(Boolean),
+      orderIndex: new Map([[statusKey, taskOrderIndex]]),
+      checklist: flattenChecklists(card.checklists),
+      attachments: (card.attachments || []).map((a) => ({
+        url: a.url,
+        fileName: a.name,
+        fileSize: a.bytes ?? 0,
+        mimeType: a.mimeType ?? "application/octet-stream",
+        uploadedBy: userId,
+        uploadedAt: a.date ? new Date(a.date) : new Date(),
+        source: "local",
+      })),
+    });
+    tasksImported++;
+  }
+
+  return {
+    boardId,
+    boardName: board.name,
+    projectId: project._id,
+    statusesCreated: statusDocs.length,
+    tasksImported,
+    tasksSkipped,
+    membersMatched: existingUsers.length,
+  };
 };
 
 // ─── Controllers ────────────────────────────────────────────────────────────
@@ -71,12 +170,7 @@ exports.connectTrello = async (req, res, next) => {
 
     await updateUserIntegration(
       { userId, platform: "trello" },
-      {
-        accessToken: token,
-        platformUserId: member.id,
-        platformUserName: member.username,
-        isActive: true,
-      },
+      { accessToken: token, platformUserId: member.id, platformUserName: member.username, isActive: true },
       { upsert: true }
     );
 
@@ -92,9 +186,7 @@ exports.connectTrello = async (req, res, next) => {
 
 exports.getTrelloBoards = async (req, res, next) => {
   try {
-    const userId = req.user.id;
-
-    const integration = await findUserIntegration({ userId, platform: "trello", isActive: true });
+    const integration = await findUserIntegration({ userId: req.user.id, platform: "trello", isActive: true });
     if (!integration) {
       return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Trello not connected" });
     }
@@ -121,7 +213,7 @@ exports.disconnectTrello = async (req, res, next) => {
 
 exports.importTrelloBoard = async (req, res, next) => {
   try {
-    const { boardId } = req.body;
+    const { boardIds, channelId, channelName } = req.body;
     const userId = req.user.id;
     const user = await findUser({ _id: userId });
 
@@ -132,154 +224,72 @@ exports.importTrelloBoard = async (req, res, next) => {
     }
     const token = integration.accessToken;
 
-    // 2. Fetch board data in parallel
-    const [board, lists, cards, trelloMembers] = await Promise.all([
-      trello.getBoardInfo(token, boardId),
-      trello.getBoardLists(token, boardId),
-      trello.getBoardCards(token, boardId),
-      trello.getBoardMembers(token, boardId),
-    ]);
+    // 2. Resolve channel + tab
+    let channel, tab;
 
-    // 3. Build statusKey map from Trello lists (preserve order by pos)
-    const sortedLists = [...lists].sort((a, b) => a.pos - b.pos);
-    const seenSlugs = new Set();
-    const listStatusMap = {}; // trelloListId → statusKey
+    if (channelId) {
+      // Use existing channel
+      channel = await findChannel({ _id: channelId, companyId: user.companyId });
+      if (!channel) {
+        return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Channel not found" });
+      }
+      tab = await findChannelTab({ channelId: channel._id, tabName: "task management" });
+      if (!tab) {
+        return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Task management tab not found in this channel" });
+      }
+    } else {
+      // Create new channel
+      const resolvedName = channelName || "Trello Import";
 
-    const statusDocs = sortedLists.map((list, index) => {
-      const slug = ensureUniqueSlug(slugify(list.name), seenSlugs);
-      listStatusMap[list.id] = slug;
-      return {
-        statusKey: slug,
-        statusName: list.name,
-        color: assignColor(index),
-        order: index + 1,
-        isSystem: false,
-      };
-    });
-
-    // 4. Match Trello members to existing Boardd users by email
-    const trelloEmailMap = {}; // email → trello memberId
-    for (const m of trelloMembers) {
-      if (m.email) trelloEmailMap[m.email.toLowerCase()] = m.id;
-    }
-    const trelloEmails = Object.keys(trelloEmailMap);
-    const existingUsers = trelloEmails.length
-      ? await findManyUsers({ email: { $in: trelloEmails }, companyId: user.companyId })
-      : [];
-
-    // trelloMemberId → boardd ObjectId
-    const memberMap = {};
-    for (const u of existingUsers) {
-      const trelloId = trelloEmailMap[u.email.toLowerCase()];
-      if (trelloId) memberMap[trelloId] = u._id;
-    }
-
-    // 5. Create Channel
-    const channel = await createChannel({
-      channelName: board.name,
-      channelDescription: board.desc || `Imported from Trello`,
-      companyId: user.companyId,
-      isPrivate: false,
-      createdBy: userId,
-      channelToken: generateJoinToken(),
-      members: [userId],
-    });
-
-    // 6. Create Chat Conversation
-    await createChatConversation({
-      companyId: user.companyId,
-      type: "channel",
-      channelId: channel._id,
-      participantIds: [],
-      participants: [{ userId, lastReadAt: null }],
-      createdBy: userId,
-    });
-
-    // 7. Create default task management tab
-    const tab = await createChannelTab({
-      channelId: channel._id,
-      tabName: "task management",
-      isDefault: true,
-      members: [userId],
-      createdBy: userId,
-      companyId: user.companyId,
-      isPrivate: false,
-    });
-    await updateChannel({ _id: channel._id }, { $push: { tabs: tab._id } });
-
-    // 8. Create Project (call model fn directly — skips initializeSystemStatuses)
-    const today = new Date();
-    const projectOrderIndex = await getNextProjectOrderIndex(tab._id);
-    const project = await createProject({
-      name: board.name,
-      description: board.desc || "",
-      createdBy: userId,
-      companyId: user.companyId,
-      channelId: channel._id,
-      tabId: tab._id,
-      startDate: today,
-      endDate: new Date(today.getFullYear(), today.getMonth() + 1, today.getDate()),
-      color: "#6C63FF",
-      priority: "medium",
-      orderIndex: projectOrderIndex,
-    });
-
-    // 9. Create custom statuses from Trello lists
-    await createManyTabTaskStatuses(
-      statusDocs.map((s) => ({ ...s, projectId: project._id }))
-    );
-
-    // 10. Import cards as tasks (skip closed cards)
-    let tasksImported = 0;
-    let tasksSkipped = 0;
-
-    for (const card of cards) {
-      if (card.closed) { tasksSkipped++; continue; }
-
-      const statusKey = listStatusMap[card.idList] || statusDocs[0]?.statusKey || "todo";
-      const assignedTo = (card.idMembers || [])
-        .map((mid) => memberMap[mid])
-        .filter(Boolean);
-      const taskOrderIndex = await getNextOrderIndex(project._id, null, statusKey);
-
-      await createTask({
-        title: card.name,
-        description: card.desc || "",
-        projectId: project._id,
+      channel = await createChannel({
+        channelName: resolvedName,
+        channelDescription: "Imported from Trello",
         companyId: user.companyId,
-        tabId: tab._id,
+        isPrivate: false,
         createdBy: userId,
-        assignedTo,
-        status: statusKey,
-        priority: "medium",
-        dueDate: card.due ? new Date(card.due) : undefined,
-        tags: (card.labels || []).map((l) => l.name).filter(Boolean),
-        orderIndex: new Map([[statusKey, taskOrderIndex]]),
-        checklist: flattenChecklists(card.checklists),
-        attachments: (card.attachments || []).map((a) => ({
-          url: a.url,
-          fileName: a.name,
-          fileSize: a.bytes ?? 0,
-          mimeType: a.mimeType ?? "application/octet-stream",
-          uploadedBy: userId,
-          uploadedAt: a.date ? new Date(a.date) : new Date(),
-          source: "local",
-        })),
+        channelToken: generateJoinToken(),
+        members: [userId],
       });
-      tasksImported++;
+
+      await createChatConversation({
+        companyId: user.companyId,
+        type: "channel",
+        channelId: channel._id,
+        participantIds: [],
+        participants: [{ userId, lastReadAt: null }],
+        createdBy: userId,
+      });
+
+      tab = await createChannelTab({
+        channelId: channel._id,
+        tabName: "task management",
+        isDefault: true,
+        members: [userId],
+        createdBy: userId,
+        companyId: user.companyId,
+        isPrivate: false,
+      });
+
+      await updateChannel({ _id: channel._id }, { $push: { tabs: tab._id } });
+    }
+
+    // 3. Import each board as a separate Project (sequential to avoid collisions)
+    const results = [];
+    for (const boardId of boardIds) {
+      const result = await importSingleBoard({ token, boardId, channel, tab, userId, user });
+      results.push(result);
     }
 
     return generateResponse(
       {
         channelId: channel._id,
-        projectId: project._id,
         tabId: tab._id,
-        statusesCreated: statusDocs.length,
-        tasksImported,
-        tasksSkipped,
-        membersMatched: existingUsers.length,
+        isNewChannel: !channelId,
+        boards: results,
+        totalTasksImported: results.reduce((s, r) => s + r.tasksImported, 0),
+        totalTasksSkipped: results.reduce((s, r) => s + r.tasksSkipped, 0),
       },
-      "Trello board imported successfully",
+      "Trello boards imported successfully",
       res
     );
   } catch (error) {

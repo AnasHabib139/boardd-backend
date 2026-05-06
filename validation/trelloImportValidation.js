@@ -9,9 +9,16 @@ const connectTrelloValidation = Joi.object({
 });
 
 const importBoardValidation = Joi.object({
-  boardId: Joi.string().min(1).required().messages({
-    "string.empty": "Board ID is required",
-    "any.required": "Board ID is required",
+  boardIds: Joi.array().items(Joi.string().min(1)).min(1).required().messages({
+    "array.base": "boardIds must be an array",
+    "array.min": "At least one board ID is required",
+    "any.required": "boardIds is required",
+  }),
+  channelId: Joi.string().regex(/^[0-9a-fA-F]{24}$/).optional().messages({
+    "string.pattern.base": "channelId must be a valid MongoDB ObjectId",
+  }),
+  channelName: Joi.string().trim().min(1).optional().messages({
+    "string.min": "Channel name cannot be empty",
   }),
 });
 
