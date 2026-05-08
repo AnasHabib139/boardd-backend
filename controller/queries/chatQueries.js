@@ -29,7 +29,6 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null, 
   if (jumpToDate) {
     const [y, m, d] = jumpToDate.split("-").map(Number);
     matchStage.createdAt = { $gte: new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0)) };
-    matchStage.deletedAt = { $exists: false };
   }
 
   const conversationObjectId = Types.ObjectId.isValid(conversationId)
@@ -1164,7 +1163,6 @@ exports.getMessageDatesQuery = (conversationId, year, month) => {
           ? new Types.ObjectId(conversationId)
           : null,
         parentMessageId: null,
-        deletedAt: { $exists: false },
         createdAt: { $gte: start, $lt: end },
       },
     },
