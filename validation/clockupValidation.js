@@ -154,7 +154,9 @@ const validateRequest = (schema, source = "body") => {
 
     // Replace the original data with validated data
     if (source === "query") {
-      req.query = value;
+      const q = req.query;
+      Object.keys(q).forEach((k) => { if (!(k in value)) delete q[k]; });
+      Object.assign(q, value);
     } else if (source === "params") {
       req.params = value;
     } else {

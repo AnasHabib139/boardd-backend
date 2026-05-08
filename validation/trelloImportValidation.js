@@ -48,7 +48,7 @@ const validateRequest = (schema, source = "body") => {
     }
 
     if (source === "params") req.params = value;
-    else if (source === "query") req.query = value;
+    else if (source === "query") { const q = req.query; Object.keys(q).forEach((k) => { if (!(k in value)) delete q[k]; }); Object.assign(q, value); }
     else req.body = value;
 
     next();
