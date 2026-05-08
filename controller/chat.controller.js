@@ -3,8 +3,8 @@
 const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { findChatConversation, aggregateChatConversations } = require("../models/chatConversationModel");
-const { getAllChatMessages } = require("../models/chatMessageModel");
-const { getConversationMessagesQuery, getUserConversationsQuery, getConversationWithChatName, getClientContactInfoQuery } = require("./queries/chatQueries");
+const { getAllChatMessages, aggregateChatMessages } = require("../models/chatMessageModel");
+const { getConversationMessagesQuery, getUserConversationsQuery, getConversationWithChatName, getClientContactInfoQuery, getMessageDatesQuery } = require("./queries/chatQueries");
 const { aggregateChannelTabs } = require("../models/channelTabsModel");
 
 /**
@@ -14,7 +14,7 @@ const { aggregateChannelTabs } = require("../models/channelTabsModel");
 exports.getConversationMessages = async (req, res, next) => {
   try {
     const { conversationId } = req.params;
-    const { page, limit, parentMessageId } = req.query;
+    const { page, limit, parentMessageId, jumpToDate } = req.query;
 
     // Verify user is authenticated
     if (!req.user || !req.user.id) {
@@ -25,6 +25,14 @@ exports.getConversationMessages = async (req, res, next) => {
     }
 
     const userId = req.user.id.toString();
+
+    // Validate jumpToDate format if provided
+    if (jumpToDate && !/^\d{4}-\d{2}-\d{2}$/.test(jumpToDate)) {
+      return next({
+        statusCode: STATUS_CODES.UNPROCESSABLE_ENTITY,
+        message: "jumpToDate must be in YYYY-MM-DD format",
+      });
+    }
 
     // Check if conversation exists
     const conversation = await findChatConversation({ _id: conversationId });
@@ -44,11 +52,15 @@ exports.getConversationMessages = async (req, res, next) => {
       });
     }
 
-    // Build aggregation query
+    // Build aggregation query — pass jumpToDate to filter from start of that day
     const query = getConversationMessagesQuery(
       conversationId,
-      parentMessageId || null
+      parentMessageId || null,
+      jumpToDate || null
     );
+
+    // When jumping to a date, sort ascending so earliest messages of that day come first
+    const sort = jumpToDate ? { createdAt: 1 } : { createdAt: -1 };
 
     // Get paginated messages
     const result = await getAllChatMessages({
@@ -56,6 +68,7 @@ exports.getConversationMessages = async (req, res, next) => {
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 50,
       responseKey: "messages",
+      sort,
     });
 
     // Extract messaging channels and client contact info from first message (if client conversation)
@@ -679,6 +692,43 @@ exports.getConversations = async (req, res, next) => {
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,
     });
+  }
+};
+
+/**
+ * Get days-of-month that have at least one message in a conversation.
+ * GET /api/chat/conversations/:conversationId/message-dates?year=2025&month=5
+ */
+exports.getMessageDates = async (req, res, next) => {
+  try {
+    const { conversationId } = req.params;
+    const { year, month } = req.query;
+
+    const userId = req.user.id.toString();
+
+    const conversation = await findChatConversation({ _id: conversationId });
+    if (!conversation) {
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Conversation not found" });
+    }
+
+    const hasAccess = await verifyConversationAccess(conversation, userId);
+    if (!hasAccess) {
+      return next({ statusCode: STATUS_CODES.FORBIDDEN, message: "You don't have access to this conversation" });
+    }
+
+    const pipeline = getMessageDatesQuery(conversationId, Number(year), Number(month));
+    const result = await aggregateChatMessages(pipeline);
+
+    const dates = result.length > 0 ? result[0].dates : [];
+
+    return generateResponse(
+      { dates, year: Number(year), month: Number(month) },
+      "Message dates fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    return next({ statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR, message: error?.message });
   }
 };
 

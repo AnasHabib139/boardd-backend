@@ -46,7 +46,32 @@ const validateRequest = (schema, source = "body") => {
   };
 };
 
+// --- message-dates query: ?year=2025&month=5 ---
+const messageDatesQuerySchema = Joi.object({
+  year: Joi.number()
+    .integer()
+    .min(2000)
+    .max(2100)
+    .required()
+    .messages({
+      "any.required": "year is required",
+      "number.min": "year must be 2000 or later",
+      "number.max": "year must be 2100 or earlier",
+    }),
+  month: Joi.number()
+    .integer()
+    .min(1)
+    .max(12)
+    .required()
+    .messages({
+      "any.required": "month is required",
+      "number.min": "month must be between 1 and 12",
+      "number.max": "month must be between 1 and 12",
+    }),
+});
+
 module.exports = {
   validateUpdateTwilioNumber: validateRequest(updateTwilioNumberBody, "body"),
   validateConversationIdParam: validateRequest(conversationIdParam, "params"),
+  validateMessageDatesQuery: validateRequest(messageDatesQuerySchema, "query"),
 };

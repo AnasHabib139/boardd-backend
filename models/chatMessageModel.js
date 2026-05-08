@@ -266,12 +266,14 @@ exports.getAllChatMessages = async ({
   page = 1,
   limit = 50,
   responseKey = "data",
+  sort = { createdAt: -1 },
 }) => {
   const { data, pagination } = await getMongooseAggregatePaginatedData({
     model: ChatMessage,
     query,
     page,
     limit,
+    sort,
   });
 
   return { [responseKey]: data, pagination };

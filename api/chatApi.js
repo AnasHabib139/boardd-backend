@@ -7,6 +7,7 @@ const { ROLES } = require("../utils/constants");
 const {
   validateUpdateTwilioNumber,
   validateConversationIdParam,
+  validateMessageDatesQuery,
 } = require("../validation/chatValidation");
 
 class ChatApi {
@@ -23,6 +24,15 @@ class ChatApi {
       "/conversations/resolve",
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
       chatController.resolveConversation
+    );
+
+    // Get days that have messages for a given month (calendar dots)
+    router.get(
+      "/conversations/:conversationId/message-dates",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateConversationIdParam,
+      validateMessageDatesQuery,
+      chatController.getMessageDates
     );
 
     // Get messages for a conversation (with pagination)

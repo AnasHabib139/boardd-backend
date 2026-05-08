@@ -9,7 +9,7 @@ const { Types } = require("mongoose");
  * @param {string|null} parentMessageId - Optional parent message ID for thread replies
  * @returns {Array} Aggregation pipeline
  */
-exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) => {
+exports.getConversationMessagesQuery = (conversationId, parentMessageId = null, jumpToDate = null) => {
   const matchStage = {
     conversationId: Types.ObjectId.isValid(conversationId)
       ? new Types.ObjectId(conversationId)
@@ -23,6 +23,13 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
       : null;
   } else {
     matchStage.parentMessageId = null; // Only root messages
+  }
+
+  // When jumping to a date, filter messages from start of that day (UTC) onward
+  if (jumpToDate) {
+    const [y, m, d] = jumpToDate.split("-").map(Number);
+    matchStage.createdAt = { $gte: new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0)) };
+    matchStage.deletedAt = { $exists: false };
   }
 
   const conversationObjectId = Types.ObjectId.isValid(conversationId)
@@ -499,10 +506,6 @@ exports.getConversationMessagesQuery = (conversationId, parentMessageId = null) 
       },
     },
 
-    // Sort by newest first (reverse chronological - like WhatsApp)
-    {
-      $sort: { createdAt: -1 },
-    },
   ];
 };
 
@@ -1140,6 +1143,45 @@ exports.getClientContactInfoQuery = (channelId, companyId, conversationId) => {
     {
       $limit: 1
     }
+  ];
+};
+
+/**
+ * Get days-of-month that have root messages in a given month, with per-day counts.
+ * @param {string} conversationId
+ * @param {number} year  - e.g. 2025
+ * @param {number} month - 1-12
+ * @returns {Array} Aggregation pipeline → [{ dates: [{ day: 1, count: 5 }, ...] }]
+ */
+exports.getMessageDatesQuery = (conversationId, year, month) => {
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end   = new Date(Date.UTC(year, month, 1));
+
+  return [
+    {
+      $match: {
+        conversationId: Types.ObjectId.isValid(conversationId)
+          ? new Types.ObjectId(conversationId)
+          : null,
+        parentMessageId: null,
+        deletedAt: { $exists: false },
+        createdAt: { $gte: start, $lt: end },
+      },
+    },
+    {
+      $group: {
+        _id: { $dayOfMonth: "$createdAt" },
+        count: { $sum: 1 },
+      },
+    },
+    { $sort: { _id: 1 } },
+    {
+      $group: {
+        _id: null,
+        dates: { $push: { day: "$_id", count: "$count" } },
+      },
+    },
+    { $project: { _id: 0, dates: 1 } },
   ];
 };
 
