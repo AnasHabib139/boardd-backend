@@ -25,3 +25,5 @@ exports.updateUserIntegration = (query, update, options = {}) =>
   UserIntegration.findOneAndUpdate(query, { ...update, updatedAt: Date.now() }, { new: true, ...options });
 
 exports.deleteUserIntegration = (query) => UserIntegration.findOneAndDelete(query);
+
+exports.findManyUserIntegrations = (query) => UserIntegration.find(query);

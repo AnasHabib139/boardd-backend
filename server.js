@@ -29,6 +29,9 @@ const initializeApp = async () => {
     initRedis();
     console.log("✅ Redis initialization started");
 
+    const { startClickUpImportWorker } = require("./jobs/clickupImportWorker");
+    startClickUpImportWorker();
+
     // Run pending migrations
     const migrationResult = await migrationRunner.runPendingMigrations();
     if (migrationResult.executed > 0) {

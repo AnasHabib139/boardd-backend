@@ -74,3 +74,6 @@ exports.getSpaceMembers = async (token, spaceId) => {
   const data = await clickupFetch(`/space/${spaceId}/member`, token);
   return data.members || [];
 };
+
+exports.getTask = (token, taskId) =>
+  clickupFetch(`/task/${taskId}`, token);
