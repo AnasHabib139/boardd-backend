@@ -58,9 +58,9 @@ const emitProgress = (userId, jobId, payload) => {
 };
 
 // Download a file from a URL and upload to S3; returns Boardd attachment object or null
-const uploadAttachmentToS3 = async (url, title, date, userId) => {
+const uploadAttachmentToS3 = async (url, title, date, userId, token) => {
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: { Authorization: token } });
     if (!res.ok) return null;
     const buffer = Buffer.from(await res.arrayBuffer());
     const mimeType = res.headers.get("content-type") || "application/octet-stream";
@@ -141,7 +141,7 @@ const importSingleList = async ({ token, list, channel, tab, userId, companyId, 
       // Upload attachments to S3
       const attachments = [];
       for (const a of fullTask.attachments || []) {
-        const att = await uploadAttachmentToS3(a.url, a.title, a.date, userId);
+        const att = await uploadAttachmentToS3(a.url, a.title, a.date, userId, token);
         if (att) attachments.push(att);
       }
 
@@ -242,11 +242,14 @@ const startClickUpImportWorker = () => {
 
       await updateImportJob({ _id: jobId }, { status: "running" });
       emitProgress(userIdStr, jobId, { platform: "clickup", status: "running", progress: { current: 0, total: spaceIds.length, currentItem: "Starting import..." } });
+      console.log(`[ClickUp Import] Job ${jobId} started — spaces: ${spaceIds.join(", ")}`);
 
       const results = [];
       for (const spaceId of spaceIds) {
         const spaceName = spaceNameMap[spaceId] || spaceId;
+        console.log(`[ClickUp Import] Processing space: ${spaceName} (${spaceId})`);
         const result = await importSingleSpace({ token, spaceId, spaceName, channel, tab, userId, companyId, rl, jobId, userIdStr, progressRef });
+        console.log(`[ClickUp Import] Space done: ${spaceName} — ${result.totalTasksImported} tasks imported, ${result.totalTasksSkipped} skipped`);
         results.push(result);
       }
 
@@ -261,6 +264,7 @@ const startClickUpImportWorker = () => {
 
       await updateImportJob({ _id: jobId }, { status: "completed", result: finalResult, "progress.currentItem": "Done" });
       emitProgress(userIdStr, jobId, { platform: "clickup", status: "completed", progress: { current: progressRef.total, total: progressRef.total, currentItem: "Done" }, result: finalResult });
+      console.log(`[ClickUp Import] Job ${jobId} completed — total: ${finalResult.totalTasksImported} tasks imported`);
 
       return finalResult;
     },
@@ -273,6 +277,7 @@ const startClickUpImportWorker = () => {
   worker.on("failed", async (job, err) => {
     if (!job) return;
     const { jobId, userId: userIdStr } = job.data;
+    console.error(`[ClickUp Import] Job ${jobId} failed:`, err.message);
     await updateImportJob({ _id: jobId }, { status: "failed", error: err.message });
     emitProgress(userIdStr, jobId, { platform: "clickup", status: "failed", error: err.message });
   });
