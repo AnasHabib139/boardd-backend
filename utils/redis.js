@@ -98,4 +98,19 @@ const getOnlineStatuses = async (userIds) => {
   return map;
 };
 
-module.exports = { initRedis, getRedis, closeRedis, addUserSocket, removeUserSocket, getOnlineStatuses };
+// Separate connection for BullMQ — requires maxRetriesPerRequest: null
+let bullRedisClient = null;
+const getBullRedis = () => {
+  if (!bullRedisClient) {
+    bullRedisClient = new Redis({
+      host: process.env.REDIS_HOST || "localhost",
+      port: process.env.REDIS_PORT || 6379,
+      password: process.env.REDIS_PASSWORD || undefined,
+      maxRetriesPerRequest: null,
+      retryStrategy: (times) => Math.min(times * 50, 2000),
+    });
+  }
+  return bullRedisClient;
+};
+
+module.exports = { initRedis, getRedis, closeRedis, addUserSocket, removeUserSocket, getOnlineStatuses, getBullRedis };

@@ -1,7 +1,7 @@
 "use strict";
 
 const { Worker } = require("bullmq");
-const { getRedis } = require("../utils/redis");
+const { getBullRedis } = require("../utils/redis");
 const { getIO } = require("../utils/socket");
 const { updateImportJob } = require("../models/importJobModel");
 const { createProject, getNextProjectOrderIndex } = require("../models/projectModel");
@@ -265,7 +265,7 @@ const startClickUpImportWorker = () => {
       return finalResult;
     },
     {
-      connection: getRedis(),
+      connection: getBullRedis(),
       concurrency: 2,
     }
   );
