@@ -262,7 +262,11 @@ const startClickUpImportWorker = () => {
         totalTasksSkipped: results.reduce((s, r) => s + r.totalTasksSkipped, 0),
       };
 
-      await updateImportJob({ _id: jobId }, { status: "completed", result: finalResult, "progress.currentItem": "Done" });
+      await updateImportJob({ _id: jobId }, {
+        status: "completed",
+        result: finalResult,
+        progress: { current: finalResult.totalTasksImported, total: finalResult.totalTasksImported, currentItem: "Done" },
+      });
       emitProgress(userIdStr, jobId, { platform: "clickup", status: "completed", progress: { current: progressRef.total, total: progressRef.total, currentItem: "Done" }, result: finalResult });
       console.log(`[ClickUp Import] Job ${jobId} completed — total: ${finalResult.totalTasksImported} tasks imported`);
 
