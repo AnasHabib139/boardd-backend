@@ -163,12 +163,15 @@ const importSingleList = async ({ token, list, channel, tab, userId, companyId, 
       });
       tasksImported++;
 
-      // Emit per-task progress
       progressRef.current++;
       emitProgress(userIdStr, jobId, {
         platform: "clickup",
         status: "running",
         progress: { current: progressRef.current, total: progressRef.total, currentItem: task.name },
+      });
+      await updateImportJob({ _id: jobId }, {
+        "progress.current": progressRef.current,
+        "progress.currentItem": task.name,
       });
     }
 
