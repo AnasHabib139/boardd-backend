@@ -241,10 +241,10 @@ const startClickUpImportWorker = () => {
       const companyId = require("mongoose").Types.ObjectId.createFromHexString(job.data.companyId);
 
       const rl = new RateLimiter(95);
-      const progressRef = { current: 0, total: spaceIds.length };
+      const progressRef = { current: 0, total: 0 };
 
       await updateImportJob({ _id: jobId }, { status: "running" });
-      emitProgress(userIdStr, jobId, { platform: "clickup", status: "running", progress: { current: 0, total: spaceIds.length, currentItem: "Starting import..." } });
+      emitProgress(userIdStr, jobId, { platform: "clickup", status: "running", progress: { current: 0, total: 0, currentItem: "Starting import..." } });
       console.log(`[ClickUp Import] Job ${jobId} started — spaces: ${spaceIds.join(", ")}`);
 
       const results = [];
@@ -270,7 +270,7 @@ const startClickUpImportWorker = () => {
         result: finalResult,
         progress: { current: finalResult.totalTasksImported, total: finalResult.totalTasksImported, currentItem: "Done" },
       });
-      emitProgress(userIdStr, jobId, { platform: "clickup", status: "completed", progress: { current: progressRef.total, total: progressRef.total, currentItem: "Done" }, result: finalResult });
+      emitProgress(userIdStr, jobId, { platform: "clickup", status: "completed", progress: { current: finalResult.totalTasksImported, total: finalResult.totalTasksImported, currentItem: "Done" }, result: finalResult });
       console.log(`[ClickUp Import] Job ${jobId} completed — total: ${finalResult.totalTasksImported} tasks imported`);
 
       return finalResult;
