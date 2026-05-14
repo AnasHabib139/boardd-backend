@@ -23,6 +23,24 @@ const { createNotification } = require("../models/notificationModel");
 const { findUserMutePreferences } = require("../models/userMutePreferencesModel");
 const { generateActivityMessage, deleteFileFromDisk } = require("../utils");
 const { ACTION_TYPE, TASK_STATUS, TASK_PRIORITY } = require("./constants");
+
+// Extract a display filename from a stored URL/path.
+// e.g. /uploadFiles/videos/files-1772454757233-Create_Forms.mp4 → Create_Forms.mp4
+const extractFileNameFromUrl = (url) => {
+  if (!url || typeof url !== "string") return null;
+  try {
+    let pathname = url;
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      pathname = new URL(url).pathname;
+    }
+    const segment = decodeURIComponent(pathname.split("/").filter(Boolean).pop() || "");
+    if (!segment) return null;
+    const s3Match = segment.match(/^files-\d{13}-(.+)$/);
+    return s3Match ? s3Match[1] : segment;
+  } catch (_) {
+    return null;
+  }
+};
 const { processTaskColumnValues, transformStatusColumnValuesToColumnValues } = require("../controller/helpers/tasks/statusColumns.helper");
 const { getProjectStatusKeys } = require("../models/tabTaskStatusModel");
 
@@ -445,13 +463,34 @@ const processTaskUpdate = async (socket, data) => {
       );
     }
 
-    // Process attachments to add uploadedBy and uploadedAt if missing
+    // Process attachments: normalise field names (frontend sends "name"/"size",
+    // model stores "fileName"/"fileSize") and fill in any missing fileName from URL.
     if (field === "attachments" && Array.isArray(processedValue)) {
-      processedValue = processedValue.map(attachment => ({
-        ...attachment,
-        uploadedBy: attachment.uploadedBy || (Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : userId),
-        uploadedAt: attachment.uploadedAt || new Date(),
-      }));
+      // Build a lookup of existing DB attachments by URL so we can preserve their data
+      const existingByUrl = new Map(
+        (previousValue || []).map(att => [att.url, att])
+      );
+
+      processedValue = processedValue.map(attachment => {
+        const existing = existingByUrl.get(attachment.url) || {};
+
+        // Resolve fileName: prefer explicit fileName, fall back to frontend's "name",
+        // then existing DB value, then extract from URL. Reject generic placeholders.
+        const rawName = attachment.fileName || attachment.name || existing.fileName;
+        const isGeneric = !rawName || /^file_\d+$/.test(rawName);
+        const fileName = isGeneric
+          ? (extractFileNameFromUrl(attachment.url) || rawName || null)
+          : rawName;
+
+        return {
+          ...existing,       // preserve all existing DB fields (e.g. already-set fileName)
+          ...attachment,     // apply incoming changes on top
+          fileName,
+          fileSize: attachment.fileSize ?? attachment.size ?? existing.fileSize ?? null,
+          uploadedBy: attachment.uploadedBy || existing.uploadedBy || (Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : userId),
+          uploadedAt: attachment.uploadedAt || existing.uploadedAt || new Date(),
+        };
+      });
     }
 
     // Process columnValues - validate and convert to Map (same as HTTP API)
