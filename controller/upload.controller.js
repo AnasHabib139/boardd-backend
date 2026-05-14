@@ -23,11 +23,12 @@ exports.uploadMultipleFiles = async (req, res, next) => {
 
     // Return the file paths and additional info
     return generateResponse(
-      { 
+      {
         filePaths,
         files: uploadResults.map(result => ({
           path: result.path,
-          filename: result.filename,
+          fileName: result.filename,
+          originalName: result.originalName,
           mimetype: result.mimetype,
           size: result.size
         }))

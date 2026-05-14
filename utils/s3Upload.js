@@ -148,6 +148,7 @@ exports.s3Uploadv3 = async (files, base64 = false) => {
           key: s3Key,
           path: `/${s3Key}`, // Return with leading slash for backward compatibility
           filename: fileName,
+          originalName: base64 ? "image.png" : file.originalname,
           mimetype: file.mimetype,
           size: file.size,
         });
