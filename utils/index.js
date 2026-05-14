@@ -260,7 +260,7 @@ exports.formatDateTime = (date) => moment(date).format("DD-MM-YYYY HH:mm:ss");
 
 // Helper function to generate activity messages
 exports.generateActivityMessage = (field, userName, data) => {
-  const { previousValue, newValue, taskTitle, isCreation = false } = data;
+  const { previousValue, newValue, taskTitle, isCreation = false, columnSummary } = data;
 
   switch (field) {
     case "status":
@@ -532,6 +532,14 @@ exports.generateActivityMessage = (field, userName, data) => {
         forCreator: `You renamed the task to "${newValue}"`,
         forOthers: `${userName} renamed the task to "${newValue}"`,
       };
+
+    case "columnValues": {
+      const summary = columnSummary || "updated custom fields";
+      return {
+        forCreator: `You ${summary} in "${taskTitle}"`,
+        forOthers: `${userName} ${summary} in "${taskTitle}"`,
+      };
+    }
 
     case "customFields":
       if (isCreation || !previousValue || previousValue.length === 0) {

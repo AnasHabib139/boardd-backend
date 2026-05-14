@@ -494,6 +494,7 @@ const processTaskUpdate = async (socket, data) => {
     }
 
     // Process columnValues - validate and convert to Map (same as HTTP API)
+    let columnNamesMap = {}; // populated below, used for activity message
     if (field === "columnValues" && processedValue) {
       // Get task's tab to validate column values
       let tabId = null;
@@ -519,6 +520,8 @@ const processTaskUpdate = async (socket, data) => {
           pendingUpdates.delete(updateKey);
           return;
         }
+
+        columnNamesMap = columnProcessResult.columnNames || {};
 
         // Merge with existing column values (same as HTTP API)
         const existingColumnValues = task.statusColumnValues || new Map();
@@ -614,6 +617,26 @@ const processTaskUpdate = async (socket, data) => {
       const projectId = task.projectId || null;
       activityMessageData.newValue = await getStatusName(projectId, processedValue);
       activityMessageData.previousValue = await getStatusName(projectId, previousValue);
+    }
+
+    // Build human-friendly message for column (custom field) updates
+    if (field === "columnValues") {
+      const updatedKeys = Object.keys(value || {});
+      const parts = updatedKeys.map(key => {
+        const colName = columnNamesMap[key] || key;
+        const rawVal = (value || {})[key];
+        // Only inline simple scalar values; skip objects/arrays to keep message short
+        const isSimple = rawVal !== null && rawVal !== undefined &&
+          typeof rawVal !== "object";
+        if (rawVal === null || rawVal === "" || rawVal === undefined) {
+          return `cleared "${colName}"`;
+        }
+        return isSimple ? `set "${colName}" to "${rawVal}"` : `updated "${colName}"`;
+      });
+
+      activityMessageData.columnSummary = parts.length > 0
+        ? parts.join(", ")
+        : "updated custom fields";
     }
 
     const activityMessage = generateActivityMessage(field, userName, activityMessageData);

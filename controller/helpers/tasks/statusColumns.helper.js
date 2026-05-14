@@ -326,10 +326,18 @@ exports.processTaskColumnValues = async (tabId, providedColumnValues = {}) => {
       processedValues[columnKey] = validation.processedValue;
     }
 
+    // Build a columnKey → columnName map for human-friendly activity messages
+    const columnNames = {};
+    for (const columnKey in processedValues) {
+      const column = projectColumns.find(col => col.columnKey === columnKey);
+      if (column) columnNames[columnKey] = column.columnName;
+    }
+
     return {
       isValid: errors.length === 0,
       errors,
-      processedValues
+      processedValues,
+      columnNames,
     };
 
   } catch (error) {
