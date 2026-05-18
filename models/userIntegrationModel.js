@@ -4,7 +4,7 @@ const { Schema, model, Types } = require("mongoose");
 
 const userIntegrationSchema = new Schema({
   userId:           { type: Types.ObjectId, ref: "User", required: true, index: true },
-  platform:         { type: String, enum: ["trello", "clickup"], required: true },
+  platform:         { type: String, enum: ["trello", "clickup", "asana"], required: true },
   accessToken:      { type: String, required: true },
   platformUserId:   { type: String },
   platformUserName: { type: String },

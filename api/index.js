@@ -39,6 +39,7 @@ const TaskConnectionApi = require("./taskConnectionApi");
 const PushApi = require("./pushApi");
 const TrelloImportApi = require("./trelloImportApi");
 const ClickUpImportApi = require("./clickupImportApi");
+const AsanaImportApi = require("./asanaImportApi");
 const IntegrationsApi = require("./integrationsApi");
 // FileServeApi is now mounted directly in server.js at /uploadFiles
 // const FileServeApi = require("./fileServeApi");
@@ -89,6 +90,7 @@ class API {
     this.routeGroups.push(new PushApi());
     this.routeGroups.push(new TrelloImportApi());
     this.routeGroups.push(new ClickUpImportApi());
+    this.routeGroups.push(new AsanaImportApi());
     this.routeGroups.push(new IntegrationsApi());
     // FileServeApi is now mounted directly in server.js
     // this.routeGroups.push(new FileServeApi());
