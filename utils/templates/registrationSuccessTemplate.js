@@ -91,12 +91,11 @@ exports.generateRegistrationSuccessEmail = ({
     }
 
     .logo {
+      display: block;
       height: 44px;
       width: auto;
-      margin-bottom: 24px;
+      margin: 0 auto 24px;
       filter: brightness(0) invert(1);
-      position: relative;
-      z-index: 1;
     }
 
     .hero-badge {
