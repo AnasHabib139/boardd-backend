@@ -27,14 +27,14 @@ exports.exchangeCode = async (code) => {
   const redirectUri = `${FRONTEND_URL}/asana/callback`;
   const res = await fetch("https://app.asana.com/-/oauth_token", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
       grant_type:    "authorization_code",
       client_id:     CLIENT_ID,
       client_secret: CLIENT_SECRET,
       redirect_uri:  redirectUri,
       code,
-    }),
+    }).toString(),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
