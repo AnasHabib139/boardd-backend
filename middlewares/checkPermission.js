@@ -87,14 +87,20 @@ function checkPermissionOptional(permissionKey) {
       // If it fails due to missing policy, continue anyway
       // If it fails due to denied permission, block
 
-      if (!req.user || !req.user.id || !req.user.companyId) {
-        // No user/company, proceed (let other middleware handle auth)
+      if (!req.user || !req.user.id) {
+        // No user, proceed (let other middleware handle auth)
         return next();
       }
 
       const userId = req.user.id;
-      const companyId = req.user.companyId;
-      const userRole = req.user.role;
+      const { findUser } = require("../models/userModel");
+      const dbUser = await findUser({ _id: userId });
+      if (!dbUser || !dbUser.companyId) {
+        // No company, proceed (let other middleware handle auth)
+        return next();
+      }
+      const companyId = dbUser.companyId;
+      const userRole = dbUser.role;
 
       // Map role
       let permissionRole = userRole;

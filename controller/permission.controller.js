@@ -93,19 +93,14 @@ async function populateCustomUsers(policyObject) {
  */
 exports.getCompanyPermissions = async (req, res, next) => {
   try {
-    let companyId = req.user.companyId;
-
-    // If companyId not in JWT, fetch from database
-    if (!companyId) {
-      const user = await findUser({ _id: req.user.id });
-      if (!user || !user.companyId) {
-        return next({
-          statusCode: STATUS_CODES.BAD_REQUEST,
-          message: "User must belong to a company",
-        });
-      }
-      companyId = user.companyId;
+    const user = await findUser({ _id: req.user.id });
+    if (!user || !user.companyId) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "User must belong to a company",
+      });
     }
+    const companyId = user.companyId;
 
     // Find permission policy
     let policy = await findPermissionPolicy(companyId);
@@ -151,20 +146,15 @@ exports.getCompanyPermissions = async (req, res, next) => {
  */
 exports.updateSinglePermission = async (req, res, next) => {
   try {
-    let companyId = req.user.companyId;
-    const { permissionKey, accessLevel, customUserIds } = parseBody(req.body);
-
-    // If companyId not in JWT, fetch from database
-    if (!companyId) {
-      const user = await findUser({ _id: req.user.id });
-      if (!user || !user.companyId) {
-        return next({
-          statusCode: STATUS_CODES.BAD_REQUEST,
-          message: "User must belong to a company",
-        });
-      }
-      companyId = user.companyId;
+    const user = await findUser({ _id: req.user.id });
+    if (!user || !user.companyId) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "User must belong to a company",
+      });
     }
+    const companyId = user.companyId;
+    const { permissionKey, accessLevel, customUserIds } = parseBody(req.body);
 
     // Validate inputs
     if (!permissionKey || !accessLevel) {
@@ -248,20 +238,15 @@ exports.updateSinglePermission = async (req, res, next) => {
  */
 exports.bulkUpdatePermissions = async (req, res, next) => {
   try {
-    let companyId = req.user.companyId;
-    const { permissions } = parseBody(req.body);
-
-    // If companyId not in JWT, fetch from database
-    if (!companyId) {
-      const user = await findUser({ _id: req.user.id });
-      if (!user || !user.companyId) {
-        return next({
-          statusCode: STATUS_CODES.BAD_REQUEST,
-          message: "User must belong to a company",
-        });
-      }
-      companyId = user.companyId;
+    const user = await findUser({ _id: req.user.id });
+    if (!user || !user.companyId) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "User must belong to a company",
+      });
     }
+    const companyId = user.companyId;
+    const { permissions } = parseBody(req.body);
 
     // Validate inputs
     if (!permissions || typeof permissions !== "object") {
@@ -324,19 +309,14 @@ exports.bulkUpdatePermissions = async (req, res, next) => {
  */
 exports.getCompanyUsers = async (req, res, next) => {
   try {
-    let companyId = req.user.companyId;
-
-    // If companyId not in JWT, fetch from database
-    if (!companyId) {
-      const user = await findUser({ _id: req.user.id });
-      if (!user || !user.companyId) {
-        return next({
-          statusCode: STATUS_CODES.BAD_REQUEST,
-          message: "User must belong to a company",
-        });
-      }
-      companyId = user.companyId;
+    const user = await findUser({ _id: req.user.id });
+    if (!user || !user.companyId) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "User must belong to a company",
+      });
     }
+    const companyId = user.companyId;
 
     // Get all active users in the company
     const { model } = require("mongoose");
@@ -402,19 +382,14 @@ exports.getPermissionCategories = async (req, res, next) => {
  */
 exports.resetPermissions = async (req, res, next) => {
   try {
-    let companyId = req.user.companyId;
-
-    // If companyId not in JWT, fetch from database
-    if (!companyId) {
-      const user = await findUser({ _id: req.user.id });
-      if (!user || !user.companyId) {
-        return next({
-          statusCode: STATUS_CODES.BAD_REQUEST,
-          message: "User must belong to a company",
-        });
-      }
-      companyId = user.companyId;
+    const user = await findUser({ _id: req.user.id });
+    if (!user || !user.companyId) {
+      return next({
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        message: "User must belong to a company",
+      });
     }
+    const companyId = user.companyId;
 
     // Delete existing policy
     const { model } = require("mongoose");
