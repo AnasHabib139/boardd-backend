@@ -25,22 +25,17 @@ function checkPermission(permissionKey) {
       }
 
       const userId = req.user.id;
-      let companyId = req.user.companyId;
-      let userRole = req.user.role; // "admin", "employee", "guest", "demo_user"
 
-      // If companyId not in JWT, fetch from database
-      if (!companyId) {
-        const { findUser } = require("../models/userModel");
-        const user = await findUser({ _id: userId });
-        if (!user || !user.companyId) {
-          return next({
-            statusCode: STATUS_CODES.FORBIDDEN,
-            message: "User must belong to a company to perform this action",
-          });
-        }
-        companyId = user.companyId;
-        userRole = user.role; // Also update role from DB
+      const { findUser } = require("../models/userModel");
+      const user = await findUser({ _id: userId });
+      if (!user || !user.companyId) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "User must belong to a company to perform this action",
+        });
       }
+      const companyId = user.companyId;
+      const userRole = user.role;
 
       // Map user role to permission level
       // "employee" in DB = "member" in permission system
@@ -159,15 +154,17 @@ function checkAnyPermission(permissionKeys) {
       }
 
       const userId = req.user.id;
-      const companyId = req.user.companyId;
-      const userRole = req.user.role;
 
-      if (!companyId) {
+      const { findUser } = require("../models/userModel");
+      const user = await findUser({ _id: userId });
+      if (!user || !user.companyId) {
         return next({
           statusCode: STATUS_CODES.FORBIDDEN,
           message: "User must belong to a company to perform this action",
         });
       }
+      const companyId = user.companyId;
+      const userRole = user.role;
 
       // Map role
       let permissionRole = userRole;
@@ -283,15 +280,17 @@ function checkAllPermissions(permissionKeys) {
       }
 
       const userId = req.user.id;
-      const companyId = req.user.companyId;
-      const userRole = req.user.role;
 
-      if (!companyId) {
+      const { findUser } = require("../models/userModel");
+      const user = await findUser({ _id: userId });
+      if (!user || !user.companyId) {
         return next({
           statusCode: STATUS_CODES.FORBIDDEN,
           message: "User must belong to a company to perform this action",
         });
       }
+      const companyId = user.companyId;
+      const userRole = user.role;
 
       // Map role
       let permissionRole = userRole;
