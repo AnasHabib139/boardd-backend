@@ -56,8 +56,8 @@ exports.exchangeCode = async (code) => {
 };
 
 exports.getMe = async (token) => {
-  const data = await mondayFetch(`query { me { id name email } }`, token);
-  return data.me; // { id, name, email }
+  const data = await mondayFetch(`query { me { id name } }`, token);
+  return data.me; // { id, name }
 };
 
 // ─── Boards ───────────────────────────────────────────────────────────────────

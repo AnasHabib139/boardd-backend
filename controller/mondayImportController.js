@@ -42,7 +42,7 @@ exports.connectMonday = async (req, res, next) => {
     );
 
     return generateResponse(
-      { username: meUser?.name, email: meUser?.email },
+      { username: meUser?.name },
       "Monday connected successfully",
       res
     );
