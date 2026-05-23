@@ -5,6 +5,7 @@ const CLIENT_SECRET = process.env.MONDAY_CLIENT_SECRET;
 const FRONTEND_URL  = process.env.FRONTEND_URL;
 
 const mondayFetch = async (query, token, variables = {}) => {
+  console.log("[Monday] GraphQL query:", query.trim().slice(0, 120));
   const res = await fetch("https://api.monday.com/v2", {
     method: "POST",
     headers: {
@@ -14,13 +15,17 @@ const mondayFetch = async (query, token, variables = {}) => {
     },
     body: JSON.stringify({ query, variables }),
   });
+  console.log("[Monday] HTTP status:", res.status);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    console.error("[Monday] HTTP error body:", JSON.stringify(body));
     throw { statusCode: 400, message: `Monday API error: ${body.errors?.[0]?.message || res.statusText}` };
   }
   const json = await res.json();
+  console.log("[Monday] Response:", JSON.stringify(json).slice(0, 300));
   // GraphQL returns HTTP 200 even on errors — must check json.errors
   if (json.errors?.length) {
+    console.error("[Monday] GraphQL errors:", JSON.stringify(json.errors));
     throw { statusCode: 400, message: `Monday API error: ${json.errors[0].message}` };
   }
   return json.data;
@@ -49,7 +54,10 @@ exports.exchangeCode = async (code) => {
     const body = await res.json().catch(() => ({}));
     throw { statusCode: 400, message: `Monday OAuth error: ${body.error_description || res.statusText}` };
   }
-  return res.json();
+  const data = await res.json();
+  console.log("[Monday] Token exchange response keys:", Object.keys(data));
+  console.log("[Monday] Token type:", data.token_type, "| Scope:", data.scope);
+  return data;
   // Returns: { access_token, token_type, scope }
   // NOTE: no refresh_token — Monday tokens never expire
   // NOTE: no user info — call getMe() separately
