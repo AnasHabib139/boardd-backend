@@ -3,7 +3,7 @@
 const { findManyUserIntegrations } = require("../models/userIntegrationModel");
 const { generateResponse } = require("../utils");
 
-const PLATFORMS = ["trello", "clickup", "asana"];
+const PLATFORMS = ["trello", "clickup", "asana", "monday"];
 
 exports.getIntegrationsStatus = async (req, res, next) => {
   try {

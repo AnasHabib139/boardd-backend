@@ -584,55 +584,35 @@ exports.getProjectsList = async (req, res, next) => {
     const { page, limit, search } = req.query;
     const userId = req.user.id;
 
-    // Validate user exists
-    const user = await findUser({ _id: userId });
+    // Parallel pre-checks
+    const [user, channel, tab] = await Promise.all([
+      findUser({ _id: userId }),
+      findChannel({ _id: channelId }),
+      findChannelTab({ _id: tabId, channelId: channelId }),
+    ]);
+
     if (!user) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "User not found",
-      });
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "User not found" });
     }
-
-    // Validate channel exists and user has access
-    const channel = await findChannel({ _id: channelId });
     if (!channel) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Channel not found",
-      });
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Channel not found" });
     }
-
-    // Check if user is a member of the channel
     if (!channel.members.includes(userId)) {
-      return next({
-        statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You are not a member of this channel",
-      });
+      return next({ statusCode: STATUS_CODES.FORBIDDEN, message: "You are not a member of this channel" });
     }
-
-    // Validate tab exists and belongs to the channel
-    const tab = await findChannelTab({ _id: tabId, channelId: channelId });
     if (!tab) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Tab not found in this channel",
-      });
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Tab not found in this channel" });
+    }
+    if (tab.members && tab.members.length > 0 && !tab.members.includes(userId)) {
+      return next({ statusCode: STATUS_CODES.FORBIDDEN, message: "You are not a member of this tab" });
     }
 
-    // Check if user is a member of the tab (if tab has specific members)
-    if (
-      tab.members &&
-      tab.members.length > 0 &&
-      !tab.members.includes(userId)
-    ) {
-      return next({
-        statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You are not a member of this tab",
-      });
-    }
+    // Fetch company name for contextPath (needs user.companyId from above)
+    const company = user.companyId ? await findCompany({ _id: user.companyId }) : null;
+    const companyName = company?.name || "Unknown Company";
 
-    // Get list query with search
-    const query = getProjectsListQuery(channelId, tabId, search);
+    // Get list query with search — pass pre-fetched docs to avoid redundant lookups
+    const query = getProjectsListQuery(channelId, tabId, search, { channelDoc: channel, tabDoc: tab, companyName });
 
     // Determine sorting based on search
     let sortOptions;
@@ -692,10 +672,10 @@ exports.getProjectsList = async (req, res, next) => {
         const openTasksResult = await getAllTasks({
           query: openTasksQuery,
           page: 1,
-          limit: 1000, // Get all open tasks
+          limit: 50,
           responseKey: "openTasks",
         });
-        
+
         const openTasks = openTasksResult.openTasks || [];
 
         if (openTasks.length > 0) {

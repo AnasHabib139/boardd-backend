@@ -33,6 +33,8 @@ const initializeApp = async () => {
     startClickUpImportWorker();
     const { startAsanaImportWorker } = require("./jobs/asanaImportWorker");
     startAsanaImportWorker();
+    const { startMondayImportWorker } = require("./jobs/mondayImportWorker");
+    startMondayImportWorker();
 
     // Run pending migrations
     const migrationResult = await migrationRunner.runPendingMigrations();

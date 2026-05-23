@@ -1070,7 +1070,7 @@ exports.getOpenTasksQuery = (channelId) => {
  * @param {string} search - Optional search term for project name
  * @returns {Array} Aggregation pipeline
  */
-exports.getProjectsListQuery = (channelId, tabId, search = null) => {
+exports.getProjectsListQuery = (channelId, tabId, search = null, { channelDoc, tabDoc, companyName } = {}) => {
   const pipeline = [
     // Match projects by channelId and tabId
     {
@@ -1098,24 +1098,6 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
       },
     },
 
-    // Lookup company details for context path
-    {
-      $lookup: {
-        from: "companies",
-        localField: "companyId",
-        foreignField: "_id",
-        as: "company",
-        pipeline: [
-          {
-            $project: {
-              _id: 1,
-              name: 1,
-            },
-          },
-        ],
-      },
-    },
-
     // Lookup project creator details
     {
       $lookup: {
@@ -1138,42 +1120,6 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
               gender: 1,
               nickname: 1,
               profileImage: { $ifNull: ["$image", null] },
-            },
-          },
-        ],
-      },
-    },
-
-    // Lookup channel details
-    {
-      $lookup: {
-        from: "channels",
-        localField: "channelId",
-        foreignField: "_id",
-        as: "channel",
-        pipeline: [
-          {
-            $project: {
-              _id: 1,
-              channelName: 1,
-            },
-          },
-        ],
-      },
-    },
-
-    // Lookup tab details
-    {
-      $lookup: {
-        from: "channeltabs",
-        localField: "tabId",
-        foreignField: "_id",
-        as: "tab",
-        pipeline: [
-          {
-            $project: {
-              _id: 1,
-              tabName: 1,
             },
           },
         ],
@@ -1559,400 +1505,13 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
       },
     },
 
-    // Collect all user IDs from voting columns across all tasks
-    {
-      $addFields: {
-        votingUserIds: {
-          $reduce: {
-            input: "$allTasks",
-            initialValue: [],
-            in: {
-              $let: {
-                vars: {
-                  taskVoteIds: {
-                    $reduce: {
-                      input: { $objectToArray: { $ifNull: ["$$this.statusColumnValues", {}] } },
-                      initialValue: [],
-                      in: {
-                        $let: {
-                          vars: {
-                            // Safely extract votes array only if it exists and is an array
-                            votesArray: {
-                              $cond: [
-                                {
-                                  $and: [
-                                    { $ne: ["$$this.v", null] },
-                                    { $eq: [{ $type: "$$this.v" }, "object"] },
-                                    { $isArray: "$$this.v.votes" }
-                                  ]
-                                },
-                                "$$this.v.votes",
-                                []
-                              ]
-                            }
-                          },
-                          in: {
-                            $cond: [
-                              { $gt: [{ $size: "$$votesArray" }, 0] },
-                              { $concatArrays: ["$$value", "$$votesArray"] },
-                              "$$value"
-                            ]
-                          }
-                        }
-                      }
-                    }
-                  }
-                },
-                in: { $concatArrays: ["$$value", "$$taskVoteIds"] }
-              }
-            }
-          }
-        }
-      }
-    },
-
-    // Lookup user details for all voting users
-    {
-      $lookup: {
-        from: "users",
-        let: { userIds: { $setUnion: [{ $ifNull: ["$votingUserIds", []] }, []] } },
-        pipeline: [
-          {
-            $match: {
-              $expr: { $in: ["$_id", "$$userIds"] }
-            }
-          },
-          {
-            $project: {
-              _id: 1,
-              name: 1,
-              email: 1,
-              title: 1,
-              designation: 1,
-              image: 1,
-              coverImage: 1,
-              description: 1,
-              dob: 1,
-              gender: 1,
-              nickname: 1,
-              profileImage: { $ifNull: ["$image", null] }
-            }
-          }
-        ],
-        as: "votingUsers"
-      }
-    },
-
-    // Populate user details in voting columns for all task arrays
-    {
-      $addFields: {
-        todoTasks: {
-          $map: {
-            input: "$todoTasks",
-            as: "task",
-            in: {
-              $mergeObjects: [
-                "$$task",
-                {
-                  columnValues: {
-                    $map: {
-                      input: "$$task.columnValues",
-                      as: "col",
-                      in: {
-                        $cond: [
-                          {
-                            $and: [
-                              { $eq: ["$$col.type", "voting"] },
-                              { $ne: ["$$col.value", null] },
-                              { $eq: [{ $type: "$$col.value" }, "object"] },
-                              { $isArray: "$$col.value.votes" }
-                            ]
-                          },
-                          {
-                            $mergeObjects: [
-                              "$$col",
-                              {
-                                value: {
-                                  $mergeObjects: [
-                                    "$$col.value",
-                                    {
-                                      votes: {
-                                        $map: {
-                                          input: "$$col.value.votes",
-                                          as: "voteUserId",
-                                          in: {
-                                            $let: {
-                                              vars: {
-                                                foundUser: {
-                                                  $arrayElemAt: [
-                                                    {
-                                                      $filter: {
-                                                        input: "$votingUsers",
-                                                        cond: { $eq: ["$$this._id", "$$voteUserId"] }
-                                                      }
-                                                    },
-                                                    0
-                                                  ]
-                                                }
-                                              },
-                                              in: { $ifNull: ["$$foundUser", "$$voteUserId"] }
-                                            }
-                                          }
-                                        }
-                                      }
-                                    }
-                                  ]
-                                }
-                              }
-                            ]
-                          },
-                          "$$col"
-                        ]
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        },
-        inProgressTasks: {
-          $map: {
-            input: "$inProgressTasks",
-            as: "task",
-            in: {
-              $mergeObjects: [
-                "$$task",
-                {
-                  columnValues: {
-                    $map: {
-                      input: "$$task.columnValues",
-                      as: "col",
-                      in: {
-                        $cond: [
-                          {
-                            $and: [
-                              { $eq: ["$$col.type", "voting"] },
-                              { $ne: ["$$col.value", null] },
-                              { $eq: [{ $type: "$$col.value" }, "object"] },
-                              { $isArray: "$$col.value.votes" }
-                            ]
-                          },
-                          {
-                            $mergeObjects: [
-                              "$$col",
-                              {
-                                value: {
-                                  $mergeObjects: [
-                                    "$$col.value",
-                                    {
-                                      votes: {
-                                        $map: {
-                                          input: "$$col.value.votes",
-                                          as: "voteUserId",
-                                          in: {
-                                            $let: {
-                                              vars: {
-                                                foundUser: {
-                                                  $arrayElemAt: [
-                                                    {
-                                                      $filter: {
-                                                        input: "$votingUsers",
-                                                        cond: { $eq: ["$$this._id", "$$voteUserId"] }
-                                                      }
-                                                    },
-                                                    0
-                                                  ]
-                                                }
-                                              },
-                                              in: { $ifNull: ["$$foundUser", "$$voteUserId"] }
-                                            }
-                                          }
-                                        }
-                                      }
-                                    }
-                                  ]
-                                }
-                              }
-                            ]
-                          },
-                          "$$col"
-                        ]
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        },
-        completedTasks: {
-          $map: {
-            input: "$completedTasks",
-            as: "task",
-            in: {
-              $mergeObjects: [
-                "$$task",
-                {
-                  columnValues: {
-                    $map: {
-                      input: "$$task.columnValues",
-                      as: "col",
-                      in: {
-                        $cond: [
-                          {
-                            $and: [
-                              { $eq: ["$$col.type", "voting"] },
-                              { $ne: ["$$col.value", null] },
-                              { $eq: [{ $type: "$$col.value" }, "object"] },
-                              { $isArray: "$$col.value.votes" }
-                            ]
-                          },
-                          {
-                            $mergeObjects: [
-                              "$$col",
-                              {
-                                value: {
-                                  $mergeObjects: [
-                                    "$$col.value",
-                                    {
-                                      votes: {
-                                        $map: {
-                                          input: "$$col.value.votes",
-                                          as: "voteUserId",
-                                          in: {
-                                            $let: {
-                                              vars: {
-                                                foundUser: {
-                                                  $arrayElemAt: [
-                                                    {
-                                                      $filter: {
-                                                        input: "$votingUsers",
-                                                        cond: { $eq: ["$$this._id", "$$voteUserId"] }
-                                                      }
-                                                    },
-                                                    0
-                                                  ]
-                                                }
-                                              },
-                                              in: { $ifNull: ["$$foundUser", "$$voteUserId"] }
-                                            }
-                                          }
-                                        }
-                                      }
-                                    }
-                                  ]
-                                }
-                              }
-                            ]
-                          },
-                          "$$col"
-                        ]
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        },
-        allTasks: {
-          $map: {
-            input: "$allTasks",
-            as: "task",
-            in: {
-              $mergeObjects: [
-                "$$task",
-                {
-                  columnValues: {
-                    $map: {
-                      input: "$$task.columnValues",
-                      as: "col",
-                      in: {
-                        $cond: [
-                          {
-                            $and: [
-                              { $eq: ["$$col.type", "voting"] },
-                              { $ne: ["$$col.value", null] },
-                              { $eq: [{ $type: "$$col.value" }, "object"] },
-                              { $isArray: "$$col.value.votes" }
-                            ]
-                          },
-                          {
-                            $mergeObjects: [
-                              "$$col",
-                              {
-                                value: {
-                                  $mergeObjects: [
-                                    "$$col.value",
-                                    {
-                                      votes: {
-                                        $map: {
-                                          input: "$$col.value.votes",
-                                          as: "voteUserId",
-                                          in: {
-                                            $let: {
-                                              vars: {
-                                                foundUser: {
-                                                  $arrayElemAt: [
-                                                    {
-                                                      $filter: {
-                                                        input: "$votingUsers",
-                                                        cond: { $eq: ["$$this._id", "$$voteUserId"] }
-                                                      }
-                                                    },
-                                                    0
-                                                  ]
-                                                }
-                                              },
-                                              in: { $ifNull: ["$$foundUser", "$$voteUserId"] }
-                                            }
-                                          }
-                                        }
-                                      }
-                                    }
-                                  ]
-                                }
-                              }
-                            ]
-                          },
-                          "$$col"
-                        ]
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        }
-      }
-    },
   );
 
   pipeline.push(
-    // Unwind arrays to get single objects
+    // Unwind creator to single object
     {
       $unwind: {
         path: "$creator",
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-    {
-      $unwind: {
-        path: "$company",
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-    {
-      $unwind: {
-        path: "$channel",
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-    {
-      $unwind: {
-        path: "$tab",
         preserveNullAndEmptyArrays: true,
       },
     },
@@ -1973,25 +1532,18 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
         createdAt: 1,
         updatedAt: 1,
         creator: 1,
-        channel: 1,
-        tab: 1,
-        tasksByStatus: 1,  // Dynamic status grouping with all statuses
+        // Injected from pre-fetched docs — avoids redundant DB lookups per project
+        channel: { $literal: { _id: channelDoc?._id, channelName: channelDoc?.channelName } },
+        tab: { $literal: { _id: tabDoc?._id, tabName: tabDoc?.tabName } },
+        tasksByStatus: 1,
         taskStats: 1,
-        assignedTo: 1, // Combined unique assignees from all tasks
+        assignedTo: 1,
         progress: {
-          $round: ["$progress", 1], // Round to 1 decimal place
+          $round: ["$progress", 1],
         },
         fileAttached: 1,
         linksAttached: 1,
-        // Context path for projects: company/project
-        contextPath: {
-          $concat: [
-            { $ifNull: ["$company.name", "Unknown Company"] },
-            "/",
-            "$name",
-          ],
-        },
-        // Project status indicators
+        contextPath: { $concat: [companyName || "Unknown Company", "/", "$name"] },
         isOverdue: {
           $cond: {
             if: {
@@ -2012,14 +1564,13 @@ exports.getProjectsListQuery = (channelId, tabId, search = null) => {
               $ceil: {
                 $divide: [
                   { $subtract: ["$endDate", new Date()] },
-                  1000 * 60 * 60 * 24, // Convert milliseconds to days
+                  1000 * 60 * 60 * 24,
                 ],
               },
             },
             else: null,
           },
         },
-        // Include searchScore if it exists
         ...(search && search.trim() ? { searchScore: 1 } : {}),
       },
     }
