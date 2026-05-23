@@ -27,8 +27,11 @@ exports.connectMonday = async (req, res, next) => {
 
     const tokenResponse = await monday.exchangeCode(code);
     const { access_token } = tokenResponse;
-    // Monday doesn't include user info in token response — fetch separately
-    const meUser = await monday.getMe(access_token);
+    // Monday doesn't include user info in token response — fetch separately, non-fatal
+    let meUser = null;
+    try { meUser = await monday.getMe(access_token); } catch (e) {
+      console.warn("[Monday] getMe failed (scope issue?):", e.message);
+    }
 
     await updateUserIntegration(
       { userId, platform: "monday" },
