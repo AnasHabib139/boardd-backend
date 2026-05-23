@@ -10,7 +10,7 @@ const mondayFetch = async (query, token, variables = {}) => {
     headers: {
       Authorization: token, // NO "Bearer" prefix — Monday doesn't use it
       "Content-Type": "application/json",
-      "API-Version": "2024-01",
+      "API-Version": "2026-04",
     },
     body: JSON.stringify({ query, variables }),
   });
