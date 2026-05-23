@@ -64,9 +64,8 @@ exports.exchangeCode = async (code) => {
 };
 
 exports.getMe = async (token) => {
-  // users(me: true) works with users:read scope; the `me` root query needs separate scope
-  const data = await mondayFetch(`query { users(me: true) { id name } }`, token);
-  return data.users?.[0] || null; // { id, name }
+  const data = await mondayFetch(`query { me { id name } }`, token);
+  return data.me || null; // { id, name }
 };
 
 // ─── Boards ───────────────────────────────────────────────────────────────────
