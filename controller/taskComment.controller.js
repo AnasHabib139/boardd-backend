@@ -19,6 +19,7 @@ const { createNotification } = require("../models/notificationModel");
 const { emitTaskEvent, getIO } = require("../utils/socket");
 const { validateAndSanitize, extractMentions } = require("../services/chatContentValidator");
 const { deriveContentText, extractLinks } = require("../services/chatContentProcessor");
+const { sendPushIfNotMuted } = require("../services/pushNotificationService");
 
 /**
  * Resolve task context (tab, project, channel) and check membership.
@@ -125,6 +126,13 @@ async function sendMentionNotifications(userMentions, task, comment, author, con
           isRead: false,
         });
       }
+      sendPushIfNotMuted(mentionedUserId, {
+        title: `💬 ${author.name} mentioned you`,
+        body: comment.contentText.substring(0, 100),
+        icon: "/main-logo.svg",
+        url: `/dashboard?task=${task._id}`,
+        data: { taskId: task._id.toString(), commentId: comment._id.toString(), type: "COMMENT_MENTION" },
+      }, task.channelId || null).catch(() => {});
     } catch (err) {
       console.error(`Error sending mention notification to user ${mentionedUserId}:`, err);
       // Non-fatal — continue with other mentions
@@ -207,6 +215,24 @@ exports.createTaskComment = async (req, res, next) => {
       });
     } catch (socketError) {
       console.error("Error emitting comment socket event:", socketError);
+    }
+
+    // Push to all involved users (creator + assignees), skipping commenter and mentioned users
+    const mentionedSet = new Set(userMentions.map((id) => id.toString()));
+    const involvedIds = new Set([
+      task.createdBy.toString(),
+      ...(task.assignedTo || []).map((id) => id.toString()),
+    ]);
+    for (const involvedId of involvedIds) {
+      if (involvedId === userId) continue;        // skip commenter
+      if (mentionedSet.has(involvedId)) continue; // they get the mention push instead
+      sendPushIfNotMuted(involvedId, {
+        title: `💬 New comment on "${task.title}"`,
+        body: `${userName}: ${populatedComment.contentText.substring(0, 80)}`,
+        icon: "/main-logo.svg",
+        url: `/dashboard?task=${task._id}`,
+        data: { taskId: task._id.toString(), commentId: comment._id.toString(), type: "TASK_COMMENT" },
+      }, task.channelId || null).catch(() => {});
     }
 
     // Send mention notifications (non-fatal)
