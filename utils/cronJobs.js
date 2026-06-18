@@ -275,6 +275,46 @@ const sendDueTodayReminders = async () => {
   }
 };
 
+// Send push notifications to assignees of overdue high-priority tasks
+const sendOverdueReminders = async () => {
+  try {
+    const now = new Date();
+    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+    const tasks = await findManyTasks({
+      isActive: true,
+      priority: "high",
+      status: { $ne: "completed" },
+      dueDate: { $lt: todayStart },
+      assignedTo: { $exists: true, $not: { $size: 0 } },
+    });
+
+    if (!tasks.length) return;
+
+    const redis = getRedis();
+
+    for (const task of tasks) {
+      const dedupKey = `overdue_reminder:${task._id}`;
+      const alreadySent = await redis.exists(dedupKey);
+      if (alreadySent) continue;
+
+      await redis.set(dedupKey, "1", "EX", 604800); // 7-day TTL
+
+      for (const userId of task.assignedTo) {
+        await sendPushIfNotMuted(userId, {
+          title: `🔴 Overdue task: "${task.title}"`,
+          body: "This high priority task is overdue.",
+          icon: "/main-logo.svg",
+          url: `/dashboard?task=${task._id}`,
+          data: { taskId: task._id.toString(), type: "OVERDUE_REMINDER" },
+        }).catch(() => {});
+      }
+    }
+  } catch (error) {
+    console.error("Error in sendOverdueReminders:", error);
+  }
+};
+
 // Initialize cron jobs
 const initializeCronJobs = (io) => {
   // Check for expired global mute preferences every minute
@@ -318,17 +358,27 @@ const initializeCronJobs = (io) => {
     timezone: "UTC"
   });
 
+  // Send overdue push reminders daily at 8 AM UTC
+  const overdueReminderJob = cron.schedule('0 8 * * *', () => {
+    sendOverdueReminders();
+  }, {
+    scheduled: false,
+    timezone: "UTC"
+  });
+
   // Start the cron jobs
   autoUnmuteJob.start();
   autoClearStatusJob.start();
   passwordResetCleanupJob.start();
   usedPasswordResetCleanupJob.start();
   dueTodayReminderJob.start();
+  overdueReminderJob.start();
   console.log('✅ Auto-unmute cron job initialized (runs every minute)');
   console.log('✅ Auto-clear status cron job initialized (runs every 10 minutes)');
   console.log('✅ Password reset cleanup cron job initialized (runs every 5 minutes)');
   console.log('✅ Used password reset cleanup cron job initialized (runs daily at 2 AM UTC)');
   console.log('✅ Due-today reminder cron job initialized (runs daily at 9:00 AM UTC)');
+  console.log('✅ Overdue reminder cron job initialized (runs daily at 8:00 AM UTC)');
 
   return {
     autoUnmuteJob,
@@ -336,13 +386,15 @@ const initializeCronJobs = (io) => {
     passwordResetCleanupJob,
     usedPasswordResetCleanupJob,
     dueTodayReminderJob,
+    overdueReminderJob,
     // Method to manually trigger jobs (useful for testing)
     triggerAutoUnmute: () => autoUnmuteExpiredUsers(io),
     triggerAutoUnmuteChannels: () => autoUnmuteExpiredChannels(io),
     triggerAutoClearStatus: () => autoClearExpiredStatuses(),
     triggerPasswordResetCleanup: () => cleanupExpiredPasswordResets(),
     triggerUsedPasswordResetCleanup: () => cleanupUsedPasswordResets(),
-    triggerDueTodayReminders: () => sendDueTodayReminders()
+    triggerDueTodayReminders: () => sendDueTodayReminders(),
+    triggerOverdueReminders: () => sendOverdueReminders()
   };
 };
 
@@ -353,5 +405,6 @@ module.exports = {
   autoClearExpiredStatuses,
   cleanupExpiredPasswordResets,
   cleanupUsedPasswordResets,
-  sendDueTodayReminders
+  sendDueTodayReminders,
+  sendOverdueReminders
 };
