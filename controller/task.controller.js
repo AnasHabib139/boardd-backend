@@ -22,6 +22,7 @@ const { findChannel } = require("../models/channelModel");
 const { generateActivityMessage } = require("../utils");
 const { emitUserNotification, emitTaskEvent, getIO } = require("../utils/socket");
 const { emitInboxUnreadUpdate } = require("../utils/inboxNotifications");
+const { sendPushIfNotMuted } = require("../services/pushNotificationService");
 const {
   createTaskActivitiesAndNotifications,
   handlePriorityActivity,
@@ -431,6 +432,28 @@ exports.createTask = async (req, res, next) => {
     } catch (error) {
       console.error("Socket error:", error);
       // Continue even if socket fails
+    }
+
+    // Send push notification if task is due today and has assignees
+    if (task.dueDate && task.assignedTo?.length > 0) {
+      const now = new Date();
+      const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      const tomorrowStart = new Date(todayStart);
+      tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+
+      if (task.dueDate >= todayStart && task.dueDate < tomorrowStart) {
+        for (const assigneeId of task.assignedTo) {
+          if (assigneeId.toString() !== userId) {
+            sendPushIfNotMuted(assigneeId, {
+              title: `📅 Task due today: "${task.title}"`,
+              body: "This task is due today.",
+              icon: "/main-logo.svg",
+              url: `/dashboard?task=${task._id}`,
+              data: { taskId: task._id.toString(), type: "DUE_REMINDER" },
+            }).catch(() => {});
+          }
+        }
+      }
     }
 
     // Transform task response to use columnValues instead of statusColumnValues

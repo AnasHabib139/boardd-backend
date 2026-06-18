@@ -715,6 +715,29 @@ const processTaskUpdate = async (socket, data) => {
       }
     }
 
+    // Send push to assignees when due date is set to today
+    if (field === "dueDate" && processedValue) {
+      const now = new Date();
+      const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      const tomorrowStart = new Date(todayStart);
+      tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+
+      if (processedValue >= todayStart && processedValue < tomorrowStart) {
+        const assignees = task.assignedTo || [];
+        for (const assigneeId of assignees) {
+          if (assigneeId.toString() !== userId) {
+            sendPushIfNotMuted(assigneeId, {
+              title: `📅 Task due today: "${task.title}"`,
+              body: "This task is due today.",
+              icon: "/main-logo.svg",
+              url: `/dashboard?task=${task._id}`,
+              data: { taskId: task._id.toString(), type: "DUE_REMINDER" },
+            }).catch(() => {});
+          }
+        }
+      }
+    }
+
     // Save notifications
     if (notifications.length > 0) {
       await Promise.all(notifications);

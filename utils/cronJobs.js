@@ -12,6 +12,9 @@ const {
   updateUserStatus
 } = require("../models/userStatusModel");
 const { PasswordReset } = require("../models/passwordResetModel");
+const { findManyTasks } = require("../models/taskModel");
+const { sendPushIfNotMuted } = require("../services/pushNotificationService");
+const { getRedis } = require("./redis");
 
 // Helper function to add user back to socket rooms
 const addUserToSocketRooms = async (userId, mutedChannels, io) => {
@@ -231,6 +234,47 @@ const cleanupUsedPasswordResets = async () => {
   }
 };
 
+// Send push notifications to assignees of tasks due today
+const sendDueTodayReminders = async () => {
+  try {
+    const now = new Date();
+    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+
+    const tasks = await findManyTasks({
+      isActive: true,
+      dueDate: { $gte: todayStart, $lt: tomorrowStart },
+      assignedTo: { $exists: true, $not: { $size: 0 } },
+    });
+
+    if (!tasks.length) return;
+
+    const redis = getRedis();
+    const dateKey = todayStart.toISOString().slice(0, 10); // "YYYY-MM-DD"
+
+    for (const task of tasks) {
+      const dedupKey = `due_reminder:${task._id}:${dateKey}`;
+      const alreadySent = await redis.exists(dedupKey);
+      if (alreadySent) continue;
+
+      await redis.set(dedupKey, "1", "EX", 90000); // 25h TTL
+
+      for (const userId of task.assignedTo) {
+        await sendPushIfNotMuted(userId, {
+          title: `📅 Task due today: "${task.title}"`,
+          body: "This task is due today.",
+          icon: "/main-logo.svg",
+          url: `/dashboard?task=${task._id}`,
+          data: { taskId: task._id.toString(), type: "DUE_REMINDER" },
+        }).catch(() => {});
+      }
+    }
+  } catch (error) {
+    console.error("Error in sendDueTodayReminders:", error);
+  }
+};
+
 // Initialize cron jobs
 const initializeCronJobs = (io) => {
   // Check for expired global mute preferences every minute
@@ -266,27 +310,39 @@ const initializeCronJobs = (io) => {
     timezone: "UTC"
   });
 
+  // Send due-today push reminders daily at 9 AM UTC
+  const dueTodayReminderJob = cron.schedule('0 9 * * *', () => {
+    sendDueTodayReminders();
+  }, {
+    scheduled: false,
+    timezone: "UTC"
+  });
+
   // Start the cron jobs
   autoUnmuteJob.start();
   autoClearStatusJob.start();
   passwordResetCleanupJob.start();
   usedPasswordResetCleanupJob.start();
+  dueTodayReminderJob.start();
   console.log('✅ Auto-unmute cron job initialized (runs every minute)');
   console.log('✅ Auto-clear status cron job initialized (runs every 10 minutes)');
   console.log('✅ Password reset cleanup cron job initialized (runs every 5 minutes)');
   console.log('✅ Used password reset cleanup cron job initialized (runs daily at 2 AM UTC)');
+  console.log('✅ Due-today reminder cron job initialized (runs daily at 9:00 AM UTC)');
 
   return {
     autoUnmuteJob,
     autoClearStatusJob,
     passwordResetCleanupJob,
     usedPasswordResetCleanupJob,
+    dueTodayReminderJob,
     // Method to manually trigger jobs (useful for testing)
     triggerAutoUnmute: () => autoUnmuteExpiredUsers(io),
     triggerAutoUnmuteChannels: () => autoUnmuteExpiredChannels(io),
     triggerAutoClearStatus: () => autoClearExpiredStatuses(),
     triggerPasswordResetCleanup: () => cleanupExpiredPasswordResets(),
-    triggerUsedPasswordResetCleanup: () => cleanupUsedPasswordResets()
+    triggerUsedPasswordResetCleanup: () => cleanupUsedPasswordResets(),
+    triggerDueTodayReminders: () => sendDueTodayReminders()
   };
 };
 
@@ -296,5 +352,6 @@ module.exports = {
   autoUnmuteExpiredChannels,
   autoClearExpiredStatuses,
   cleanupExpiredPasswordResets,
-  cleanupUsedPasswordResets
+  cleanupUsedPasswordResets,
+  sendDueTodayReminders
 };
