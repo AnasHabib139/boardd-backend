@@ -778,6 +778,21 @@ const processChatReactionAdd = async (socket, data, io) => {
 
             // Emit updated unread counts
             await emitUnreadCountsUpdate(message.authorId.toString(), io);
+
+            // Push notification for reaction
+            sendPushIfNotMuted(message.authorId, {
+              title: `${emoji} ${reactor.name} reacted to your message`,
+              body: message.contentText
+                ? message.contentText.substring(0, 80)
+                : "Tap to view the message",
+              icon: "/main-logo.svg",
+              url: `/dashboard`,
+              data: {
+                conversationId: message.conversationId.toString(),
+                messageId: message._id.toString(),
+                type: "CHAT_REACTION",
+              },
+            }, conversation.channelId || null).catch(() => {});
           }
         }
       } catch (notificationError) {
