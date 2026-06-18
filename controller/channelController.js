@@ -41,6 +41,7 @@ const { findCompany } = require("../models/companyModel");
 const { findInviteSlot, updateInviteSlot } = require("../models/inviteSlotModel");
 const Mailer = require("../utils/mailer");
 const { generateChannelInviteEmail } = require("../utils/emailTemplates");
+const { sendPushIfNotMuted } = require("../services/pushNotificationService");
 exports.createChannel = async (req, res, next) => {
   try {
     const { channelId, channelName, channelDescription, isPrivate } = parseBody(
@@ -478,6 +479,15 @@ exports.addUserToChannel = async (req, res, next) => {
 
             // Emit updated unread counts
             await emitUnreadCountsUpdate(addedUser._id.toString(), io);
+
+            // Send push notification
+            sendPushIfNotMuted(addedUser._id, {
+              title: "Channel invitation",
+              body: `${requestingUser.name} added you to ${channel.channelName}`,
+              icon: "/main-logo.svg",
+              url: `/dashboard`,
+              data: { channelId: channel._id.toString(), type: "CHANNEL_INVITATION" },
+            }, channel._id).catch(() => {});
           } catch (notificationError) {
             console.error(
               `Failed to create invitation notification for user ${addedUser._id}:`,
@@ -1059,6 +1069,18 @@ exports.joinChannelWithInvite = async (req, res, next) => {
 
       // Emit updated unread counts
       await emitUnreadCountsUpdate(currentUserId.toString(), io);
+
+      // Send push notification
+      const inviterName = inviter ? inviter.name : null;
+      sendPushIfNotMuted(currentUserId, {
+        title: "Channel invitation",
+        body: inviterName
+          ? `${inviterName} invited you to ${channel.channelName}`
+          : `You joined ${channel.channelName}`,
+        icon: "/main-logo.svg",
+        url: `/dashboard`,
+        data: { channelId: channel._id.toString(), type: "CHANNEL_INVITATION" },
+      }, channel._id).catch(() => {});
     } catch (notificationError) {
       console.error(
         `Failed to create invitation notification for user ${currentUserId}:`,
