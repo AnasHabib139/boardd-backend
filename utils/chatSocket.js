@@ -45,18 +45,22 @@ const {
 } = require("../services/chatContentProcessor");
 const clientMessageRouter = require("../services/clientMessageRouter");
 
-const getNotificationUrl = async (conversation, senderId) => {
+const getNotificationUrl = async (conversation, senderId, messageId = null) => {
+  let url;
   if (conversation.type === "dm") {
-    return `/chats/${senderId}`;
-  }
-  if (conversation.type === "group_dm" || conversation.type === "client") {
-    return `/chats/${conversation._id}`;
-  }
-  if (conversation.type === "channel" && conversation.channelId) {
+    url = `/chats/${senderId}`;
+  } else if (conversation.type === "group_dm" || conversation.type === "client") {
+    url = `/chats/${conversation._id}`;
+  } else if (conversation.type === "channel" && conversation.channelId) {
     const tab = await findChannelTab({ channelId: conversation.channelId, tabName: DEFAULT_TABS.TEAM_CHAT });
-    if (tab) return `/dashboard?tab=${tab._id}`;
+    url = tab ? `/dashboard?tab=${tab._id}` : `/chats/${conversation._id}`;
+  } else {
+    url = `/chats/${conversation._id}`;
   }
-  return `/chats/${conversation._id}`;
+  if (messageId) {
+    url += (url.includes("?") ? "&" : "?") + `message=${messageId}`;
+  }
+  return url;
 };
 
 /**
@@ -1010,14 +1014,15 @@ const handleMentionNotifications = async (
             mentionType: "channel",
             timestamp: new Date(),
           };
-          if (!(await isUserMuted(memberId, conversation.channelId))) {
+          if (!(await isUserMuted(memberId, null))) {
             io.to(`user:${memberId}`).emit("chat:notification", notifPayload);
             sendPushIfNotMuted(memberId, {
               title: `${author.name} mentioned @channel`,
               body: notifPayload.messagePreview,
               icon: "/main-logo.svg",
-              url: await getNotificationUrl(conversation, author._id),
-            }, conversation.channelId).catch(() => {});
+              url: await getNotificationUrl(conversation, author._id, message._id),
+              data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), type: "CHAT_MENTION" },
+            }, null).catch(() => {});
           }
 
           // Create persistent notification
@@ -1106,7 +1111,8 @@ const handleMentionNotifications = async (
             title: `${author.name} mentioned @all`,
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
-            url: await getNotificationUrl(conversation, author._id),
+            url: await getNotificationUrl(conversation, author._id, message._id),
+            data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), type: "CHAT_MENTION" },
           }).catch(() => {});
         }
 
@@ -1180,14 +1186,15 @@ const handleMentionNotifications = async (
           mentionType: "user",
           timestamp: new Date(),
         };
-        if (!(await isUserMuted(mentionedUserId, conversation.channelId || null))) {
+        if (!(await isUserMuted(mentionedUserId, null))) {
           io.to(`user:${mentionedUserId}`).emit("chat:notification", notifPayload);
           sendPushIfNotMuted(mentionedUserId, {
             title: `${author.name} mentioned you`,
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
-            url: await getNotificationUrl(conversation, author._id),
-          }, conversation.channelId || null).catch(() => {});
+            url: await getNotificationUrl(conversation, author._id, message._id),
+            data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), type: "CHAT_MENTION" },
+          }, null).catch(() => {});
         }
 
         // Create persistent notification
@@ -1328,7 +1335,8 @@ const notifyDMParticipants = async (
             title: `${author.name} sent a message`,
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
-            url: await getNotificationUrl(conversation, author._id),
+            url: await getNotificationUrl(conversation, author._id, message._id),
+            data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), type: "CHAT_MESSAGE" },
           }).catch(() => {});
         }
       }
@@ -1467,7 +1475,8 @@ const notifyChannelMembers = async (
             title: `${author.name} sent a message`,
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
-            url: await getNotificationUrl(conversation, author._id),
+            url: await getNotificationUrl(conversation, author._id, message._id),
+            data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), type: "CHAT_MESSAGE" },
           }, channel._id).catch(() => {});
         }
       }
@@ -1597,7 +1606,8 @@ const notifyThreadParticipants = async (
           title: `${author.name} replied in a thread`,
           body: notifPayload.messagePreview,
           icon: "/main-logo.svg",
-          url: await getNotificationUrl(conversation, author._id),
+          url: await getNotificationUrl(conversation, author._id, message._id),
+          data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), type: "CHAT_THREAD_REPLY" },
         }, conversation.channelId || null).catch(() => {});
       }
 

@@ -9,26 +9,31 @@ const { Types } = require("mongoose");
  * @param {string|null} parentMessageId - Optional parent message ID for thread replies
  * @returns {Array} Aggregation pipeline
  */
-exports.getConversationMessagesQuery = (conversationId, parentMessageId = null, jumpToDate = null) => {
+exports.getConversationMessagesQuery = (conversationId, parentMessageId = null, jumpToDate = null, messageIds = null) => {
   const matchStage = {
     conversationId: Types.ObjectId.isValid(conversationId)
       ? new Types.ObjectId(conversationId)
       : null,
   };
 
-  // Filter by parentMessageId for threads, or null for main conversation
-  if (parentMessageId) {
-    matchStage.parentMessageId = Types.ObjectId.isValid(parentMessageId)
-      ? new Types.ObjectId(parentMessageId)
-      : null;
+  if (messageIds) {
+    // Anchor window mode — scope to specific message IDs; conversationId kept for security
+    matchStage._id = { $in: messageIds };
   } else {
-    matchStage.parentMessageId = null; // Only root messages
-  }
+    // Normal mode — filter by parentMessageId and optional date
+    if (parentMessageId) {
+      matchStage.parentMessageId = Types.ObjectId.isValid(parentMessageId)
+        ? new Types.ObjectId(parentMessageId)
+        : null;
+    } else {
+      matchStage.parentMessageId = null; // Only root messages
+    }
 
-  // When jumping to a date, filter messages from start of that day (UTC) onward
-  if (jumpToDate) {
-    const [y, m, d] = jumpToDate.split("-").map(Number);
-    matchStage.createdAt = { $gte: new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0)) };
+    // When jumping to a date, filter messages from start of that day (UTC) onward
+    if (jumpToDate) {
+      const [y, m, d] = jumpToDate.split("-").map(Number);
+      matchStage.createdAt = { $gte: new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0)) };
+    }
   }
 
   const conversationObjectId = Types.ObjectId.isValid(conversationId)

@@ -3,7 +3,8 @@
 const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { findChatConversation, aggregateChatConversations } = require("../models/chatConversationModel");
-const { getAllChatMessages, aggregateChatMessages } = require("../models/chatMessageModel");
+const { Types } = require("mongoose");
+const { getAllChatMessages, aggregateChatMessages, findChatMessage, findManyChatMessages } = require("../models/chatMessageModel");
 const { getConversationMessagesQuery, getUserConversationsQuery, getConversationWithChatName, getClientContactInfoQuery, getMessageDatesQuery } = require("./queries/chatQueries");
 const { aggregateChannelTabs } = require("../models/channelTabsModel");
 
@@ -14,7 +15,7 @@ const { aggregateChannelTabs } = require("../models/channelTabsModel");
 exports.getConversationMessages = async (req, res, next) => {
   try {
     const { conversationId } = req.params;
-    const { page, limit, parentMessageId, jumpToDate } = req.query;
+    const { page, limit, parentMessageId, jumpToDate, anchor } = req.query;
 
     // Verify user is authenticated
     if (!req.user || !req.user.id) {
@@ -51,6 +52,83 @@ exports.getConversationMessages = async (req, res, next) => {
         message: "You don't have access to this conversation",
       });
     }
+
+    // ── Anchor window mode ──────────────────────────────────────────────────
+    // When ?anchor=<messageId> is provided, return up to 100 messages centered
+    // on that message so the frontend can scroll directly to it.
+    if (anchor) {
+      if (!Types.ObjectId.isValid(anchor)) {
+        return next({ statusCode: STATUS_CODES.UNPROCESSABLE_ENTITY, message: "Invalid anchor messageId" });
+      }
+      const anchorObjId = new Types.ObjectId(anchor);
+      const BEFORE = 50;
+      const AFTER  = 49;
+
+      // Verify anchor message exists and belongs to this conversation
+      const anchorMsg = await findChatMessage({ _id: anchorObjId, conversationId });
+      if (!anchorMsg) {
+        return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Anchor message not found" });
+      }
+
+      const baseFilter = {
+        conversationId: new Types.ObjectId(conversationId),
+        parentMessageId: parentMessageId ? new Types.ObjectId(parentMessageId) : null,
+      };
+
+      // Two lightweight index-only queries — no joins, just _id collection
+      const [beforeDocs, afterDocs] = await Promise.all([
+        findManyChatMessages({ ...baseFilter, _id: { $lt: anchorObjId } })
+          .sort({ _id: -1 }).limit(BEFORE).select("_id"),
+        findManyChatMessages({ ...baseFilter, _id: { $gt: anchorObjId } })
+          .sort({ _id: 1 }).limit(AFTER).select("_id"),
+      ]);
+
+      const allIds = [
+        ...beforeDocs.map(m => m._id).reverse(),
+        anchorObjId,
+        ...afterDocs.map(m => m._id),
+      ];
+
+      // Full aggregation using existing pipeline scoped to exactly these IDs
+      const anchorPipeline = getConversationMessagesQuery(
+        conversationId,
+        parentMessageId || null,
+        null,    // jumpToDate unused in anchor mode
+        allIds   // 4th param triggers ID-based match
+      );
+      anchorPipeline.push({ $sort: { createdAt: 1 } });
+
+      const anchorMessages = await aggregateChatMessages(anchorPipeline);
+
+      let anchorResponse = {
+        messages: anchorMessages,
+        pagination: {
+          totalItems: anchorMessages.length,
+          perPage: anchorMessages.length,
+          currentPage: 1,
+          totalPages: 1,
+          hasNextPage: false,
+          hasPrevPage: false,
+          isAnchorWindow: true,
+          anchorMessageId: anchor,
+          hasMoreBefore: beforeDocs.length === BEFORE,
+          hasMoreAfter: afterDocs.length === AFTER,
+        },
+      };
+
+      // Hoist client conversation metadata to response root (mirrors normal path)
+      if (anchorMessages.length > 0 && anchorMessages[0].conversationType === "client") {
+        anchorResponse.conversationType = anchorMessages[0].conversationType;
+        anchorResponse.messagingChannels = anchorMessages[0].messagingChannels;
+        anchorResponse.clientContactInfo = anchorMessages[0].clientContactInfo;
+        anchorResponse.messages = anchorMessages.map(
+          ({ conversationType, messagingChannels, clientContactInfo, ...msg }) => msg
+        );
+      }
+
+      return generateResponse(anchorResponse, "Messages fetched successfully", res, STATUS_CODES.SUCCESS);
+    }
+    // ── End anchor window mode ──────────────────────────────────────────────
 
     // Build aggregation query — pass jumpToDate to filter from start of that day
     const query = getConversationMessagesQuery(
