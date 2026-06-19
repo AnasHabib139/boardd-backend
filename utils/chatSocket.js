@@ -404,29 +404,39 @@ const processChatMessageSend = async (socket, data, io) => {
       );
     } else {
       // Root message - notify all conversation participants
+      // Exclude users already targeted by handleMentionNotifications to avoid duplicate notifications
+      const mentionedIds = mentions.userMentions.map(id => id.toString());
 
       // Notify DM participants (including client chat)
       if (conversation.type === "dm" || conversation.type === "group_dm" || conversation.type === "client") {
-        await notifyDMParticipants(
-          io,
-          conversation,
-          message,
-          userId,
-          author,
-          contentText
-        );
+        // Skip entirely if @all mention already notified all participants
+        if (!mentions.allMention) {
+          await notifyDMParticipants(
+            io,
+            conversation,
+            message,
+            userId,
+            author,
+            contentText,
+            mentionedIds
+          );
+        }
       }
 
       // Notify channel members
       if (conversation.type === "channel") {
-        await notifyChannelMembers(
-          io,
-          conversation,
-          message,
-          userId,
-          author,
-          contentText
-        );
+        // Skip entirely if @channel mention already notified all members
+        if (!mentions.channelMention) {
+          await notifyChannelMembers(
+            io,
+            conversation,
+            message,
+            userId,
+            author,
+            contentText,
+            mentionedIds
+          );
+        }
       }
     }
 
@@ -1265,7 +1275,8 @@ const notifyDMParticipants = async (
   message,
   senderId,
   author,
-  contentText
+  contentText,
+  excludeUserIds = []
 ) => {
   // Determine which room to check based on message type
   let roomToCheck;
@@ -1282,6 +1293,8 @@ const notifyDMParticipants = async (
 
   for (const participantId of conversation.participantIds) {
     if (participantId.toString() !== senderId.toString()) {
+      // Skip users already notified via mention to avoid duplicate notifications
+      if (excludeUserIds.includes(participantId.toString())) continue;
       // Check if user is in the room (skip notification if they are)
       const userSocketRoom = `user:${participantId}`;
       const userSockets = await io.in(userSocketRoom).allSockets();
@@ -1391,7 +1404,8 @@ const notifyChannelMembers = async (
   message,
   senderId,
   author,
-  contentText
+  contentText,
+  excludeUserIds = []
 ) => {
   // Get channel members
   const channel = await findChannel({ _id: conversation.channelId });
@@ -1418,6 +1432,8 @@ const notifyChannelMembers = async (
 
   for (const memberId of memberIds) {
     if (memberId !== senderId.toString()) {
+      // Skip users already notified via mention to avoid duplicate notifications
+      if (excludeUserIds.includes(memberId)) continue;
       // Check if user is in the room (skip notification if they are)
       const userSocketRoom = `user:${memberId}`;
       const userSockets = await io.in(userSocketRoom).allSockets();

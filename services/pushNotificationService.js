@@ -14,13 +14,15 @@ exports.isUserMuted = async (userId, channelId = null) => {
   const mutePrefs = await findUserMutePreferences({ userId });
   const now = new Date();
 
-  if (mutePrefs?.isMuted && mutePrefs.muteUntil > now) return true;
+  // muteUntil null = indefinitely muted; otherwise check expiry
+  if (mutePrefs?.isMuted && (mutePrefs.muteUntil === null || mutePrefs.muteUntil > now)) return true;
 
   if (channelId && mutePrefs?.channelMutes?.length) {
     const entry = mutePrefs.channelMutes.find(
       (m) => m.channelId.toString() === channelId.toString()
     );
-    if (entry?.muteUntil && entry.muteUntil > now) return true;
+    // entry.muteUntil null = indefinitely muted channel
+    if (entry && (!entry.muteUntil || entry.muteUntil > now)) return true;
   }
 
   return false;
