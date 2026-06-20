@@ -1,7 +1,7 @@
 const { Types } = require("mongoose");
 
 // Get users of a particular company with optional search functionality
-exports.getCompanyUsersQuery = (companyId, currentUserId, searchTerm) => {
+exports.getCompanyUsersQuery = (companyId, currentUserId, searchTerm, excludeSelf = false) => {
   let queryArray = [];
 
   // Match either company users OR the global demo user
@@ -17,15 +17,17 @@ exports.getCompanyUsersQuery = (companyId, currentUserId, searchTerm) => {
   // Add active users filter
   queryArray.push({ $match: { isActive: true } });
 
-  // Exclude the current logged-in user from results (but keep demo user)
-  queryArray.push({
-    $match: {
-      $or: [
-        { _id: { $ne: new Types.ObjectId(currentUserId) } },
-        { isDemo: true },
-      ],
-    },
-  });
+  // Optionally exclude the current logged-in user (but always keep demo user)
+  if (excludeSelf) {
+    queryArray.push({
+      $match: {
+        $or: [
+          { _id: { $ne: new Types.ObjectId(currentUserId) } },
+          { isDemo: true },
+        ],
+      },
+    });
+  }
 
   // Only add search logic if search term is provided
   if (searchTerm && searchTerm.trim() !== "") {

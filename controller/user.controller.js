@@ -377,7 +377,7 @@ exports.login = async (req, res, next) => {
 
 // get users of particular company with matching name
 exports.getUsersOfCompany = async (req, res, next) => {
-  const { email, page, limit } = req.query;
+  const { email, page, limit, excludeSelf } = req.query;
 
   try {
     const userId = req.user.id;
@@ -401,7 +401,8 @@ exports.getUsersOfCompany = async (req, res, next) => {
     const queryArray = getCompanyUsersQuery(
       company._id.toString(),
       userId,
-      email
+      email,
+      excludeSelf === "true"
     );
 
     if (email && email.trim() !== "") {
