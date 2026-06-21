@@ -5,7 +5,7 @@ const { Schema, model, Types } = require("mongoose");
 const importJobSchema = new Schema(
   {
     userId:   { type: Types.ObjectId, ref: "User", required: true, index: true },
-    platform: { type: String, enum: ["clickup", "trello", "asana", "monday"], required: true },
+    platform: { type: String, enum: ["clickup", "trello", "asana", "monday", "jira"], required: true },
     status:   { type: String, enum: ["pending", "running", "completed", "failed"], default: "pending" },
     progress: {
       current:     { type: Number, default: 0 },

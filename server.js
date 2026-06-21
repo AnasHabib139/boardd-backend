@@ -35,6 +35,8 @@ const initializeApp = async () => {
     startAsanaImportWorker();
     const { startMondayImportWorker } = require("./jobs/mondayImportWorker");
     startMondayImportWorker();
+    const { startJiraImportWorker } = require("./jobs/jiraImportWorker");
+    startJiraImportWorker();
 
     // Run pending migrations
     const migrationResult = await migrationRunner.runPendingMigrations();
