@@ -1467,12 +1467,13 @@ const notifyChannelMembers = async (
           },
           messagePreview: contentText.substring(0, 100),
           conversationType: conversation.type,
+          channelName: channel.channelName || null,
           timestamp: new Date(),
         };
         if (!(await isUserMuted(memberId, channel._id))) {
           io.to(`user:${memberId}`).emit("chat:notification", notifPayload);
           sendPushIfNotMuted(memberId, {
-            title: `${author.name} sent a message`,
+            title: `${author.name} sent a message in ${channel.channelName}`,
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
             url: await getNotificationUrl(conversation, author._id, message._id),
