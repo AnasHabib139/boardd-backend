@@ -16,10 +16,15 @@ exports.getIntegrationsStatus = async (req, res, next) => {
       byPlatform[platform] = { connected: false };
     }
     for (const integration of integrations) {
-      byPlatform[integration.platform] = {
+      const entry = {
         connected: true,
-        username: integration.platformUserName || null,
+        username:  integration.platformUserName || null,
       };
+      if (integration.platform === "jira") {
+        entry.siteSelected = !!integration.cloudId;
+        entry.siteName     = integration.cloudName || null;
+      }
+      byPlatform[integration.platform] = entry;
     }
 
     return generateResponse(byPlatform, "Integrations status", res);
