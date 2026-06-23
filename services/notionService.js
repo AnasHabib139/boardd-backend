@@ -100,7 +100,7 @@ exports.refreshAccessToken = async (refreshToken) => {
 
 // ─── Search ───────────────────────────────────────────────────────────────────
 
-// Low-level search call. filterValue: "database" | "page".
+// Low-level search call. filterValue: "data_source" (databases) | "page".
 // Returns: { results, hasMore, nextCursor }
 exports.search = async (token, filterValue, startCursor = null) => {
   const body = {
@@ -124,7 +124,7 @@ exports.listDatabases = async (token) => {
   let cursor = null;
 
   do {
-    const { results, hasMore, nextCursor } = await exports.search(token, "database", cursor);
+    const { results, hasMore, nextCursor } = await exports.search(token, "data_source", cursor);
     for (const db of results) {
       const titleParts = (db.title || []).map((t) => t.plain_text).filter(Boolean);
       databases.push({ id: db.id, title: titleParts.join("") || "Untitled" });
