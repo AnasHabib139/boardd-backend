@@ -192,8 +192,8 @@ const importSingleDatabase = async ({
     const result = await notion.queryDatabase(tokenState.token, databaseId, cursor);
 
     for (const row of result.rows || []) {
-      // Skip archived rows
-      if (row.archived === true) {
+      // Skip archived/trashed rows (both old and new API field names)
+      if (row.archived === true || row.in_trash === true || row.is_archived === true) {
         tasksSkipped++;
         continue;
       }

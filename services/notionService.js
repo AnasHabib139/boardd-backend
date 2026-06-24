@@ -100,8 +100,7 @@ exports.refreshAccessToken = async (refreshToken) => {
 
 // ─── Search ───────────────────────────────────────────────────────────────────
 
-// Low-level search call. filterValue: "page" to restrict to pages only.
-// Omit filterValue (pass null) to get all objects (pages + databases).
+// Low-level search call. filterValue: "page" | "data_source" | null (all).
 // Returns: { results, hasMore, nextCursor }
 exports.search = async (token, filterValue, startCursor = null) => {
   const body = { page_size: 100 };
@@ -115,21 +114,19 @@ exports.search = async (token, filterValue, startCursor = null) => {
   return { results: data.results || [], hasMore: data.has_more, nextCursor: data.next_cursor };
 };
 
-// ─── Databases ────────────────────────────────────────────────────────────────
+// ─── Data sources (formerly "databases") ─────────────────────────────────────
+// Notion API v2026-03-11 renamed databases → data_sources.
+// object field is now "data_source", endpoints use /data_sources/{id}.
 
-// Returns all databases the token can access: [{ id, title }]
-// Uses unfiltered search and picks results where object === "database" —
-// the "data_source" filter value Notion now requires returns non-standard
-// objects that cannot be fetched via GET /databases/{id}.
+// Returns all data sources (databases) the token can access: [{ id, title }]
 exports.listDatabases = async (token) => {
   const databases = [];
   let cursor = null;
 
   do {
-    const { results, hasMore, nextCursor } = await exports.search(token, null, cursor);
+    const { results, hasMore, nextCursor } = await exports.search(token, "data_source", cursor);
     for (const item of results) {
-      if (item.object !== "database") continue;
-      if (item.archived) continue;
+      if (item.in_trash || item.is_archived) continue;
       const titleParts = (item.title || []).map((t) => t.plain_text).filter(Boolean);
       databases.push({ id: item.id, title: titleParts.join("") || "Untitled" });
     }
@@ -142,8 +139,8 @@ exports.listDatabases = async (token) => {
 // ─── Pages ────────────────────────────────────────────────────────────────────
 
 // Returns standalone (non-database-row) pages: [{ id, title }]
-// Filters out pages whose parent.type === "database_id" (those are database rows).
-// Also skips archived pages.
+// Filters out rows inside data sources (parent.type === "data_source_id")
+// and rows inside old-style databases (parent.type === "database_id").
 exports.listStandalonePages = async (token) => {
   const pages = [];
   let cursor = null;
@@ -151,10 +148,11 @@ exports.listStandalonePages = async (token) => {
   do {
     const { results, hasMore, nextCursor } = await exports.search(token, "page", cursor);
     for (const page of results) {
-      if (page.archived) continue;
-      if (page.parent && page.parent.type === "database_id") continue;
+      if (page.in_trash || page.is_archived || page.archived) continue;
+      const parentType = page.parent && page.parent.type;
+      if (parentType === "database_id" || parentType === "data_source_id") continue;
 
-      // Title may live in properties.title or properties.Name (title-type property)
+      // Title lives in properties.title or properties.Name (title-type property)
       const props = page.properties || {};
       let title = "";
       const titleProp = props.title || props.Name;
@@ -170,20 +168,20 @@ exports.listStandalonePages = async (token) => {
   return pages;
 };
 
-// ─── Database schema + rows ───────────────────────────────────────────────────
+// ─── Data source schema + rows ────────────────────────────────────────────────
 
-// Returns the full database schema object (use .properties to read field types).
-exports.getDatabase = async (token, databaseId) => {
-  return notionFetch(`/databases/${databaseId}`, token);
+// Returns the full data source schema (use .properties to read field types/options).
+exports.getDatabase = async (token, dataSourceId) => {
+  return notionFetch(`/data_sources/${dataSourceId}`, token);
 };
 
-// Returns one page of database rows.
+// Returns one page of data source rows.
 // Returns: { rows, hasMore, nextCursor }
-exports.queryDatabase = async (token, databaseId, startCursor = null) => {
+exports.queryDatabase = async (token, dataSourceId, startCursor = null) => {
   const body = { page_size: 100 };
   if (startCursor) body.start_cursor = startCursor;
 
-  const data = await notionFetch(`/databases/${databaseId}/query`, token, {
+  const data = await notionFetch(`/data_sources/${dataSourceId}/query`, token, {
     method: "POST",
     body:   JSON.stringify(body),
   });
