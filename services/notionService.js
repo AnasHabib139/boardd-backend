@@ -325,6 +325,11 @@ exports.stripMarkdown = (md) => {
     .replace(/^[\s]*[-*+]\s+/gm, "")
     // Remove ordered list markers 1.
     .replace(/^[\s]*\d+\.\s+/gm, "")
+    // Remove Notion checkbox syntax [ ] and [x]
+    .replace(/\[[x ]?\]/gi, "")
+    // Strip XML-like placeholder tags Notion emits for unsupported blocks
+    // e.g. <empty-block/>, <unknown url="..." alt="..."/>, <pdf src="..."></pdf>
+    .replace(/<[^>]+>/g, "")
     // Collapse whitespace
     .replace(/\s+/g, " ")
     .trim();
