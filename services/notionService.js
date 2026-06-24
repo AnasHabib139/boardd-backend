@@ -100,13 +100,12 @@ exports.refreshAccessToken = async (refreshToken) => {
 
 // ─── Search ───────────────────────────────────────────────────────────────────
 
-// Low-level search call. filterValue: "data_source" (databases) | "page".
+// Low-level search call. filterValue: "page" to restrict to pages only.
+// Omit filterValue (pass null) to get all objects (pages + databases).
 // Returns: { results, hasMore, nextCursor }
 exports.search = async (token, filterValue, startCursor = null) => {
-  const body = {
-    page_size: 100,
-    filter:    { value: filterValue, property: "object" },
-  };
+  const body = { page_size: 100 };
+  if (filterValue) body.filter = { value: filterValue, property: "object" };
   if (startCursor) body.start_cursor = startCursor;
 
   const data = await notionFetch("/search", token, {
@@ -119,15 +118,20 @@ exports.search = async (token, filterValue, startCursor = null) => {
 // ─── Databases ────────────────────────────────────────────────────────────────
 
 // Returns all databases the token can access: [{ id, title }]
+// Uses unfiltered search and picks results where object === "database" —
+// the "data_source" filter value Notion now requires returns non-standard
+// objects that cannot be fetched via GET /databases/{id}.
 exports.listDatabases = async (token) => {
   const databases = [];
   let cursor = null;
 
   do {
-    const { results, hasMore, nextCursor } = await exports.search(token, "data_source", cursor);
-    for (const db of results) {
-      const titleParts = (db.title || []).map((t) => t.plain_text).filter(Boolean);
-      databases.push({ id: db.id, title: titleParts.join("") || "Untitled" });
+    const { results, hasMore, nextCursor } = await exports.search(token, null, cursor);
+    for (const item of results) {
+      if (item.object !== "database") continue;
+      if (item.archived) continue;
+      const titleParts = (item.title || []).map((t) => t.plain_text).filter(Boolean);
+      databases.push({ id: item.id, title: titleParts.join("") || "Untitled" });
     }
     cursor = hasMore ? nextCursor : null;
   } while (cursor);
