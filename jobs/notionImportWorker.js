@@ -11,6 +11,7 @@ const { createTask, getNextOrderIndex }                            = require("..
 const { s3Uploadv3 }      = require("../utils/s3Upload");
 const { findManyUsers }   = require("../models/userModel");
 const notion              = require("../services/notionService");
+const { generateNotionPagePdf } = require("../services/pdfGenerator");
 const RateLimiter         = require("../utils/importRateLimiter");
 
 const BACKEND_URL = process.env.BACKEND_URL;
@@ -80,22 +81,22 @@ const uploadAttachmentToS3 = async (file, token, userId) => {
   } catch (_) { return null; }
 };
 
-// Convert a markdown string to a .md file and upload to S3.
+// Convert a Notion page's markdown content to a styled PDF and upload to S3.
 // Returns Boardd attachment shape, or null on failure.
-const uploadMarkdownToS3 = async (markdown, slugTitle, userId) => {
+const uploadMarkdownAsPdfToS3 = async (markdown, slugTitle, pageTitle, userId) => {
   try {
-    const buffer = Buffer.from(markdown || "", "utf8");
+    const buffer = await generateNotionPagePdf(pageTitle, markdown, new Date());
     const [uploaded] = await s3Uploadv3([{
       buffer,
-      originalname: `${slugTitle}.md`,
-      mimetype:     "text/markdown",
+      originalname: `${slugTitle}.pdf`,
+      mimetype:     "application/pdf",
       size:         buffer.length,
     }]);
     return {
       url:        `${BACKEND_URL}${uploaded.path}`,
-      fileName:   `${slugTitle}.md`,
+      fileName:   `${slugTitle}.pdf`,
       fileSize:   buffer.length,
-      mimeType:   "text/markdown",
+      mimeType:   "application/pdf",
       uploadedBy: userId,
       uploadedAt: new Date(),
       source:     "local",
@@ -328,7 +329,7 @@ const importStandalonePages = async ({
     // Upload markdown file as attachment
     let attachments = [];
     try {
-      const attachment = await uploadMarkdownToS3(md, slugify(title), userId);
+      const attachment = await uploadMarkdownAsPdfToS3(md, slugify(title), title, userId);
       if (attachment) attachments = [attachment];
     } catch (_) {}
 
