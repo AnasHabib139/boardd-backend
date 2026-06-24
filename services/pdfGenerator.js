@@ -371,8 +371,13 @@ function getS3Url(s3Path) {
 
 // ─── Notion Page PDF ──────────────────────────────────────────────────────────
 
-const stripInlineMarkers = (text) =>
-  text
+// Strip emoji and symbols outside the Latin-1 range — pdfkit's built-in
+// Helvetica/Courier fonts only cover Basic Latin + Latin-1 Supplement.
+const stripUnsupportedChars = (text) =>
+  text.replace(/[^ -ÿ]/g, "").replace(/\s+/g, " ").trim();
+
+const stripInlineMarkers = (text) => {
+  const cleaned = text
     .replace(/!\[.*?\]\(.*?\)/g, "")           // remove images
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")   // [label](url) → label
     .replace(/\*\*(.+?)\*\*/g, "$1")            // **bold** → text
@@ -380,6 +385,8 @@ const stripInlineMarkers = (text) =>
     .replace(/\*(.+?)\*/g, "$1")                // *italic* → text
     .replace(/_(.+?)_/g, "$1")                  // _italic_ → text
     .replace(/`(.+?)`/g, "$1");                 // `code` → text
+  return stripUnsupportedChars(cleaned);
+};
 
 const parseMarkdownBlocks = (md) => {
   const lines   = (md || "").split("\n");

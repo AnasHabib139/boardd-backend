@@ -189,7 +189,7 @@ exports.queryDatabase = async (token, databaseId, startCursor = null) => {
 // ─── Page content ─────────────────────────────────────────────────────────────
 
 // Returns the markdown string for a page (requires "read content" capability).
-// The /pages/{id}/markdown endpoint returns raw text, not JSON — read as text.
+// Notion returns JSON: { object: "pagemarkdown", markdown: "# ..." } — extract the field.
 // Returns "" on any failure.
 exports.getPageMarkdown = async (token, pageId) => {
   try {
@@ -201,7 +201,13 @@ exports.getPageMarkdown = async (token, pageId) => {
       },
     });
     if (!res.ok) return "";
-    return await res.text();
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      return parsed.markdown || "";
+    } catch (_) {
+      return text; // fallback: endpoint returned raw text
+    }
   } catch (_) {
     return "";
   }
