@@ -41,8 +41,7 @@ class UserAPI {
     // Get users with query validation
     router.get(
       "/",
-      Auth([ROLES.ADMIN]),
-      checkPermission("viewTeamManagement"),
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
       getUsersOfCompany
     );
 
