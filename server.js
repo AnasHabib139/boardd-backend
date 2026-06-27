@@ -39,6 +39,8 @@ const initializeApp = async () => {
     startJiraImportWorker();
     const { startNotionImportWorker } = require("./jobs/notionImportWorker");
     startNotionImportWorker();
+    const { startLinearImportWorker } = require("./jobs/linearImportWorker");
+    startLinearImportWorker();
 
     // Run pending migrations
     const migrationResult = await migrationRunner.runPendingMigrations();

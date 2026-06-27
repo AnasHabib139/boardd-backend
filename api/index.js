@@ -43,6 +43,7 @@ const AsanaImportApi = require("./asanaImportApi");
 const MondayImportApi = require("./mondayImportApi");
 const JiraImportApi   = require("./jiraImportApi");
 const NotionImportApi = require("./notionImportApi");
+const LinearImportApi = require("./linearImportApi");
 const IntegrationsApi = require("./integrationsApi");
 // FileServeApi is now mounted directly in server.js at /uploadFiles
 // const FileServeApi = require("./fileServeApi");
@@ -97,6 +98,7 @@ class API {
     this.routeGroups.push(new MondayImportApi());
     this.routeGroups.push(new JiraImportApi());
     this.routeGroups.push(new NotionImportApi());
+    this.routeGroups.push(new LinearImportApi());
     this.routeGroups.push(new IntegrationsApi());
     // FileServeApi is now mounted directly in server.js
     // this.routeGroups.push(new FileServeApi());
