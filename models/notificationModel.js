@@ -19,7 +19,9 @@ const notificationSchema = new Schema({
       "CHAT_THREAD_REPLY",
       "CHAT_REACTION",            // Emoji reactions to messages
       "CHANNEL_INVITATION",       // User invited to channel
-      "TASK_COMMENT_MENTION"      // @mention in a task comment
+      "TASK_COMMENT_MENTION",     // @mention in a task comment
+      "TASK_COMMENT_REPLY",       // Reply to a task comment thread
+      "TASK_COMMENT_REACTION"     // Emoji reaction to a task comment
     ],
     required: true,
   },
@@ -123,6 +125,9 @@ exports.createNotification = (obj) => NotificationModel.create(obj);
 
 // Find notifications
 exports.findNotification = (query) => NotificationModel.findOne(query);
+
+// Delete many notifications (cascades: comment delete, task delete)
+exports.deleteManyNotifications = (query) => NotificationModel.deleteMany(query);
 
 // Get notifications for a user
 exports.getUserNotifications = async ({ userId, type, page, limit }) => {

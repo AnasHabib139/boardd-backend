@@ -58,6 +58,9 @@ const ActivityModel = model("Activity", activitySchema);
 // create new activity
 exports.createActivity = (obj) => ActivityModel.create(obj);
 
+// Delete many activities (cascade: task delete)
+exports.deleteManyActivities = (query) => ActivityModel.deleteMany(query);
+
 // find activity by query
 exports.findActivity = (query) => ActivityModel.findOne(query);
 

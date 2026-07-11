@@ -1,7 +1,7 @@
 "use strict";
 
 const { Router } = require("express");
-const { createTaskComment, updateTaskComment, getTaskComments, deleteTaskComment } = require("../controller/taskComment.controller");
+const { createTaskComment, updateTaskComment, getTaskComments, deleteTaskComment, getCommentReplies, toggleCommentReaction } = require("../controller/taskComment.controller");
 const Auth = require("../middlewares/Auth");
 const OptionalAuth = require("../middlewares/OptionalAuth");
 const { checkPermission } = require("../middlewares/checkPermission");
@@ -11,6 +11,8 @@ const {
   validateTaskIdParam,
   validateGetTaskCommentsQuery,
   validateDeleteTaskCommentParams,
+  validateToggleReaction,
+  validateGetRepliesQuery,
 } = require("../validation/taskCommentValidation");
 
 class TaskCommentApi {
@@ -29,6 +31,25 @@ class TaskCommentApi {
       validateTaskIdParam,
       validateGetTaskCommentsQuery,
       getTaskComments
+    );
+
+    // Get replies for a comment (supports unauthenticated access for shared task links)
+    router.get(
+      "/:taskId/comments/:commentId/replies",
+      OptionalAuth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateDeleteTaskCommentParams,
+      validateGetRepliesQuery,
+      getCommentReplies
+    );
+
+    // Toggle an emoji reaction on a comment
+    router.post(
+      "/:taskId/comments/:commentId/reactions/toggle",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      checkPermission("makeComments"),
+      validateDeleteTaskCommentParams,
+      validateToggleReaction,
+      toggleCommentReaction
     );
 
     // Create a new comment on a task

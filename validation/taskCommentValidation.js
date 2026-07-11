@@ -29,6 +29,10 @@ const createTaskCommentValidation = Joi.object({
       "string.uri": "Each link must be a valid URL",
       "array.max": "Cannot add more than 5 links",
     }),
+
+  parentCommentId: helpers.objectIdValidation.optional().allow(null).messages({
+    "string.pattern.name": "Parent comment ID must be a valid ObjectId",
+  }),
 });
 
 // Task ID parameter validation
@@ -53,6 +57,28 @@ const deleteTaskCommentParamValidation = Joi.object({
 
 // Get task comments query validation
 const getTaskCommentsQueryValidation = Joi.object({
+  page: Joi.number().integer().min(1).default(1).messages({
+    "number.base": "Page must be a number",
+    "number.min": "Page must be at least 1",
+  }),
+  limit: Joi.number().integer().min(1).max(100).default(20).messages({
+    "number.base": "Limit must be a number",
+    "number.min": "Limit must be at least 1",
+    "number.max": "Limit cannot exceed 100",
+  }),
+});
+
+// Toggle reaction body validation
+const toggleReactionValidation = Joi.object({
+  emoji: Joi.string().trim().min(1).max(32).required().messages({
+    "any.required": "Emoji is required",
+    "string.empty": "Emoji cannot be empty",
+    "string.max": "Emoji cannot exceed 32 characters",
+  }),
+});
+
+// Get comment replies query validation
+const getRepliesQueryValidation = Joi.object({
   page: Joi.number().integer().min(1).default(1).messages({
     "number.base": "Page must be a number",
     "number.min": "Page must be at least 1",
@@ -115,6 +141,8 @@ module.exports = {
   validateTaskIdParam: validateRequest(taskIdParamValidation, "params"),
   validateGetTaskCommentsQuery: validateRequest(getTaskCommentsQueryValidation, "query"),
   validateDeleteTaskCommentParams: validateRequest(deleteTaskCommentParamValidation, "params"),
+  validateToggleReaction: validateRequest(toggleReactionValidation),
+  validateGetRepliesQuery: validateRequest(getRepliesQueryValidation, "query"),
 
   // Export schemas for testing or custom usage
   schemas: {
@@ -122,5 +150,7 @@ module.exports = {
     taskIdParamValidation,
     getTaskCommentsQueryValidation,
     deleteTaskCommentParamValidation,
+    toggleReactionValidation,
+    getRepliesQueryValidation,
   },
 };

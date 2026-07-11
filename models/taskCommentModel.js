@@ -12,6 +12,11 @@ const taskCommentSchema = new Schema({
   contentText: { type: String, default: "" }, // Derived plaintext for display/search
   attachments: [{ type: String }], // Array of file paths/URLs
   links: [{ type: String }], // Array of URLs
+  // Threading: null = root comment, ObjectId = reply belonging to that root (single level)
+  parentCommentId: { type: Types.ObjectId, ref: "TaskComment", default: null, index: true },
+  // Thread aggregates (maintained on root comments only, recomputed on reply create/delete)
+  replyCount: { type: Number, default: 0 },
+  threadParticipants: [{ type: Types.ObjectId, ref: "User" }],
   isActive: { type: Boolean, default: true }, // For soft delete
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
@@ -52,14 +57,35 @@ exports.updateTaskComment = (query, update, options = {}) =>
 exports.deleteTaskComment = (query) => TaskCommentModel.findOneAndDelete(query);
 
 // Get all task comments with pagination
-exports.getAllTaskComments = async ({ query, page, limit, responseKey = "comments" }) => {
+exports.getAllTaskComments = async ({ query, page, limit, sort, responseKey = "comments" }) => {
   const { data, pagination } = await getMongooseAggregatePaginatedData({
     model: TaskCommentModel,
     query,
     page,
     limit,
+    ...(sort && { sort }),
   });
   return { [responseKey]: data, pagination };
+};
+
+// Delete many task comments (cascades: root delete, task delete)
+exports.deleteManyTaskComments = (query) => TaskCommentModel.deleteMany(query);
+
+/**
+ * Recompute replyCount and threadParticipants on a root comment from its
+ * remaining active replies. Self-healing — call after reply create AND delete.
+ * @returns {Promise<Object>} the updated root comment
+ */
+exports.recomputeThreadAggregates = async (rootCommentId) => {
+  const [replyCount, participantIds] = await Promise.all([
+    TaskCommentModel.countDocuments({ parentCommentId: rootCommentId, isActive: true }),
+    TaskCommentModel.distinct("userId", { parentCommentId: rootCommentId, isActive: true }),
+  ]);
+  return TaskCommentModel.findOneAndUpdate(
+    { _id: rootCommentId },
+    { replyCount, threadParticipants: participantIds },
+    { new: true }
+  );
 };
 
 exports.TaskCommentModel = TaskCommentModel;

@@ -1655,17 +1655,27 @@ exports.deleteTaskPermanently = async (req, res, next) => {
     }
 
     // Delete related records
-    const { Activity } = require("../models/activityModel");
-    const { Notification } = require("../models/notificationModel");
+    const { deleteManyActivities } = require("../models/activityModel");
+    const { deleteManyNotifications } = require("../models/notificationModel");
     const { TaskInbox } = require("../models/taskInboxModel");
     const { deleteTaskConnectionsByTaskId } = require("../models/taskConnectionModel");
+    const { findManyTaskComments, deleteManyTaskComments } = require("../models/taskCommentModel");
+    const { removeAllReactionsForComments } = require("../models/taskCommentReactionModel");
+
+    // Collect comment ids first so their reactions can be removed
+    const taskComments = await findManyTaskComments({ taskId }).select("_id").lean();
+    const taskCommentIds = taskComments.map((c) => c._id);
 
     await Promise.all([
-      Activity?.deleteMany({ taskId }) || Promise.resolve(),
-      Notification?.deleteMany({ taskId }) || Promise.resolve(),
+      deleteManyActivities({ taskId }),
+      deleteManyNotifications({ taskId }),
       deleteSubtask({ taskId }),
       TaskInbox?.deleteMany({ taskId }) || Promise.resolve(),
       deleteTaskConnectionsByTaskId(taskId),
+      deleteManyTaskComments({ taskId }),
+      taskCommentIds.length
+        ? removeAllReactionsForComments(taskCommentIds)
+        : Promise.resolve(),
     ]);
 
     // Delete the task

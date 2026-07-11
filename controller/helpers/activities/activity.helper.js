@@ -227,6 +227,8 @@ exports.calculateUnreadCounts = async (NotificationModel, userId) => {
     'CHAT_REACTION',
     'CHANNEL_INVITATION',
     'TASK_COMMENT_MENTION',
+    'TASK_COMMENT_REPLY',
+    'TASK_COMMENT_REACTION',
   ];
 
   // Aggregate unread counts by category
