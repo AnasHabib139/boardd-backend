@@ -1422,19 +1422,6 @@ const notifyChannelMembers = async (
     return;
   }
 
-  // Determine which room to check based on message type
-  let roomToCheck;
-  if (message.parentMessageId) {
-    // For thread replies, check if user is in THIS specific thread
-    roomToCheck = `thread:${message.parentMessageId}`;
-  } else {
-    // For root messages, check if user is in conversation
-    roomToCheck = `conversation:${conversation._id}`;
-  }
-
-  // Get list of sockets in the appropriate room
-  const socketsInRoom = await io.in(roomToCheck).allSockets();
-
   // Convert ObjectIds to strings for proper Socket.IO room targeting
   const memberIds = channel.members.map(id => id.toString());
 
@@ -1442,45 +1429,6 @@ const notifyChannelMembers = async (
     if (memberId !== senderId.toString()) {
       // Skip users already notified via mention to avoid duplicate notifications
       if (excludeUserIds.includes(memberId)) continue;
-      // Check if user is in the room (skip notification if they are)
-      const userSocketRoom = `user:${memberId}`;
-      const userSockets = await io.in(userSocketRoom).allSockets();
-
-      // Only notify if user is not currently in the room
-      let isInRoom = false;
-      for (const socketId of userSockets) {
-        if (socketsInRoom.has(socketId)) {
-          isInRoom = true;
-          break;
-        }
-      }
-
-      if (!isInRoom) {
-        const notifPayload = {
-          type: "CHAT_MESSAGE",
-          conversationId: conversation._id,
-          messageId: message._id,
-          fromUser: {
-            _id: author._id,
-            name: author.name,
-            image: author.image,
-          },
-          messagePreview: contentText.substring(0, 100),
-          conversationType: conversation.type,
-          channelName: channel.channelName || null,
-          timestamp: new Date(),
-        };
-        if (!(await isUserMuted(memberId, channel._id))) {
-          io.to(`user:${memberId}`).emit("chat:notification", notifPayload);
-          sendPushIfNotMuted(memberId, {
-            title: `${author.name} sent a message in ${channel.channelName}`,
-            body: notifPayload.messagePreview,
-            icon: "/main-logo.svg",
-            url: await getNotificationUrl(conversation, author._id, message._id),
-            data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), type: "CHAT_MESSAGE" },
-          }, channel._id).catch(() => {});
-        }
-      }
 
       // Create persistent activity feed notification (ALWAYS, even if user is viewing)
       // Will be auto-marked as read when conversation is viewed via read sync
