@@ -156,7 +156,8 @@ exports.getProjectItems = async (token, projectId, cursor = null) => {
 
 exports.getAuthUrl = () => {
   const redirectUri = encodeURIComponent(`${FRONTEND_URL}/github/callback`);
-  const scope       = encodeURIComponent("repo read:project");
+  // read:org is required because listProjects() reads Organization.login when enumerating org-owned projects
+  const scope       = encodeURIComponent("repo read:project read:org");
   return `${AUTH_BASE_URL}?client_id=${CLIENT_ID}&redirect_uri=${redirectUri}&scope=${scope}`;
 };
 
