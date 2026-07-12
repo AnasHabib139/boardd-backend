@@ -41,6 +41,8 @@ const initializeApp = async () => {
     startNotionImportWorker();
     const { startLinearImportWorker } = require("./jobs/linearImportWorker");
     startLinearImportWorker();
+    const { startGithubImportWorker } = require("./jobs/githubImportWorker");
+    startGithubImportWorker();
 
     // Run pending migrations
     const migrationResult = await migrationRunner.runPendingMigrations();

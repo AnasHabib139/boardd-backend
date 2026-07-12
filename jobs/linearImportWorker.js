@@ -187,11 +187,11 @@ const importSingleTeam = async ({
       const assigneeEmail = issue.assignee && issue.assignee.email ? [issue.assignee.email] : [];
       const assignedTo    = await resolveAssignees(assigneeEmail, companyId);
 
-      // External link attachments → links[]
+      // External link attachments → links[] (task.links is a plain array of URL strings)
       const links = [];
       for (const att of (issue.attachments && issue.attachments.nodes) || []) {
         if (!att.url) continue;
-        links.push({ url: att.url, title: att.title || att.subtitle || att.url });
+        links.push(att.url);
       }
 
       // Uploaded files in description → attachments[]
