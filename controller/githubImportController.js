@@ -80,6 +80,7 @@ exports.getGithubProjects = async (req, res, next) => {
     try {
       projects = await github.listProjects(integration.accessToken);
     } catch (err) {
+      console.error("[GitHub Projects] listProjects failed:", err.message || err);
       return next({
         statusCode: STATUS_CODES.UNPROCESSABLE_ENTITY,
         message: "Could not fetch GitHub Projects — reconnect your GitHub account to grant Projects access (this integration was connected before Projects support was added).",
@@ -119,6 +120,7 @@ exports.importGithubRepos = async (req, res, next) => {
       try {
         allProjects = await github.listProjects(integration.accessToken);
       } catch (err) {
+        console.error("[GitHub Projects] listProjects failed during import:", err.message || err);
         return next({
           statusCode: STATUS_CODES.UNPROCESSABLE_ENTITY,
           message: "Could not fetch GitHub Projects — reconnect your GitHub account to grant Projects access.",
