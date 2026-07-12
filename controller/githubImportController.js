@@ -71,20 +71,63 @@ exports.getGithubRepos = async (req, res, next) => {
   }
 };
 
+exports.getGithubProjects = async (req, res, next) => {
+  try {
+    const integration = await findUserIntegration({ userId: req.user.id, platform: "github", isActive: true });
+    if (!integration) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "GitHub not connected" });
+
+    let projects;
+    try {
+      projects = await github.listProjects(integration.accessToken);
+    } catch (err) {
+      return next({
+        statusCode: STATUS_CODES.UNPROCESSABLE_ENTITY,
+        message: "Could not fetch GitHub Projects — reconnect your GitHub account to grant Projects access (this integration was connected before Projects support was added).",
+      });
+    }
+
+    return generateResponse(
+      projects.map((p) => ({ id: p.id, title: p.title, number: p.number, ownerLogin: p.ownerLogin })),
+      "Projects fetched",
+      res
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
 exports.importGithubRepos = async (req, res, next) => {
   try {
-    const { repoIds, channelId, channelName } = req.body;
+    const { importType, repoIds, projectIds, channelId, channelName } = req.body;
     const userId = req.user.id;
     const user   = await findUser({ _id: userId });
 
     const integration = await findUserIntegration({ userId, platform: "github", isActive: true });
     if (!integration) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "GitHub not connected" });
 
-    // Fetch all repos to build a repoId → fullName map (repoIds submitted are the numeric GitHub repo ids as strings)
-    const allRepos   = await github.listRepos(integration.accessToken);
-    const repoInfoMap = {};
-    for (const r of allRepos) {
-      repoInfoMap[String(r.id)] = { fullName: r.fullName, name: r.name };
+    let repoInfoMap    = null;
+    let projectInfoMap = null;
+
+    if (importType === "issues") {
+      const allRepos = await github.listRepos(integration.accessToken);
+      repoInfoMap = {};
+      for (const r of allRepos) {
+        repoInfoMap[String(r.id)] = { fullName: r.fullName, name: r.name };
+      }
+    } else {
+      let allProjects;
+      try {
+        allProjects = await github.listProjects(integration.accessToken);
+      } catch (err) {
+        return next({
+          statusCode: STATUS_CODES.UNPROCESSABLE_ENTITY,
+          message: "Could not fetch GitHub Projects — reconnect your GitHub account to grant Projects access.",
+        });
+      }
+      projectInfoMap = {};
+      for (const p of allProjects) {
+        projectInfoMap[p.id] = { title: p.title, number: p.number, ownerLogin: p.ownerLogin };
+      }
     }
 
     // Resolve channel + tab (same pattern as Jira/Notion/Linear)
@@ -131,8 +174,11 @@ exports.importGithubRepos = async (req, res, next) => {
       userId:       userId.toString(),
       companyId:    user.companyId.toString(),
       token:        integration.accessToken,
-      repoIds,
+      importType,
+      repoIds:        repoIds || null,
       repoInfoMap,
+      projectIds:     projectIds || null,
+      projectInfoMap,
       channel:      { _id: channel._id.toString() },
       tab:          { _id: tab._id.toString() },
       channelId:    channelId || null,
