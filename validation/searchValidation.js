@@ -25,7 +25,7 @@ const globalSearchSchema = Joi.object({
         return value;
       }
 
-      const validTypes = ["tasks", "members", "chats", "files", "folders", "documents", "templates"];
+      const validTypes = ["tasks", "subtasks", "members", "chats", "files", "folders", "documents", "templates"];
       const requestedTypes = value.split(",").map(t => t.trim().toLowerCase());
 
       const invalidTypes = requestedTypes.filter(type => !validTypes.includes(type));
@@ -37,7 +37,7 @@ const globalSearchSchema = Joi.object({
       return requestedTypes.join(",");
     })
     .messages({
-      "any.invalid": "Invalid entity types: {{#invalidTypes}}. Valid types are: tasks, members, chats, files, folders, documents, templates"
+      "any.invalid": "Invalid entity types: {{#invalidTypes}}. Valid types are: tasks, subtasks, members, chats, files, folders, documents, templates"
     }),
 
   // Quick filters

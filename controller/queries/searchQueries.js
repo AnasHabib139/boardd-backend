@@ -51,10 +51,10 @@ const buildTasksSearchPipeline = (filters) => {
     }
   });
 
-  // Filter by company and access
+  // Filter by real channel membership (not just same-company channel) or assignment
   const accessFilter = {
     $or: [
-      { "channel.companyId": new Types.ObjectId(companyId) },
+      { "channel.members": new Types.ObjectId(userId) },
       { assignedTo: new Types.ObjectId(userId) },
       { createdBy: new Types.ObjectId(userId) }
     ]
@@ -369,10 +369,10 @@ const buildTasksCountPipeline = (filters) => {
     }
   });
 
-  // Access filter
+  // Access filter — real channel membership (not just same-company channel) or assignment
   const accessFilter = {
     $or: [
-      { "channel.companyId": new Types.ObjectId(companyId) },
+      { "channel.members": new Types.ObjectId(userId) },
       { assignedTo: new Types.ObjectId(userId) },
       { createdBy: new Types.ObjectId(userId) }
     ]
@@ -696,7 +696,7 @@ const buildFilesSearchPipeline = (filters) => {
     {
       $match: {
         $or: [
-          { "channel.companyId": new Types.ObjectId(companyId) },
+          { "channel.members": new Types.ObjectId(userId) },
           { assignedTo: new Types.ObjectId(userId) },
           { createdBy: new Types.ObjectId(userId) }
         ]
@@ -959,7 +959,7 @@ const buildFilesCountPipeline = (filters) => {
     {
       $match: {
         $or: [
-          { "channel.companyId": new Types.ObjectId(companyId) },
+          { "channel.members": new Types.ObjectId(userId) },
           { assignedTo: new Types.ObjectId(userId) },
           { createdBy: new Types.ObjectId(userId) }
         ]
@@ -1623,13 +1623,49 @@ const buildSubtasksSearchPipeline = (filters) => {
       foreignField: "_id",
       as: "project",
       pipeline: [
-        { $project: { _id: 1, name: 1, color: 1, description: 1 } },
+        { $project: { _id: 1, name: 1, color: 1, description: 1, channelId: 1 } },
       ],
     },
   });
 
   pipeline.push({
     $unwind: { path: "$project", preserveNullAndEmptyArrays: true },
+  });
+
+  // Resolve the channel: open tasks carry channelId directly, project tasks
+  // resolve it via project.channelId (Task.channelId is null once a task
+  // belongs to a project — see models/taskModel.js "Remove channelId when
+  // moving to project")
+  pipeline.push({
+    $addFields: {
+      effectiveChannelId: {
+        $ifNull: ["$parentTask.channelId", "$project.channelId"],
+      },
+    },
+  });
+
+  pipeline.push({
+    $lookup: {
+      from: "channels",
+      localField: "effectiveChannelId",
+      foreignField: "_id",
+      as: "channel",
+    },
+  });
+
+  pipeline.push({
+    $unwind: { path: "$channel", preserveNullAndEmptyArrays: true },
+  });
+
+  // Access filter — real channel membership, or the subtask's own assignee/creator
+  pipeline.push({
+    $match: {
+      $or: [
+        { "channel.members": new Types.ObjectId(userId) },
+        { assignedTo: new Types.ObjectId(userId) },
+        { createdBy: new Types.ObjectId(userId) },
+      ],
+    },
   });
 
   // Lookup status detail from TabTaskStatus
@@ -1736,6 +1772,7 @@ const buildSubtasksCountPipeline = (filters) => {
   const {
     searchQuery,
     companyId,
+    userId,
     assignedTo,
     createdBy,
     status,
@@ -1771,6 +1808,67 @@ const buildSubtasksCountPipeline = (filters) => {
   if (Object.keys(additionalFilters).length > 0) {
     pipeline.push({ $match: additionalFilters });
   }
+
+  // Lookup parent task + project to resolve the channel, same as the search pipeline
+  pipeline.push({
+    $lookup: {
+      from: "tasks",
+      localField: "taskId",
+      foreignField: "_id",
+      as: "parentTask",
+      pipeline: [{ $project: { channelId: 1 } }],
+    },
+  });
+
+  pipeline.push({
+    $unwind: { path: "$parentTask", preserveNullAndEmptyArrays: true },
+  });
+
+  pipeline.push({
+    $lookup: {
+      from: "projects",
+      localField: "projectId",
+      foreignField: "_id",
+      as: "project",
+      pipeline: [{ $project: { channelId: 1 } }],
+    },
+  });
+
+  pipeline.push({
+    $unwind: { path: "$project", preserveNullAndEmptyArrays: true },
+  });
+
+  pipeline.push({
+    $addFields: {
+      effectiveChannelId: {
+        $ifNull: ["$parentTask.channelId", "$project.channelId"],
+      },
+    },
+  });
+
+  pipeline.push({
+    $lookup: {
+      from: "channels",
+      localField: "effectiveChannelId",
+      foreignField: "_id",
+      as: "channel",
+    },
+  });
+
+  pipeline.push({
+    $unwind: { path: "$channel", preserveNullAndEmptyArrays: true },
+  });
+
+  // Access filter — real channel membership, or the subtask's own assignee/creator
+  pipeline.push({
+    $match: {
+      $or: [
+        { "channel.members": new Types.ObjectId(userId) },
+        { assignedTo: new Types.ObjectId(userId) },
+        { createdBy: new Types.ObjectId(userId) },
+      ],
+    },
+  });
 
   pipeline.push({ $count: "total" });
 
