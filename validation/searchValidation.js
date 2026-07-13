@@ -57,12 +57,15 @@ const globalSearchSchema = Joi.object({
       "string.pattern.base": "Created by must be a valid user ID"
     }),
 
+  // statusKey is per-project/company (system defaults + custom statuses,
+  // e.g. "status_1770324786279") — see GET /api/search/statuses for the
+  // full set of valid keys for the caller's company. Not a fixed enum.
   status: Joi.string()
     .trim()
-    .valid("todo", "in_progress", "completed")
+    .max(100)
     .optional()
     .messages({
-      "any.only": "Status must be one of: todo, in_progress, completed"
+      "string.max": "Status cannot exceed 100 characters"
     }),
 
   startDate: Joi.date()
