@@ -5,6 +5,7 @@ const {
   getProjectStatuses,
   createStatus,
   updateStatus,
+  updateStatusClosingFlag,
   deleteStatus,
   reorderStatuses,
 } = require("../controller/tabTaskStatusController");
@@ -14,6 +15,7 @@ const { ROLES } = require("../utils/constants");
 const {
   validateCreateStatus,
   validateUpdateStatus,
+  validateUpdateClosingFlag,
   validateReorderStatuses,
   validateProjectId,
   validateStatusId,
@@ -62,6 +64,16 @@ class TabTaskStatusApi {
       validateStatusId,
       validateUpdateStatus,
       updateStatus
+    );
+
+    // Mark/unmark a status as closing
+    router.patch(
+      "/projects/:projectId/statuses/:statusId/closing",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateProjectId,
+      validateStatusId,
+      validateUpdateClosingFlag,
+      updateStatusClosingFlag
     );
 
     // Delete a status

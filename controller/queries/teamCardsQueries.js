@@ -86,7 +86,7 @@ exports.getTeamCardsWithMembersQuery = (companyId) => {
                       $size: {
                         $filter: {
                           input: "$memberTasks",
-                          cond: { $eq: ["$$this.status", "completed"] }
+                          cond: { $eq: ["$$this.isClosingStatus", true] }
                         }
                       }
                     },
@@ -239,10 +239,10 @@ exports.getMemberTasksQuery = (userId, filter = 'all') => {
   let statusMatch = {};
   switch (filter) {
     case 'ongoing':
-      statusMatch = { status: { $in: ['todo', 'in_progress'] } };
+      statusMatch = { isClosingStatus: { $ne: true } };
       break;
     case 'completed':
-      statusMatch = { status: 'completed' };
+      statusMatch = { isClosingStatus: true };
       break;
     case 'all':
     default:
@@ -375,9 +375,9 @@ exports.getMemberTasksQuery = (userId, filter = 'all') => {
               // Status-based progress if no subtasks
               $switch: {
                 branches: [
-                  { case: { $eq: ["$status", "todo"] }, then: 0 },
+                  { case: { $eq: ["$isClosingStatus", true] }, then: 100 },
                   { case: { $eq: ["$status", "in_progress"] }, then: 50 },
-                  { case: { $eq: ["$status", "completed"] }, then: 100 }
+                  { case: { $eq: ["$status", "todo"] }, then: 0 }
                 ],
                 default: 0
               }

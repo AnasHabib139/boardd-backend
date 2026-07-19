@@ -1,7 +1,7 @@
 "use strict";
 
 const { parseBody, generateResponse } = require("../utils");
-const { STATUS_CODES, TASK_STATUS } = require("../utils/constants");
+const { STATUS_CODES } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const { getAllRecentlyViewed } = require("../models/formViewModel");
 const { findManyTasks } = require("../models/taskModel");
@@ -96,7 +96,7 @@ exports.getDashboardStats = async (req, res, next) => {
           { assignedTo: userId }
         ],
         isActive: true,
-        status: TASK_STATUS.COMPLETED,
+        isClosingStatus: true,
       }).then(tasks => tasks.length),
 
       // Count conversations (DM + Group DM only)

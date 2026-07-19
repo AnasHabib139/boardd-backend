@@ -197,6 +197,85 @@ exports.updateStatus = async (req, res, next) => {
 };
 
 /**
+ * Mark/unmark a status as "closes the task"
+ * PATCH /api/project-statuses/projects/:projectId/statuses/:statusId/closing
+ */
+exports.updateStatusClosingFlag = async (req, res, next) => {
+  try {
+    const { projectId, statusId } = req.params;
+    const { isCompletedStatus } = parseBody(req.body);
+
+    const project = await findProject({ _id: projectId, isActive: true });
+    if (!project) {
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Project not found" });
+    }
+
+    const status = await findTabTaskStatus({ _id: statusId, projectId });
+    if (!status) {
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Status not found" });
+    }
+
+    if (status.isSystem && (status.statusKey === "todo" || status.statusKey === "in_progress")) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "Cannot change closing status for To Do / In Progress",
+      });
+    }
+
+    if (status.statusKey === "completed" && isCompletedStatus === false) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "Completed status must always be closing",
+      });
+    }
+
+    const updatedStatus = await updateTabTaskStatus({ _id: statusId }, { isCompletedStatus });
+
+    // Cascade: bring every existing Task/Subtask in this status in line with
+    // the new flag. Bulk updateMany — Mongoose document hooks don't fire on
+    // it, which is fine here since we already know the exact correct value.
+    const { TaskModel } = require("../models/taskModel");
+    const { SubtaskModel } = require("../models/subtaskModel");
+    const [taskResult, subtaskResult] = await Promise.all([
+      TaskModel.updateMany(
+        { projectId, status: status.statusKey },
+        { $set: { isClosingStatus: isCompletedStatus, updatedAt: new Date() } }
+      ),
+      SubtaskModel.updateMany(
+        { projectId, status: status.statusKey },
+        { $set: { isCompleted: isCompletedStatus, updatedAt: new Date() } }
+      ),
+    ]);
+
+    const io = getIO();
+    const allStatuses = await findManyTabTaskStatuses({ projectId, isActive: true });
+    io.to(`channel:${project.channelId}`).emit("tab-activity", {
+      type: "PROJECT_STATUS_UPDATED",
+      projectId,
+      statuses: allStatuses,
+      timestamp: new Date(),
+    });
+
+    return generateResponse(
+      {
+        status: updatedStatus,
+        tasksUpdated: taskResult.modifiedCount,
+        subtasksUpdated: subtaskResult.modifiedCount,
+      },
+      "Status closing flag updated successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    console.error("Error in updateStatusClosingFlag:", error);
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message || "Failed to update status closing flag",
+    });
+  }
+};
+
+/**
  * Delete a custom status
  * DELETE /api/project-statuses/projects/:projectId/statuses/:statusId
  */

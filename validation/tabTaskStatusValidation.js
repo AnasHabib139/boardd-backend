@@ -43,6 +43,14 @@ const updateStatusSchema = Joi.object({
     "object.min": "At least one field must be provided for update",
   });
 
+// Update closing-flag validation
+const updateClosingFlagSchema = Joi.object({
+  isCompletedStatus: Joi.boolean().required().messages({
+    "any.required": "isCompletedStatus is required",
+    "boolean.base": "isCompletedStatus must be a boolean",
+  }),
+}).unknown(false);
+
 // Reorder statuses validation
 const reorderStatusesSchema = Joi.object({
   statusOrders: Joi.array()
@@ -118,6 +126,7 @@ const validateStatusId = (req, res, next) => {
 module.exports = {
   validateCreateStatus: validateRequest(createStatusSchema),
   validateUpdateStatus: validateRequest(updateStatusSchema),
+  validateUpdateClosingFlag: validateRequest(updateClosingFlagSchema),
   validateReorderStatuses: validateRequest(reorderStatusesSchema),
   validateProjectId,
   validateStatusId,

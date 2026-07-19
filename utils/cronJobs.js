@@ -284,7 +284,7 @@ const sendOverdueReminders = async () => {
     const tasks = await findManyTasks({
       isActive: true,
       priority: "high",
-      status: { $ne: "completed" },
+      isClosingStatus: { $ne: true },
       dueDate: { $lt: todayStart },
       assignedTo: { $exists: true, $not: { $size: 0 } },
     });

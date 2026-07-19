@@ -45,6 +45,12 @@ const tabTaskStatusSchema = new Schema({
     type: Boolean,
     default: true,
   },
+  // Marks this status as "closes the task" — read by Task/Subtask sync hooks
+  // and by every progress/completion calculation in the app.
+  isCompletedStatus: {
+    type: Boolean,
+    default: false,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
@@ -65,9 +71,9 @@ const TabTaskStatus = model("TabTaskStatus", tabTaskStatusSchema);
 
 // Default system statuses
 const SYSTEM_STATUSES = [
-  { statusKey: "todo", statusName: "To Do", color: "#6B7280", order: 1, isSystem: true },
-  { statusKey: "in_progress", statusName: "In Progress", color: "#3B82F6", order: 2, isSystem: true },
-  { statusKey: "completed", statusName: "Completed", color: "#22C55E", order: 3, isSystem: true },
+  { statusKey: "todo", statusName: "To Do", color: "#6B7280", order: 1, isSystem: true, isCompletedStatus: false },
+  { statusKey: "in_progress", statusName: "In Progress", color: "#3B82F6", order: 2, isSystem: true, isCompletedStatus: false },
+  { statusKey: "completed", statusName: "Completed", color: "#22C55E", order: 3, isSystem: true, isCompletedStatus: true },
 ];
 
 // Create a new status
@@ -130,6 +136,21 @@ exports.getStatusName = async (projectId, statusKey) => {
   }
   const status = await TabTaskStatus.findOne({ projectId, statusKey });
   return status ? status.statusName : statusKey;
+};
+
+/**
+ * Get the set of statusKeys flagged as "closes the task" for a project.
+ * Falls back to ["completed"] when projectId is falsy (channel-only tasks
+ * can't have custom statuses — see getStatusName's !projectId branch).
+ * @param {String|ObjectId|null} projectId
+ * @returns {Promise<string[]>}
+ */
+exports.getCompletedStatusKeys = async (projectId) => {
+  if (!projectId) {
+    return SYSTEM_STATUSES.filter((s) => s.isCompletedStatus).map((s) => s.statusKey);
+  }
+  const statuses = await TabTaskStatus.find({ projectId, isCompletedStatus: true }).select("statusKey");
+  return statuses.map((s) => s.statusKey);
 };
 
 // Export model and constants

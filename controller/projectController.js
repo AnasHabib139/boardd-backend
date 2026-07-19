@@ -339,6 +339,10 @@ exports.getProjectsOfTab = async (req, res, next) => {
           });
         };
 
+        // NOTE: these are channel-only ("Open") tasks with no projectId — they
+        // can't have custom statuses, so the literal "completed"/"todo"/
+        // "in_progress" checks here are correct and intentional. See
+        // models/taskModel.js isClosingStatus and the status-closing-flag spec.
         const todoTasks = sortTasksByOrderIndex(
           tasks.filter(t => t.status === "todo"),
           "todo"
@@ -408,6 +412,10 @@ exports.getProjectsOfTab = async (req, res, next) => {
 
       // Calculate totals including open tasks
       const totalOpenTasks = openTasks.length;
+      // NOTE: these are channel-only ("Open") tasks with no projectId — they
+      // can't have custom statuses, so the literal "completed"/"todo"/
+      // "in_progress" checks here are correct and intentional. See
+      // models/taskModel.js isClosingStatus and the status-closing-flag spec.
       const completedOpenTasks = openTasks.filter(t => t.status === "completed").length;
       const overdueOpenTasks = openTasks.filter(t => t.isOverdue).length;
 
@@ -636,7 +644,16 @@ exports.getProjectsList = async (req, res, next) => {
     // Sort tasks by orderIndex within each status category for each project
     if (result.projects) {
       result.projects = result.projects.map((project) => {
-        // Helper function to sort tasks with orderIndex fallback
+        // KNOWN LIMITATION: `status` here is a fixed bucket label ("todo" /
+        // "in_progress" / "completed"), used only to look up each task's
+        // orderIndex.<status> position for drag-sort. A task whose actual
+        // status is a CUSTOM closing status (e.g. "Shipped") has its
+        // orderIndex keyed by that custom statusKey, not "completed", so it
+        // falls back to createdAt sort within the completedTasks bucket
+        // instead of its true drag position. Cosmetic only — does not affect
+        // completion counting/progress %. Not fixed in this pass; would
+        // require sorting by each task's own statusKey instead of a fixed
+        // bucket name.
         const sortTasksByOrderIndex = (tasks, status) => {
           return tasks.sort((a, b) => {
             const aOrder =
@@ -689,6 +706,10 @@ exports.getProjectsList = async (req, res, next) => {
               });
             };
 
+            // NOTE: these are channel-only ("Open") tasks with no projectId — they
+            // can't have custom statuses, so the literal "completed"/"todo"/
+            // "in_progress" checks here are correct and intentional. See
+            // models/taskModel.js isClosingStatus and the status-closing-flag spec.
             const todoTasks = sortTasksByOrderIndex(
               tasks.filter(t => t.status === "todo"),
               "todo"
@@ -995,6 +1016,10 @@ exports.getProjectBoard = async (req, res, next) => {
         });
       };
 
+      // NOTE: these are channel-only ("Open") tasks with no projectId — they
+      // can't have custom statuses, so the literal "completed"/"todo"/
+      // "in_progress" checks here are correct and intentional. See
+      // models/taskModel.js isClosingStatus and the status-closing-flag spec.
       const todoTasks = sortByOrderIndex(
         openTasks.filter((t) => t.status === "todo"), "todo"
       );

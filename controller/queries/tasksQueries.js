@@ -77,7 +77,7 @@ exports.getUserPersonalTasksCalendarQuery = (userId, currentDate) => {
               $and: [
                 { $ne: ["$dueDate", null] },
                 { $lt: ["$dueDate", new Date()] },
-                { $ne: ["$status", "completed"] },
+                { $ne: ["$isClosingStatus", true] },
               ],
             },
             then: true,
@@ -1175,7 +1175,7 @@ exports.getUserTasksByFilterQuery = (userId, filter) => {
       {
         $match: {
           isActive: true,
-          status: TASK_STATUS.COMPLETED,
+          isClosingStatus: true,
           // Simple access: only tasks assigned to me or created by me
           $or: [
             { assignedTo: userObjectId },
@@ -1183,11 +1183,29 @@ exports.getUserTasksByFilterQuery = (userId, filter) => {
           ],
         },
       },
+      // Resolve which statusKeys close a task for this task's project
+      // (channel-only tasks have projectId: null → lookup returns [], and
+      // the $or fallback below covers them via the literal "completed" check)
+      {
+        $lookup: {
+          from: "tabtaskstatuses",
+          let: { projectId: "$projectId" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $and: [{ $eq: ["$projectId", "$$projectId"] }, { $eq: ["$isCompletedStatus", true] }] },
+              },
+            },
+            { $project: { _id: 0, statusKey: 1 } },
+          ],
+          as: "closingStatuses",
+        },
+      },
       // Lookup activities to find completion timestamp
       {
         $lookup: {
           from: "activities",
-          let: { taskId: "$_id" },
+          let: { taskId: "$_id", closingKeys: "$closingStatuses.statusKey" },
           pipeline: [
             {
               $match: {
@@ -1195,7 +1213,7 @@ exports.getUserTasksByFilterQuery = (userId, filter) => {
                   $and: [
                     { $eq: ["$taskId", "$$taskId"] },
                     { $eq: ["$field", "status"] },
-                    { $eq: ["$newValue", "completed"] },
+                    { $or: [{ $eq: ["$newValue", "completed"] }, { $in: ["$newValue", "$$closingKeys"] }] },
                     { $gte: ["$timestamp", yesterday] },
                     { $lt: ["$timestamp", today] },
                   ]
@@ -1225,7 +1243,7 @@ exports.getUserTasksByFilterQuery = (userId, filter) => {
       {
         $match: {
           isActive: true,
-          status: TASK_STATUS.COMPLETED,
+          isClosingStatus: true,
           // Simple access: only tasks assigned to me or created by me
           $or: [
             { assignedTo: userObjectId },
@@ -1233,11 +1251,26 @@ exports.getUserTasksByFilterQuery = (userId, filter) => {
           ],
         },
       },
+      {
+        $lookup: {
+          from: "tabtaskstatuses",
+          let: { projectId: "$projectId" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $and: [{ $eq: ["$projectId", "$$projectId"] }, { $eq: ["$isCompletedStatus", true] }] },
+              },
+            },
+            { $project: { _id: 0, statusKey: 1 } },
+          ],
+          as: "closingStatuses",
+        },
+      },
       // Lookup activities to find completion timestamp
       {
         $lookup: {
           from: "activities",
-          let: { taskId: "$_id" },
+          let: { taskId: "$_id", closingKeys: "$closingStatuses.statusKey" },
           pipeline: [
             {
               $match: {
@@ -1245,7 +1278,7 @@ exports.getUserTasksByFilterQuery = (userId, filter) => {
                   $and: [
                     { $eq: ["$taskId", "$$taskId"] },
                     { $eq: ["$field", "status"] },
-                    { $eq: ["$newValue", "completed"] },
+                    { $or: [{ $eq: ["$newValue", "completed"] }, { $in: ["$newValue", "$$closingKeys"] }] },
                     { $gte: ["$timestamp", lastWeekStart] },
                     { $lt: ["$timestamp", today] },
                   ]
@@ -1290,7 +1323,7 @@ exports.getUserTasksByFilterQuery = (userId, filter) => {
       {
         $match: {
           isActive: true,
-          status: { $ne: TASK_STATUS.COMPLETED }, // Not completed for today/overdue
+          isClosingStatus: { $ne: true }, // Not completed for today/overdue
           ...dateFilter,
           // Simple access: only tasks assigned to me or created by me
           $or: [

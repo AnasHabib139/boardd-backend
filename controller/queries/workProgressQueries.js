@@ -111,6 +111,53 @@ exports.getContributionsQuery = (channelId, startDate, endDate) => {
       },
     },
 
+    // Resolve whether newValue/previousValue are closing statuses for this
+    // activity's project (channel-only-task activities have projectId: null
+    // and get an empty array back — the literal "completed" fallback below
+    // covers those, matching current behavior)
+    {
+      $lookup: {
+        from: "tabtaskstatuses",
+        let: { projectId: "$projectId", val: "$newValue" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$projectId", "$$projectId"] },
+                  { $eq: ["$statusKey", "$$val"] },
+                  { $eq: ["$isCompletedStatus", true] },
+                ],
+              },
+            },
+          },
+          { $limit: 1 },
+        ],
+        as: "newValueIsClosing",
+      },
+    },
+    {
+      $lookup: {
+        from: "tabtaskstatuses",
+        let: { projectId: "$projectId", val: "$previousValue" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$projectId", "$$projectId"] },
+                  { $eq: ["$statusKey", "$$val"] },
+                  { $eq: ["$isCompletedStatus", true] },
+                ],
+              },
+            },
+          },
+          { $limit: 1 },
+        ],
+        as: "previousValueIsClosing",
+      },
+    },
+
     // Add computed field to detect task completion
     {
       $addFields: {
@@ -118,8 +165,18 @@ exports.getContributionsQuery = (channelId, startDate, endDate) => {
           $and: [
             { $eq: ["$actionType", ACTION_TYPE.UPDATE_TASK] },
             { $eq: ["$field", "status"] },
-            { $eq: ["$newValue", "completed"] },
-            { $ne: ["$previousValue", "completed"] }, // Only count new completions
+            {
+              $or: [
+                { $eq: ["$newValue", "completed"] },
+                { $gt: [{ $size: "$newValueIsClosing" }, 0] },
+              ],
+            },
+            {
+              $and: [
+                { $ne: ["$previousValue", "completed"] },
+                { $eq: [{ $size: "$previousValueIsClosing" }, 0] },
+              ],
+            }, // Only count new completions
           ],
         },
       },
@@ -424,6 +481,53 @@ exports.getActivitiesQuery = (channelId, startDate, endDate) => {
       },
     },
 
+    // Resolve whether newValue/previousValue are closing statuses for this
+    // activity's project (channel-only-task activities have projectId: null
+    // and get an empty array back — the literal "completed" fallback below
+    // covers those, matching current behavior)
+    {
+      $lookup: {
+        from: "tabtaskstatuses",
+        let: { projectId: "$projectId", val: "$newValue" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$projectId", "$$projectId"] },
+                  { $eq: ["$statusKey", "$$val"] },
+                  { $eq: ["$isCompletedStatus", true] },
+                ],
+              },
+            },
+          },
+          { $limit: 1 },
+        ],
+        as: "newValueIsClosing",
+      },
+    },
+    {
+      $lookup: {
+        from: "tabtaskstatuses",
+        let: { projectId: "$projectId", val: "$previousValue" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$projectId", "$$projectId"] },
+                  { $eq: ["$statusKey", "$$val"] },
+                  { $eq: ["$isCompletedStatus", true] },
+                ],
+              },
+            },
+          },
+          { $limit: 1 },
+        ],
+        as: "previousValueIsClosing",
+      },
+    },
+
     // Add computed field to detect task completion
     {
       $addFields: {
@@ -431,8 +535,18 @@ exports.getActivitiesQuery = (channelId, startDate, endDate) => {
           $and: [
             { $eq: ["$actionType", ACTION_TYPE.UPDATE_TASK] },
             { $eq: ["$field", "status"] },
-            { $eq: ["$newValue", "completed"] },
-            { $ne: ["$previousValue", "completed"] }, // Only count new completions
+            {
+              $or: [
+                { $eq: ["$newValue", "completed"] },
+                { $gt: [{ $size: "$newValueIsClosing" }, 0] },
+              ],
+            },
+            {
+              $and: [
+                { $ne: ["$previousValue", "completed"] },
+                { $eq: [{ $size: "$previousValueIsClosing" }, 0] },
+              ],
+            }, // Only count new completions
           ],
         },
       },

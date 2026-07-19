@@ -99,13 +99,11 @@ const createSubtaskValidation = Joi.object({
     }),
 
   status: Joi.string()
-    .valid(...Object.values(TASK_STATUS))
+    .pattern(/^(todo|in_progress|completed|status_\d+)$/)
     .optional()
     .default(TASK_STATUS.TODO)
     .messages({
-      "any.only": `Status must be one of: ${Object.values(TASK_STATUS).join(
-        ", "
-      )}`,
+      "string.pattern.base": "Status must be a valid system status (todo, in_progress, completed) or custom status key (status_<timestamp>)",
     }),
 
   priority: Joi.string()
@@ -208,12 +206,10 @@ const updateSubtaskValidation = Joi.object({
     }),
 
   status: Joi.string()
-    .valid(...Object.values(TASK_STATUS))
+    .pattern(/^(todo|in_progress|completed|status_\d+)$/)
     .optional()
     .messages({
-      "any.only": `Status must be one of: ${Object.values(TASK_STATUS).join(
-        ", "
-      )}`,
+      "string.pattern.base": "Status must be a valid system status (todo, in_progress, completed) or custom status key (status_<timestamp>)",
     }),
 
   priority: Joi.string()
@@ -308,10 +304,10 @@ const getSubtasksQueryValidation = Joi.object({
   }),
 
   status: Joi.string()
-    .valid("todo", "in_progress", "completed")
+    .pattern(/^(todo|in_progress|completed|status_\d+)$/)
     .optional()
     .messages({
-      "any.only": "Status must be one of: todo, in_progress, completed",
+      "string.pattern.base": "Status must be a valid system status (todo, in_progress, completed) or custom status key (status_<timestamp>)",
     }),
 
   assignedTo: helpers.objectIdValidation.optional().messages({

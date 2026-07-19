@@ -51,6 +51,11 @@ const taskSchema = new Schema({
     type: String,
     default: "todo", // statusKey - validated dynamically against TabTaskStatus
   },
+  // Denormalized from TabTaskStatus.isCompletedStatus for the task's current
+  // status — kept in sync by the pre("save")/pre("findOneAndUpdate") hooks
+  // below. Every progress/completion query filters on THIS field, never on
+  // the literal string "completed".
+  isClosingStatus: { type: Boolean, default: false, index: true },
   priority: {
     type: String,
     default: "medium",
@@ -104,11 +109,59 @@ const taskSchema = new Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
+// Sync isClosingStatus with status on save
+taskSchema.pre("save", async function (next) {
+  try {
+    if (this.isModified("status")) {
+      const { getCompletedStatusKeys } = require("./tabTaskStatusModel");
+      const completedKeys = await getCompletedStatusKeys(this.projectId);
+      this.isClosingStatus = completedKeys.includes(this.status);
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Sync isClosingStatus with status on findOneAndUpdate
+taskSchema.pre("findOneAndUpdate", async function (next) {
+  try {
+    const update = this.getUpdate();
+    const newStatus = update.status !== undefined ? update.status : update.$set?.status;
+    if (newStatus === undefined) {
+      return next();
+    }
+
+    // Resolve projectId: prefer the value being written in this same update,
+    // otherwise fall back to the existing document's projectId.
+    let projectId = update.projectId !== undefined ? update.projectId : update.$set?.projectId;
+    if (projectId === undefined) {
+      const existing = await this.model.findOne(this.getQuery()).select("projectId");
+      projectId = existing ? existing.projectId : null;
+    }
+
+    const { getCompletedStatusKeys } = require("./tabTaskStatusModel");
+    const completedKeys = await getCompletedStatusKeys(projectId);
+    const isClosingStatus = completedKeys.includes(newStatus);
+
+    if (update.status !== undefined) {
+      update.isClosingStatus = isClosingStatus;
+    } else {
+      update.$set.isClosingStatus = isClosingStatus;
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
 // register pagination plugin to task model
 taskSchema.plugin(mongoosePaginate);
 taskSchema.plugin(aggregatePaginate);
 
 const TaskModel = model("Task", taskSchema);
+
+exports.TaskModel = TaskModel;
 
 // create new task
 exports.createTask = (obj) => TaskModel.create(obj);

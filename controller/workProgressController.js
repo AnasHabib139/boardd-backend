@@ -153,7 +153,7 @@ const calculateChannelProgress = async (channelId) => {
 
     const totalTasks = allTasks.length;
     const completedTasks = allTasks.filter(
-      (task) => task.status === TASK_STATUS.COMPLETED
+      (task) => task.isClosingStatus === true
     ).length;
 
     // Calculate percentage (rounded to 1 decimal)
@@ -461,7 +461,7 @@ exports.markAllTasksAsCompleted = async (req, res, next) => {
         { projectId: { $in: projectIds } }, // Project-based tasks
       ],
       isActive: true,
-      status: { $ne: TASK_STATUS.COMPLETED }, // Not already completed
+      isClosingStatus: { $ne: true }, // Not already in a closing status
     });
 
     let updatedCount = 0;
@@ -521,7 +521,7 @@ exports.markAllTasksAsCompleted = async (req, res, next) => {
             { projectId: { $in: projectIds } },
           ],
           isActive: true,
-          status: TASK_STATUS.COMPLETED,
+          isClosingStatus: true,
         })).length,
         activitiesCreated: activities.length,
       },

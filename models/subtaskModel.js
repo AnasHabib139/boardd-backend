@@ -82,22 +82,47 @@ const subtaskSchema = new Schema({
 });
 
 // Sync isCompleted with status on save
-subtaskSchema.pre("save", function (next) {
-  if (this.isModified("status")) {
-    this.isCompleted = this.status === "completed";
+subtaskSchema.pre("save", async function (next) {
+  try {
+    if (this.isModified("status")) {
+      const { getCompletedStatusKeys } = require("./tabTaskStatusModel");
+      const completedKeys = await getCompletedStatusKeys(this.projectId);
+      this.isCompleted = completedKeys.includes(this.status);
+    }
+    next();
+  } catch (error) {
+    next(error);
   }
-  next();
 });
 
 // Sync isCompleted with status on findOneAndUpdate
-subtaskSchema.pre("findOneAndUpdate", function (next) {
-  const update = this.getUpdate();
-  if (update.status !== undefined) {
-    update.isCompleted = update.status === "completed";
-  } else if (update.$set && update.$set.status !== undefined) {
-    update.$set.isCompleted = update.$set.status === "completed";
+subtaskSchema.pre("findOneAndUpdate", async function (next) {
+  try {
+    const update = this.getUpdate();
+    const newStatus = update.status !== undefined ? update.status : update.$set?.status;
+    if (newStatus === undefined) {
+      return next();
+    }
+
+    let projectId = update.projectId !== undefined ? update.projectId : update.$set?.projectId;
+    if (projectId === undefined) {
+      const existing = await this.model.findOne(this.getQuery()).select("projectId");
+      projectId = existing ? existing.projectId : null;
+    }
+
+    const { getCompletedStatusKeys } = require("./tabTaskStatusModel");
+    const completedKeys = await getCompletedStatusKeys(projectId);
+    const isCompleted = completedKeys.includes(newStatus);
+
+    if (update.status !== undefined) {
+      update.isCompleted = isCompleted;
+    } else {
+      update.$set.isCompleted = isCompleted;
+    }
+    next();
+  } catch (error) {
+    next(error);
   }
-  next();
 });
 
 // register pagination plugin to subtask model
@@ -105,6 +130,8 @@ subtaskSchema.plugin(mongoosePaginate);
 subtaskSchema.plugin(aggregatePaginate);
 
 const SubtaskModel = model("Subtask", subtaskSchema);
+
+exports.SubtaskModel = SubtaskModel;
 
 // create new subtask
 exports.createSubtask = (obj) => SubtaskModel.create(obj);

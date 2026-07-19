@@ -205,7 +205,7 @@ exports.getTasksCalendarQuery = (channelId, tabId, userId, currentDate, search =
               $and: [
                 { $ne: ["$dueDate", null] },
                 { $lt: ["$dueDate", new Date()] },
-                { $ne: ["$status", "completed"] },
+                { $ne: ["$isClosingStatus", true] },
               ],
             },
             then: true,
@@ -339,6 +339,7 @@ exports.getProjectsOverviewQuery = (channelId, tabId, search = null) => {
           {
             $group: {
               _id: "$status",
+              isClosingStatus: { $first: "$isClosingStatus" },
               count: { $sum: 1 },
             },
           },
@@ -380,7 +381,7 @@ exports.getProjectsOverviewQuery = (channelId, tabId, search = null) => {
               total: { $add: ["$$value.total", "$$this.count"] },
               completed: {
                 $cond: [
-                  { $eq: ["$$this._id", "completed"] },
+                  { $eq: ["$$this.isClosingStatus", true] },
                   { $add: ["$$value.completed", "$$this.count"] },
                   "$$value.completed",
                 ],
@@ -674,7 +675,7 @@ exports.getProjectBoardQuery = (projectId, search = null) => {
                     $and: [
                       { $ne: ["$dueDate", null] },
                       { $lt: ["$dueDate", new Date()] },
-                      { $ne: ["$status", "completed"] },
+                      { $ne: ["$isClosingStatus", true] },
                     ],
                   },
                   then: true,
@@ -771,7 +772,7 @@ exports.getProjectBoardQuery = (projectId, search = null) => {
             $size: {
               $filter: {
                 input: "$allTasks",
-                cond: { $eq: ["$$this.status", "completed"] },
+                cond: { $eq: ["$$this.isClosingStatus", true] },
               },
             },
           },
@@ -797,7 +798,7 @@ exports.getProjectBoardQuery = (projectId, search = null) => {
                       $size: {
                         $filter: {
                           input: "$allTasks",
-                          cond: { $eq: ["$$this.status", "completed"] },
+                          cond: { $eq: ["$$this.isClosingStatus", true] },
                         },
                       },
                     },
@@ -1045,7 +1046,7 @@ exports.getOpenTasksQuery = (channelId) => {
               $and: [
                 { $ne: ["$dueDate", null] },
                 { $lt: ["$dueDate", new Date()] },
-                { $ne: ["$status", "completed"] },
+                { $ne: ["$isClosingStatus", true] },
               ],
             },
             then: true,
@@ -1247,7 +1248,7 @@ exports.getProjectsListQuery = (channelId, tabId, search = null, { channelDoc, t
                     $and: [
                       { $ne: ["$dueDate", null] },
                       { $lt: ["$dueDate", new Date()] },
-                      { $ne: ["$status", "completed"] },
+                      { $ne: ["$isClosingStatus", true] },
                     ],
                   },
                   then: true,
@@ -1321,9 +1322,9 @@ exports.getProjectsListQuery = (channelId, tabId, search = null, { channelDoc, t
             if: { $gt: [{ $size: "$projectStatuses" }, 0] },
             then: "$projectStatuses",
             else: [
-              { _id: null, statusKey: "todo", statusName: "To Do", color: "#6B7280", order: 1, isSystem: true },
-              { _id: null, statusKey: "in_progress", statusName: "In Progress", color: "#3B82F6", order: 2, isSystem: true },
-              { _id: null, statusKey: "completed", statusName: "Completed", color: "#22C55E", order: 3, isSystem: true },
+              { _id: null, statusKey: "todo", statusName: "To Do", color: "#6B7280", order: 1, isSystem: true, isCompletedStatus: false },
+              { _id: null, statusKey: "in_progress", statusName: "In Progress", color: "#3B82F6", order: 2, isSystem: true, isCompletedStatus: false },
+              { _id: null, statusKey: "completed", statusName: "Completed", color: "#22C55E", order: 3, isSystem: true, isCompletedStatus: true },
             ],
           },
         },
@@ -1432,7 +1433,7 @@ exports.getProjectsListQuery = (channelId, tabId, search = null, { channelDoc, t
             $size: {
               $filter: {
                 input: "$allTasks",
-                cond: { $eq: ["$$this.status", "completed"] },
+                cond: { $eq: ["$$this.isClosingStatus", true] },
               },
             },
           },
@@ -1444,7 +1445,7 @@ exports.getProjectsListQuery = (channelId, tabId, search = null, { channelDoc, t
                   $and: [
                     { $ne: ["$$this.dueDate", null] },
                     { $lt: ["$$this.dueDate", new Date()] },
-                    { $ne: ["$$this.status", "completed"] },
+                    { $ne: ["$$this.isClosingStatus", true] },
                   ],
                 },
               },
@@ -1797,7 +1798,7 @@ exports.getSingleProjectListQuery = (projectId) => {
                     $and: [
                       { $ne: ["$dueDate", null] },
                       { $lt: ["$dueDate", new Date()] },
-                      { $ne: ["$status", "completed"] },
+                      { $ne: ["$isClosingStatus", true] },
                     ],
                   },
                   then: true,
@@ -1873,7 +1874,7 @@ exports.getSingleProjectListQuery = (projectId) => {
         completedTasks: {
           $filter: {
             input: "$allTasks",
-            cond: { $eq: ["$$this.status", "completed"] },
+            cond: { $eq: ["$$this.isClosingStatus", true] },
           },
         },
       },
@@ -2029,7 +2030,7 @@ exports.getSingleProjectListQuery = (projectId) => {
                   $and: [
                     { $ne: ["$$this.dueDate", null] },
                     { $lt: ["$$this.dueDate", new Date()] },
-                    { $ne: ["$$this.status", "completed"] },
+                    { $ne: ["$$this.isClosingStatus", true] },
                   ],
                 },
               },

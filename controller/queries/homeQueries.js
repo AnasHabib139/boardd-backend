@@ -446,6 +446,7 @@ exports.getDashboardStatsQuery = (userId, companyId, channelSearch = null, page 
             $project: {
               _id: 1,
               status: 1,
+              isClosingStatus: 1,
             }
           }
         ],
@@ -462,7 +463,7 @@ exports.getDashboardStatsQuery = (userId, companyId, channelSearch = null, page 
             $filter: {
               input: "$tasks",
               as: "task",
-              cond: { $eq: ["$$task.status", "completed"] }
+              cond: { $eq: ["$$task.isClosingStatus", true] }
             }
           }
         }

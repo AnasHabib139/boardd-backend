@@ -150,7 +150,7 @@ exports.getImportantInboxTasksQuery = (userId) => {
               $and: [
                 { $ne: ["$dueDate", null] },
                 { $lt: ["$dueDate", new Date()] },
-                { $ne: ["$status", "completed"] }
+                { $ne: ["$isClosingStatus", true] }
               ]
             },
             then: true,
@@ -166,7 +166,7 @@ exports.getImportantInboxTasksQuery = (userId) => {
                 if: {
                   $and: [
                     { $lt: ["$dueDate", new Date()] },
-                    { $ne: ["$status", "completed"] }
+                    { $ne: ["$isClosingStatus", true] }
                   ]
                 },
                 then: {
@@ -494,7 +494,7 @@ exports.getOutboxInboxTasksQuery = (userId) => {
               $and: [
                 { $ne: ["$dueDate", null] },
                 { $lt: ["$dueDate", new Date()] },
-                { $ne: ["$status", "completed"] }
+                { $ne: ["$isClosingStatus", true] }
               ]
             },
             then: true,
@@ -510,7 +510,7 @@ exports.getOutboxInboxTasksQuery = (userId) => {
                 if: {
                   $and: [
                     { $lt: ["$dueDate", new Date()] },
-                    { $ne: ["$status", "completed"] }
+                    { $ne: ["$isClosingStatus", true] }
                   ]
                 },
                 then: {
@@ -858,7 +858,7 @@ exports.getClearedInboxTasksQuery = (userId) => {
               $and: [
                 { $ne: ["$task.dueDate", null] },
                 { $lt: ["$task.dueDate", new Date()] },
-                { $ne: ["$task.status", "completed"] }
+                { $ne: ["$task.isClosingStatus", true] }
               ]
             },
             then: true,
@@ -874,7 +874,7 @@ exports.getClearedInboxTasksQuery = (userId) => {
                 if: {
                   $and: [
                     { $lt: ["$task.dueDate", new Date()] },
-                    { $ne: ["$task.status", "completed"] }
+                    { $ne: ["$task.isClosingStatus", true] }
                   ]
                 },
                 then: {
