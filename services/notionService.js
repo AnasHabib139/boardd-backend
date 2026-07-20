@@ -289,17 +289,25 @@ exports.getFiles = (properties) => {
   return [];
 };
 
-// From a database schema object, return its status or select options as [{ name }].
+// From a database schema object, return its status or select options as
+// [{ name, isCompleted }]. For a real "status" property, isCompleted is
+// resolved from Notion's built-in "Complete" group via option_ids — select
+// properties have no group concept, so isCompleted is always false for them.
 exports.getDatabaseStatusOptions = (database) => {
   const props = (database && database.properties) || {};
   let selectFallback = null;
   for (const key of Object.keys(props)) {
     const prop = props[key];
     if (prop.type === "status" && prop.status && Array.isArray(prop.status.options)) {
-      return prop.status.options.map((o) => ({ name: o.name }));
+      const groups = Array.isArray(prop.status.groups) ? prop.status.groups : [];
+      const completeGroup = groups.find((g) => (g.name || "").toLowerCase() === "complete");
+      const completeOptionIds = new Set(
+        completeGroup && Array.isArray(completeGroup.option_ids) ? completeGroup.option_ids : []
+      );
+      return prop.status.options.map((o) => ({ name: o.name, isCompleted: completeOptionIds.has(o.id) }));
     }
     if (prop.type === "select" && prop.select && Array.isArray(prop.select.options) && selectFallback === null) {
-      selectFallback = prop.select.options.map((o) => ({ name: o.name }));
+      selectFallback = prop.select.options.map((o) => ({ name: o.name, isCompleted: false }));
     }
   }
   return selectFallback || [];

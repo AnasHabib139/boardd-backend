@@ -82,6 +82,9 @@ const importSingleProject = async ({
   const seenSlugs = new Set();
   const sectionGidToStatusKey = {};
 
+  // isCompletedStatus intentionally omitted (stays schema default false) — Asana
+  // Sections have no done/closed field in the API at all (verified against Asana's
+  // OpenAPI schema). See docs/superpowers/specs/2026-07-19-import-closing-status-decisions.md.
   let statusDocs = sections.map((s, i) => {
     const slug = ensureUniqueSlug(slugify(s.name), seenSlugs);
     sectionGidToStatusKey[s.gid] = slug;

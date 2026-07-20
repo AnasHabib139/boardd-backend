@@ -125,11 +125,12 @@ const importSingleTeam = async ({
     const slug = ensureUniqueSlug(slugify(s.name), seenSlugs);
     nameToStatusKey[s.name.toLowerCase()] = slug;
     return {
-      statusKey:  slug,
-      statusName: s.name,
-      color:      stateColor(s),
-      order:      i + 1,
-      isSystem:   false,
+      statusKey:         slug,
+      statusName:        s.name,
+      color:             stateColor(s),
+      order:             i + 1,
+      isSystem:          false,
+      isCompletedStatus: s.type === "completed",
     };
   });
 

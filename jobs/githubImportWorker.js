@@ -37,8 +37,8 @@ const ensureUniqueSlugForOption = (name, seen) => {
 
 // Fixed 2-status board — GitHub Issues have no custom workflow states.
 const GITHUB_STATUSES = [
-  { statusKey: "open",   statusName: "Open",   color: "#10B981", order: 1, isSystem: false },
-  { statusKey: "closed", statusName: "Closed", color: "#6B7280", order: 2, isSystem: false },
+  { statusKey: "open",   statusName: "Open",   color: "#10B981", order: 1, isSystem: false, isCompletedStatus: false },
+  { statusKey: "closed", statusName: "Closed", color: "#6B7280", order: 2, isSystem: false, isCompletedStatus: true },
 ];
 
 // GitHub ProjectV2 single-select option color enum → hex.
@@ -210,6 +210,10 @@ const importSingleProject = async ({
   // instead of colliding with the synthetic "No Status" bucket added below.
   const seenSlugs  = new Set([NO_STATUS_KEY]);
   const nameToStatusKey = {};
+  // isCompletedStatus intentionally omitted below (stays schema default false) —
+  // GitHub Projects v2's ProjectV2SingleSelectFieldOption has no done/completed
+  // field (verified against GitHub's public GraphQL schema). See
+  // docs/superpowers/specs/2026-07-19-import-closing-status-decisions.md.
   let statusDocs = [];
 
   if (statusField) {

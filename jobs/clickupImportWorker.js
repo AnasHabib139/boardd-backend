@@ -92,7 +92,14 @@ const importSingleList = async ({ token, list, channel, tab, userId, companyId, 
   const statusDocs = sortedStatuses.map((s, index) => {
     const slug = ensureUniqueSlug(slugify(s.status), seenSlugs);
     statusKeyMap[s.status] = slug;
-    return { statusKey: slug, statusName: s.status, color: s.color || assignColor(index), order: index + 1, isSystem: false };
+    return {
+      statusKey:         slug,
+      statusName:        s.status,
+      color:             s.color || assignColor(index),
+      order:             index + 1,
+      isSystem:          false,
+      isCompletedStatus: s.type === "closed",
+    };
   });
   if (statusDocs.length === 0) {
     statusDocs.push({ statusKey: "todo", statusName: "To Do", color: "#6C63FF", order: 1, isSystem: false });

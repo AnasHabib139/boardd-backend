@@ -75,6 +75,9 @@ const importSingleBoard = async ({
   const seenSlugs = new Set();
   const groupIdToStatusKey = {};
 
+  // isCompletedStatus intentionally omitted (stays schema default false) — Monday's
+  // real "is_done" signal lives on Status column labels, not on the Groups we map
+  // here (two independent axes). See docs/superpowers/specs/2026-07-19-import-closing-status-decisions.md.
   let statusDocs = groups.map((g, i) => {
     const slug = ensureUniqueSlug(slugify(g.title), seenSlugs);
     groupIdToStatusKey[g.id] = slug;

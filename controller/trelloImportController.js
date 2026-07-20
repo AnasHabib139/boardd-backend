@@ -61,6 +61,9 @@ const importSingleBoard = async ({ token, boardId, channel, tab, userId, user })
   const sortedLists = [...lists].sort((a, b) => a.pos - b.pos);
   const seenSlugs = new Set();
   const listStatusMap = {};
+  // isCompletedStatus intentionally omitted (stays schema default false) — Trello's
+  // API has no "done" concept on a list (list.closed is archived/hidden, unrelated
+  // to workflow). See docs/superpowers/specs/2026-07-19-import-closing-status-decisions.md.
   const statusDocs = sortedLists.map((list, index) => {
     const slug = ensureUniqueSlug(slugify(list.name), seenSlugs);
     listStatusMap[list.id] = slug;

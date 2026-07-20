@@ -106,7 +106,14 @@ const importSingleProject = async ({
   let statusDocs = statuses.map((s, i) => {
     const slug = ensureUniqueSlug(slugify(s.name), seenSlugs);
     nameToStatusKey[s.name.toLowerCase()] = slug;
-    return { statusKey: slug, statusName: s.name, color: assignColor(i), order: i + 1, isSystem: false };
+    return {
+      statusKey:         slug,
+      statusName:        s.name,
+      color:             assignColor(i),
+      order:             i + 1,
+      isSystem:          false,
+      isCompletedStatus: s.categoryKey === "done",
+    };
   });
 
   if (statusDocs.length === 0) {
