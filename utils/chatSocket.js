@@ -804,6 +804,7 @@ const processChatReactionAdd = async (socket, data, io) => {
               data: {
                 conversationId: message.conversationId.toString(),
                 messageId: message._id.toString(),
+                channelId: conversation.channelId ? conversation.channelId.toString() : null,
                 type: "CHAT_REACTION",
               },
             }, conversation.channelId || null).catch(() => {});
@@ -1021,7 +1022,7 @@ const handleMentionNotifications = async (
               body: notifPayload.messagePreview,
               icon: "/main-logo.svg",
               url: await getNotificationUrl(conversation, author._id, message._id),
-              data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), type: "CHAT_MENTION" },
+              data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), channelId: conversation.channelId ? conversation.channelId.toString() : null, type: "CHAT_MENTION" },
             }, null).catch(() => {});
           }
 
@@ -1112,7 +1113,7 @@ const handleMentionNotifications = async (
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
             url: await getNotificationUrl(conversation, author._id, message._id),
-            data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), type: "CHAT_MENTION" },
+            data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), channelId: conversation.channelId ? conversation.channelId.toString() : null, type: "CHAT_MENTION" },
           }).catch(() => {});
         }
 
@@ -1193,7 +1194,7 @@ const handleMentionNotifications = async (
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
             url: await getNotificationUrl(conversation, author._id, message._id),
-            data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), type: "CHAT_MENTION" },
+            data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), channelId: conversation.channelId ? conversation.channelId.toString() : null, type: "CHAT_MENTION" },
           }, null).catch(() => {});
         }
 
@@ -1336,7 +1337,7 @@ const notifyDMParticipants = async (
             body: notifPayload.messagePreview,
             icon: "/main-logo.svg",
             url: await getNotificationUrl(conversation, author._id, message._id),
-            data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), type: "CHAT_MESSAGE" },
+            data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), channelId: conversation.channelId ? conversation.channelId.toString() : null, type: "CHAT_MESSAGE" },
           }).catch(() => {});
         }
       }
@@ -1556,7 +1557,7 @@ const notifyThreadParticipants = async (
           body: notifPayload.messagePreview,
           icon: "/main-logo.svg",
           url: await getNotificationUrl(conversation, author._id, message._id),
-          data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), type: "CHAT_THREAD_REPLY" },
+          data: { messageId: message._id.toString(), conversationId: conversation._id.toString(), channelId: conversation.channelId ? conversation.channelId.toString() : null, type: "CHAT_THREAD_REPLY" },
         }, conversation.channelId || null).catch(() => {});
       }
 

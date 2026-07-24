@@ -140,7 +140,7 @@ async function sendMentionNotifications(userMentions, task, comment, author, con
         body: comment.contentText.substring(0, 100),
         icon: "/main-logo.svg",
         url: `/dashboard?task=${task._id}`,
-        data: { taskId: task._id.toString(), commentId: comment._id.toString(), type: "COMMENT_MENTION" },
+        data: { taskId: task._id.toString(), commentId: comment._id.toString(), channelId: task.channelId ? task.channelId.toString() : null, type: "COMMENT_MENTION" },
       }, task.channelId || null).catch(() => {});
     } catch (err) {
       console.error(`Error sending mention notification to user ${mentionedUserId}:`, err);
@@ -244,7 +244,7 @@ async function sendReplyNotifications({ rootComment, reply, task, author, contex
           body: preview,
           icon: "/main-logo.svg",
           url: `/dashboard?task=${task._id}`,
-          data: { taskId: task._id.toString(), commentId: reply._id.toString(), type: "TASK_COMMENT_REPLY" },
+          data: { taskId: task._id.toString(), commentId: reply._id.toString(), channelId: task.channelId ? task.channelId.toString() : null, type: "TASK_COMMENT_REPLY" },
         }, task.channelId || null).catch(() => {});
       }
     } catch (err) {
@@ -380,7 +380,7 @@ exports.createTaskComment = async (req, res, next) => {
           body: `${userName}: ${populatedComment.contentText.substring(0, 80)}`,
           icon: "/main-logo.svg",
           url: `/dashboard?task=${task._id}`,
-          data: { taskId: task._id.toString(), commentId: comment._id.toString(), type: "TASK_COMMENT" },
+          data: { taskId: task._id.toString(), commentId: comment._id.toString(), channelId: task.channelId ? task.channelId.toString() : null, type: "TASK_COMMENT" },
         }, task.channelId || null).catch(() => {});
       }
     } else {
@@ -872,7 +872,7 @@ exports.toggleCommentReaction = async (req, res, next) => {
             body: (comment.contentText || "").substring(0, 80) || "Tap to view the comment",
             icon: "/main-logo.svg",
             url: `/dashboard?task=${task._id}`,
-            data: { taskId: task._id.toString(), commentId: comment._id.toString(), type: "TASK_COMMENT_REACTION" },
+            data: { taskId: task._id.toString(), commentId: comment._id.toString(), channelId: task.channelId ? task.channelId.toString() : null, type: "TASK_COMMENT_REACTION" },
           }, task.channelId || null).catch(() => {});
         }
       } catch (notificationError) {

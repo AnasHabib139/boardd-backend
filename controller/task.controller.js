@@ -449,8 +449,8 @@ exports.createTask = async (req, res, next) => {
               body: "This task is due today.",
               icon: "/main-logo.svg",
               url: `/dashboard?task=${task._id}`,
-              data: { taskId: task._id.toString(), type: "DUE_REMINDER" },
-            }).catch(() => {});
+              data: { taskId: task._id.toString(), channelId: task.channelId ? task.channelId.toString() : null, type: "DUE_REMINDER" },
+            }, task.channelId || null).catch(() => {});
           }
         }
       }
