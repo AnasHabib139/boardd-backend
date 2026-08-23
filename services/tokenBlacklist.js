@@ -48,15 +48,39 @@ exports.blacklistUserTokens = async (userId) => {
 };
 
 /**
+ * Blacklist all active tokens for a company by setting a timestamp
+ * Any token issued before this timestamp will be rejected
+ * @param {string} companyId - Company ID
+ * @returns {Promise<boolean>}
+ */
+exports.blacklistCompanyTokens = async (companyId) => {
+  try {
+    const redis = getRedis();
+    const key = `company:blacklist:${companyId}`;
+    const timestamp = Date.now(); // Current timestamp in milliseconds
+
+    // Store company blacklist timestamp (no TTL - permanent until cleared)
+    await redis.set(key, timestamp);
+
+    console.log(`🚫 Blacklisted all tokens for company ${companyId} (timestamp: ${timestamp})`);
+    return true;
+  } catch (error) {
+    console.error("❌ Failed to blacklist company tokens:", error.message);
+    return false;
+  }
+};
+
+/**
  * Check if a token is blacklisted
  * Checks both specific token blacklist AND user-level blacklist
  * @param {string} fullToken - Full JWT access token
  * @param {string} jti - JWT ID from token payload
  * @param {string} userId - User ID
  * @param {number} tokenIssuedAt - JWT 'iat' claim (issued at timestamp in seconds)
+ * @param {string} companyId - Company ID
  * @returns {Promise<boolean>}
  */
-exports.isTokenBlacklisted = async (fullToken, jti, userId, tokenIssuedAt) => {
+exports.isTokenBlacklisted = async (fullToken, jti, userId, tokenIssuedAt, companyId) => {
   try {
     const redis = getRedis();
 
@@ -91,6 +115,30 @@ exports.isTokenBlacklisted = async (fullToken, jti, userId, tokenIssuedAt) => {
       if (tokenTimestamp < blacklistTimestamp) {
         console.log(
           `🚫 Token rejected: Issued before user blacklist (token: ${new Date(
+            tokenTimestamp
+          ).toISOString()}, blacklist: ${new Date(blacklistTimestamp).toISOString()})`
+        );
+        return true;
+      }
+    }
+
+    // Check 3: Is company blacklisted AND token issued before blacklist timestamp?
+    // Skip entirely when no companyId is given (e.g. super admin tokens aren't
+    // scoped to a company) — avoids an unnecessary redis GET for `undefined`.
+    if (!companyId) {
+      return false;
+    }
+
+    const companyBlacklistKey = `company:blacklist:${companyId}`;
+    const companyBlacklistTime = await redis.get(companyBlacklistKey);
+
+    if (companyBlacklistTime) {
+      const blacklistTimestamp = parseInt(companyBlacklistTime);
+      const tokenTimestamp = tokenIssuedAt * 1000; // Convert iat (seconds) to milliseconds
+
+      if (tokenTimestamp < blacklistTimestamp) {
+        console.log(
+          `🚫 Token rejected: Issued before company blacklist (token: ${new Date(
             tokenTimestamp
           ).toISOString()}, blacklist: ${new Date(blacklistTimestamp).toISOString()})`
         );

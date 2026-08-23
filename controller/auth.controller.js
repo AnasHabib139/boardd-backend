@@ -14,6 +14,7 @@ const {
   updateUser,
   getActiveRefreshTokens,
 } = require("../models/userModel");
+const { findCompany } = require("../models/companyModel");
 
 // POST /auth/refresh-token
 exports.refreshToken = async (req, res, next) => {
@@ -49,6 +50,20 @@ exports.refreshToken = async (req, res, next) => {
         statusCode: STATUS_CODES.UNAUTHORIZED,
         message: "Refresh token not found or inactive",
       });
+    }
+
+    // Reject refresh if the user's company has been disabled
+    if (user.companyId) {
+      const company = await findCompany({ _id: user.companyId })
+        .select("isActive")
+        .lean();
+
+      if (!company || !company.isActive) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "Your company account has been disabled, please contact support",
+        });
+      }
     }
 
     // Generate new access token with new JTI

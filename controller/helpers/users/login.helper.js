@@ -11,7 +11,20 @@ const {
   addRefreshToken,
 } = require("../../../models/userModel");
 const { hashPassword, comparePassword } = require("./signup.helper");
+const { findCompany } = require("../../../models/companyModel");
 const { extractDeviceInfo } = require("../../../utils/deviceDetection");
+
+// Helper to reject login/signup for a disabled company
+const rejectIfCompanyDisabled = (company, next) => {
+  if (!company || !company.isActive) {
+    next({
+      statusCode: STATUS_CODES.FORBIDDEN,
+      message: "Your company account has been disabled, please contact support",
+    });
+    return true;
+  }
+  return false;
+};
 
 // Helper function to create and store refresh token
 const createAndStoreRefreshToken = async (user, req) => {
@@ -100,6 +113,9 @@ exports.handleInviteSignup = async (
   next
 ) => {
   try {
+    // Reject if company has been disabled
+    if (rejectIfCompanyDisabled(company, next)) return;
+
     // Check if user with this email already exists
     const existingUser = await findUser({ email });
     if (existingUser) {
@@ -167,6 +183,9 @@ exports.handlePublicSignup = async (
   next
 ) => {
   try {
+    // Reject if company has been disabled
+    if (rejectIfCompanyDisabled(company, next)) return;
+
     // Create user data
     const userData = {
       name,
@@ -202,6 +221,9 @@ exports.handleDomainSignup = async (
   next
 ) => {
   try {
+    // Reject if company has been disabled
+    if (rejectIfCompanyDisabled(company, next)) return;
+
     // Assign name from email first part if not provided
     const userName = name || email?.split("@")?.[0] || "User";
 
@@ -239,6 +261,16 @@ exports.handleRegularLogin = async (
   next
 ) => {
   try {
+    // Resolve the company from the user's own companyId (not the domain-derived
+    // `company` param, which is null for consumer domains / guests and may not
+    // match the user's actual company) and reject if it has been disabled.
+    if (user?.companyId) {
+      const userCompany = await findCompany({ _id: user.companyId })
+        .select("isActive")
+        .lean();
+      if (rejectIfCompanyDisabled(userCompany, next)) return;
+    }
+
     // Check if user account is active
     if (!user?.isActive) {
       return next({
@@ -307,6 +339,9 @@ exports.handleGuestSignup = async (
   next
 ) => {
   try {
+    // Reject if company has been disabled
+    if (rejectIfCompanyDisabled(company, next)) return;
+
     // Check if user with this email already exists
     const existingUser = await findUser({ email });
     if (existingUser) {

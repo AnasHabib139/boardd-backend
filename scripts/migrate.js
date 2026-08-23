@@ -11,6 +11,7 @@ require("../models/clientModel");
 require("../models/channelTabsModel");
 require("../models/invoiceModel");
 require("../models/userMutePreferencesModel");
+require("../models/superAdminModel");
 
 const commands = {
   // Run pending migrations

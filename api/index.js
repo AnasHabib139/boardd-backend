@@ -20,6 +20,7 @@ const FormApi = require("./formApi");
 const WorkProgressApi = require("./workProgressApi");
 const TeamCardApi = require("./teamCardApi");
 const AdminApi = require("./adminApi");
+const SuperAdminApi = require("./superAdminApi");
 const HomeApi = require("./homeApi");
 const ClockupApi = require("./clockupApi");
 const InboxApi = require("./inboxApi");
@@ -76,6 +77,7 @@ class API {
     this.routeGroups.push(new WorkProgressApi());
     this.routeGroups.push(new TeamCardApi());
     this.routeGroups.push(new AdminApi());
+    this.routeGroups.push(new SuperAdminApi());
     this.routeGroups.push(new HomeApi());
     this.routeGroups.push(new ClockupApi());
     this.routeGroups.push(new InboxApi());
