@@ -65,7 +65,9 @@ module.exports = (roles) => {
           });
         }
 
-        const company = await findCompany({ _id: user.companyId });
+        const company = await findCompany({ _id: user.companyId })
+          .select("isActive")
+          .lean();
 
         if (!company || !company.isActive) {
           return next({

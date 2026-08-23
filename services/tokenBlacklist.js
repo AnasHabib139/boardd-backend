@@ -123,6 +123,12 @@ exports.isTokenBlacklisted = async (fullToken, jti, userId, tokenIssuedAt, compa
     }
 
     // Check 3: Is company blacklisted AND token issued before blacklist timestamp?
+    // Skip entirely when no companyId is given (e.g. super admin tokens aren't
+    // scoped to a company) — avoids an unnecessary redis GET for `undefined`.
+    if (!companyId) {
+      return false;
+    }
+
     const companyBlacklistKey = `company:blacklist:${companyId}`;
     const companyBlacklistTime = await redis.get(companyBlacklistKey);
 

@@ -60,7 +60,9 @@ exports.handleGoogleLogin = async (user, req, res, next) => {
 
     // Check if the user's company has been disabled
     if (user.companyId) {
-      const company = await findCompany({ _id: user.companyId });
+      const company = await findCompany({ _id: user.companyId })
+        .select("isActive")
+        .lean();
       if (!company || !company.isActive) {
         return next({
           statusCode: STATUS_CODES.FORBIDDEN,

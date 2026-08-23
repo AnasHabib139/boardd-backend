@@ -36,7 +36,8 @@ module.exports = () => {
           accessToken,    // Full token (for logout current device)
           decoded.jti,    // JTI (for revoke specific device)
           decoded.id,     // User ID
-          decoded.iat     // Token issued at
+          decoded.iat,    // Token issued at
+          null            // Super admins aren't scoped to a company
         );
 
         if (blacklisted) {

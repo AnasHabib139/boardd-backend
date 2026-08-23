@@ -265,7 +265,9 @@ exports.handleRegularLogin = async (
     // `company` param, which is null for consumer domains / guests and may not
     // match the user's actual company) and reject if it has been disabled.
     if (user?.companyId) {
-      const userCompany = await findCompany({ _id: user.companyId });
+      const userCompany = await findCompany({ _id: user.companyId })
+        .select("isActive")
+        .lean();
       if (rejectIfCompanyDisabled(userCompany, next)) return;
     }
 
