@@ -1,6 +1,7 @@
 "use strict";
 
 const Joi = require("joi");
+const { helpers } = require("./authValidation");
 
 // Login validation
 const superAdminLoginValidation = Joi.object({
@@ -36,10 +37,27 @@ const createSuperAdminValidation = Joi.object({
   }),
 });
 
+// Update company status validation (params)
+const updateCompanyStatusParamsValidation = Joi.object({
+  companyId: helpers.objectIdValidation.required().messages({
+    "any.required": "Company ID is required",
+  }),
+});
+
+// Update company status validation (body)
+const updateCompanyStatusBodyValidation = Joi.object({
+  isActive: Joi.boolean().required().messages({
+    "any.required": "isActive is required",
+    "boolean.base": "isActive must be a boolean",
+  }),
+  reason: Joi.string().optional().allow("", null),
+});
+
 // Validation middleware function
 const validateRequest = (schema, source = "body") => {
   return (req, res, next) => {
-    const dataToValidate = source === "query" ? req.query : req.body;
+    const dataToValidate =
+      source === "params" ? req.params : source === "query" ? req.query : req.body;
 
     const { error, value } = schema.validate(dataToValidate, {
       abortEarly: false,
@@ -66,6 +84,8 @@ const validateRequest = (schema, source = "body") => {
       const q = req.query;
       Object.keys(q).forEach((k) => { if (!(k in value)) delete q[k]; });
       Object.assign(q, value);
+    } else if (source === "params") {
+      req.params = value;
     } else {
       req.body = value;
     }
@@ -74,13 +94,28 @@ const validateRequest = (schema, source = "body") => {
   };
 };
 
+const validateUpdateCompanyStatusParams = validateRequest(
+  updateCompanyStatusParamsValidation,
+  "params"
+);
+const validateUpdateCompanyStatusBody = validateRequest(
+  updateCompanyStatusBodyValidation,
+  "body"
+);
+
 module.exports = {
   validateSuperAdminLogin: validateRequest(superAdminLoginValidation),
   validateCreateSuperAdmin: validateRequest(createSuperAdminValidation),
+  validateUpdateCompanyStatus: [
+    validateUpdateCompanyStatusParams,
+    validateUpdateCompanyStatusBody,
+  ],
 
   // Export schemas for testing or custom usage
   schemas: {
     superAdminLoginValidation,
     createSuperAdminValidation,
+    updateCompanyStatusParamsValidation,
+    updateCompanyStatusBodyValidation,
   },
 };

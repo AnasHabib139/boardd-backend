@@ -12,7 +12,15 @@ const {
   compareSuperAdminPassword,
   generateSuperAdminToken,
 } = require("./helpers/superAdmin/auth.helper");
-const { blacklistToken } = require("../services/tokenBlacklist");
+const {
+  blacklistToken,
+  blacklistCompanyTokens,
+} = require("../services/tokenBlacklist");
+const { findCompany, updateCompany } = require("../models/companyModel");
+const {
+  createSuperAdminAuditLog,
+  getCompanyAuditLog,
+} = require("../models/superAdminAuditLogModel");
 
 // POST /super-admin/login
 exports.loginSuperAdmin = async (req, res, next) => {
@@ -101,6 +109,76 @@ exports.createSuperAdmin = async (req, res, next) => {
       "Super admin created successfully",
       res,
       STATUS_CODES.CREATED
+    );
+  } catch (error) {
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+// PUT /super-admin/companies/:companyId/status
+exports.updateCompanyStatus = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+    const { isActive, reason } = req.body;
+
+    const company = await findCompany({ _id: companyId });
+
+    if (!company) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Company not found",
+      });
+    }
+
+    await updateCompany({ _id: companyId }, { isActive });
+
+    if (!isActive) {
+      await blacklistCompanyTokens(companyId);
+    }
+
+    await createSuperAdminAuditLog({
+      superAdminId: req.superAdmin.id,
+      action: isActive ? "company_enabled" : "company_disabled",
+      companyId,
+      reason,
+    });
+
+    const updatedCompany = await findCompany({ _id: companyId });
+
+    return generateResponse(
+      updatedCompany,
+      isActive ? "Company enabled successfully" : "Company disabled successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+// GET /super-admin/companies/:companyId/audit-log
+exports.getCompanyAuditLogHandler = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+    const { page, limit } = req.query;
+
+    const auditLog = await getCompanyAuditLog({
+      companyId,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 10,
+    });
+
+    return generateResponse(
+      auditLog,
+      "Audit log fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
     );
   } catch (error) {
     return next({
