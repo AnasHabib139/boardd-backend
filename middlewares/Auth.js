@@ -23,27 +23,6 @@ module.exports = (roles) => {
         });
       }
 
-      // Check if token is blacklisted (specific token or user-level)
-      try {
-        const blacklisted = await isTokenBlacklisted(
-          accessToken,    // Full token (for logout current device)
-          decoded.jti,    // JTI (for revoke specific device)
-          decoded.id,     // User ID
-          decoded.iat     // Token issued at
-        );
-
-        if (blacklisted) {
-          return next({
-            statusCode: STATUS_CODES.UNAUTHORIZED,
-            message: "Token has been revoked. Please log in again.",
-          });
-        }
-      } catch (redisError) {
-        // Log error but continue (fail-open for availability)
-        console.error("Redis blacklist check failed:", redisError.message);
-        // You can change this to fail-closed by returning error here
-      }
-
       req.user = { ...decoded };
 
       try {
@@ -54,6 +33,28 @@ module.exports = (roles) => {
             statusCode: STATUS_CODES.UNAUTHORIZED,
             message: "Invalid token!",
           });
+        }
+
+        // Check if token is blacklisted (specific token, user-level, or company-level)
+        try {
+          const blacklisted = await isTokenBlacklisted(
+            accessToken,      // Full token (for logout current device)
+            decoded.jti,      // JTI (for revoke specific device)
+            decoded.id,       // User ID
+            decoded.iat,      // Token issued at
+            user.companyId    // Company ID
+          );
+
+          if (blacklisted) {
+            return next({
+              statusCode: STATUS_CODES.UNAUTHORIZED,
+              message: "Token has been revoked. Please log in again.",
+            });
+          }
+        } catch (redisError) {
+          // Log error but continue (fail-open for availability)
+          console.error("Redis blacklist check failed:", redisError.message);
+          // You can change this to fail-closed by returning error here
         }
 
         if (!user.isActive) {
