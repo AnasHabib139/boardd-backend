@@ -103,6 +103,18 @@ const validateUpdateCompanyStatusBody = validateRequest(
   "body"
 );
 
+// Company ID params validation (shared for detail / users routes)
+const companyIdParamsValidation = Joi.object({
+  companyId: helpers.objectIdValidation.required().messages({
+    "any.required": "Company ID is required",
+  }),
+});
+
+const validateCompanyIdParams = validateRequest(
+  companyIdParamsValidation,
+  "params"
+);
+
 module.exports = {
   validateSuperAdminLogin: validateRequest(superAdminLoginValidation),
   validateCreateSuperAdmin: validateRequest(createSuperAdminValidation),
@@ -110,6 +122,7 @@ module.exports = {
     validateUpdateCompanyStatusParams,
     validateUpdateCompanyStatusBody,
   ],
+  validateCompanyIdParams,
 
   // Export schemas for testing or custom usage
   schemas: {
@@ -117,5 +130,6 @@ module.exports = {
     createSuperAdminValidation,
     updateCompanyStatusParamsValidation,
     updateCompanyStatusBodyValidation,
+    companyIdParamsValidation,
   },
 };

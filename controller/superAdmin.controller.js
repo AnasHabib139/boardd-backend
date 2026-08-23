@@ -16,11 +16,22 @@ const {
   blacklistToken,
   blacklistCompanyTokens,
 } = require("../services/tokenBlacklist");
-const { findCompany, updateCompany } = require("../models/companyModel");
+const {
+  findCompany,
+  updateCompany,
+  getAllCompanies: getAllCompaniesModel,
+} = require("../models/companyModel");
 const {
   createSuperAdminAuditLog,
   getCompanyAuditLog,
 } = require("../models/superAdminAuditLogModel");
+const {
+  getAllCompaniesQuery,
+  getCompanyDetailQuery,
+} = require("./queries/superAdminQueries");
+const { getCompanyUsersAdminQuery } = require("./queries/adminQueries");
+const { getAllUsers } = require("../models/userModel");
+const { model } = require("mongoose");
 
 // POST /super-admin/login
 exports.loginSuperAdmin = async (req, res, next) => {
@@ -177,6 +188,94 @@ exports.getCompanyAuditLogHandler = async (req, res, next) => {
     return generateResponse(
       auditLog,
       "Audit log fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+// GET /super-admin/companies
+exports.getAllCompanies = async (req, res, next) => {
+  try {
+    const { search, page, limit } = req.query;
+
+    const aggregationQuery = getAllCompaniesQuery(search);
+
+    const result = await getAllCompaniesModel({
+      query: aggregationQuery,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 10,
+      responseKey: "companies",
+    });
+
+    return generateResponse(
+      result,
+      "Companies fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+// GET /super-admin/companies/:companyId
+exports.getCompanyDetail = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+
+    const CompanyModel = model("Company");
+    const result = await CompanyModel.aggregate(
+      getCompanyDetailQuery(companyId)
+    );
+
+    if (!result || result.length === 0) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "Company not found",
+      });
+    }
+
+    return generateResponse(
+      result[0],
+      "Company details fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+// GET /super-admin/companies/:companyId/users
+exports.getCompanyUsers = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+    const { search, page, limit } = req.query;
+
+    const aggregationQuery = getCompanyUsersAdminQuery(companyId, search);
+
+    const result = await getAllUsers({
+      query: aggregationQuery,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 10,
+      responseKey: "users",
+    });
+
+    return generateResponse(
+      result,
+      "Company users fetched successfully",
       res,
       STATUS_CODES.SUCCESS
     );

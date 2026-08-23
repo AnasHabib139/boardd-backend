@@ -8,12 +8,16 @@ const {
   listSuperAdmins,
   updateCompanyStatus,
   getCompanyAuditLogHandler,
+  getAllCompanies,
+  getCompanyDetail,
+  getCompanyUsers,
 } = require("../controller/superAdmin.controller");
 const SuperAdminAuth = require("../middlewares/SuperAdminAuth");
 const {
   validateSuperAdminLogin,
   validateCreateSuperAdmin,
   validateUpdateCompanyStatus,
+  validateCompanyIdParams,
 } = require("../validation/superAdminValidation");
 
 class SuperAdminAPI {
@@ -41,6 +45,25 @@ class SuperAdminAPI {
 
     // List admins
     router.get("/admins", SuperAdminAuth(), listSuperAdmins);
+
+    // List companies
+    router.get("/companies", SuperAdminAuth(), getAllCompanies);
+
+    // Get company detail
+    router.get(
+      "/companies/:companyId",
+      SuperAdminAuth(),
+      validateCompanyIdParams,
+      getCompanyDetail
+    );
+
+    // Get company users
+    router.get(
+      "/companies/:companyId/users",
+      SuperAdminAuth(),
+      validateCompanyIdParams,
+      getCompanyUsers
+    );
 
     // Update company status (enable/disable)
     router.put(
