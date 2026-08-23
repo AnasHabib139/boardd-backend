@@ -124,6 +124,12 @@ exports.createSuperAdmin = async (req, res, next) => {
       STATUS_CODES.CREATED
     );
   } catch (error) {
+    if (error?.code === 11000) {
+      return next({
+        statusCode: STATUS_CODES.CONFLICT,
+        message: "A super admin with this email already exists",
+      });
+    }
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,
@@ -159,10 +165,16 @@ exports.updateCompanyStatus = async (req, res, next) => {
       reason,
     });
 
-    const updatedCompany = await findCompany({ _id: companyId });
+    const updatedCompany = await findCompany({ _id: companyId })
+      .select("_id name isActive")
+      .lean();
 
     return generateResponse(
-      updatedCompany,
+      {
+        _id: updatedCompany._id,
+        name: updatedCompany.name,
+        isActive: updatedCompany.isActive,
+      },
       isActive ? "Company enabled successfully" : "Company disabled successfully",
       res,
       STATUS_CODES.SUCCESS

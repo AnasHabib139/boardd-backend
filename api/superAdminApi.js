@@ -82,6 +82,7 @@ class SuperAdminAPI {
     router.get(
       "/companies/:companyId/audit-log",
       SuperAdminAuth(),
+      validateCompanyIdParams,
       getCompanyAuditLogHandler
     );
 
