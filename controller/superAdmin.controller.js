@@ -348,6 +348,91 @@ exports.getPlatformUserDetail = async (req, res, next) => {
   }
 };
 
+// GET /super-admin/stats/overview
+exports.getStatsOverview = async (req, res, next) => {
+  try {
+    const CompanyModel = model("Company");
+    const UserModel = model("User");
+
+    const [totalCompanies, inactiveCompanies, totalUsers, inactiveUsers] =
+      await Promise.all([
+        CompanyModel.countDocuments(),
+        CompanyModel.countDocuments({ isActive: false }),
+        UserModel.countDocuments(),
+        UserModel.countDocuments({ isActive: false }),
+      ]);
+
+    return generateResponse(
+      {
+        totalCompanies,
+        activeCompanies: totalCompanies - inactiveCompanies,
+        inactiveCompanies,
+        totalUsers,
+        activeUsers: totalUsers - inactiveUsers,
+        inactiveUsers,
+      },
+      "Stats overview fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+// GET /super-admin/stats/growth
+exports.getStatsGrowth = async (req, res, next) => {
+  try {
+    const { from, to } = req.query;
+
+    let toDate = new Date(to);
+    if (isNaN(toDate.getTime())) {
+      toDate = new Date();
+    }
+
+    let fromDate = new Date(from);
+    if (isNaN(fromDate.getTime())) {
+      fromDate = new Date(toDate);
+      fromDate.setDate(fromDate.getDate() - 30);
+    }
+
+    const CompanyModel = model("Company");
+    const UserModel = model("User");
+
+    const growthPipeline = [
+      { $match: { createdAt: { $gte: fromDate, $lte: toDate } } },
+      {
+        $group: {
+          _id: { $dateTrunc: { date: "$createdAt", unit: "day" } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+      { $project: { _id: 0, date: "$_id", count: 1 } },
+    ];
+
+    const [companiesPerDay, usersPerDay] = await Promise.all([
+      CompanyModel.aggregate(growthPipeline),
+      UserModel.aggregate(growthPipeline),
+    ]);
+
+    return generateResponse(
+      { companiesPerDay, usersPerDay },
+      "Stats growth fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
 // GET /super-admin/admins
 exports.listSuperAdmins = async (req, res, next) => {
   try {

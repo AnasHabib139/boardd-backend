@@ -13,6 +13,8 @@ const {
   getCompanyUsers,
   getAllPlatformUsers,
   getPlatformUserDetail,
+  getStatsOverview,
+  getStatsGrowth,
 } = require("../controller/superAdmin.controller");
 const SuperAdminAuth = require("../middlewares/SuperAdminAuth");
 const {
@@ -93,6 +95,12 @@ class SuperAdminAPI {
       validateUserIdParams,
       getPlatformUserDetail
     );
+
+    // Stats overview (counts)
+    router.get("/stats/overview", SuperAdminAuth(), getStatsOverview);
+
+    // Stats growth (day-bucketed over range)
+    router.get("/stats/growth", SuperAdminAuth(), getStatsGrowth);
   }
 
   getRouter() {
