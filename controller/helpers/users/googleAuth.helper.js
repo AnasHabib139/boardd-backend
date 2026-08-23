@@ -13,7 +13,7 @@ const {
   addRefreshToken,
   updateUser,
 } = require("../../../models/userModel");
-const { createCompany } = require("../../../models/companyModel");
+const { createCompany, findCompany } = require("../../../models/companyModel");
 const { createManyInviteSlots, findAvailableInviteSlot, updateInviteSlot } = require("../../../models/inviteSlotModel");
 const { generateJoinToken, createInviteSlots } = require("./signup.helper");
 const { extractDeviceInfo } = require("../../../utils/deviceDetection");
@@ -56,6 +56,17 @@ exports.handleGoogleLogin = async (user, req, res, next) => {
         statusCode: STATUS_CODES.UNAUTHORIZED,
         message: "Account is inactive. Please wait for admin approval.",
       });
+    }
+
+    // Check if the user's company has been disabled
+    if (user.companyId) {
+      const company = await findCompany({ _id: user.companyId });
+      if (!company || !company.isActive) {
+        return next({
+          statusCode: STATUS_CODES.FORBIDDEN,
+          message: "Your company account has been disabled, please contact support",
+        });
+      }
     }
 
     // Check account expiry
@@ -192,6 +203,13 @@ exports.handleGoogleDomainSignup = async (
   next
 ) => {
   try {
+    if (!company || !company.isActive) {
+      return next({
+        statusCode: STATUS_CODES.FORBIDDEN,
+        message: "Your company account has been disabled, please contact support",
+      });
+    }
+
     const willBeActive = company.automaticSignups === true;
     let availableSlot = null;
 

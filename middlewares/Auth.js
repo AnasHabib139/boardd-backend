@@ -3,6 +3,7 @@
 const { verify } = require("jsonwebtoken");
 const { STATUS_CODES } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
+const { findCompany } = require("../models/companyModel");
 const { isTokenBlacklisted } = require("../services/tokenBlacklist");
 
 module.exports = (roles) => {
@@ -61,6 +62,15 @@ module.exports = (roles) => {
           return next({
             statusCode: STATUS_CODES.FORBIDDEN,
             message: "Your profile is inactive, please contact admin",
+          });
+        }
+
+        const company = await findCompany({ _id: user.companyId });
+
+        if (!company || !company.isActive) {
+          return next({
+            statusCode: STATUS_CODES.FORBIDDEN,
+            message: "Your company account has been disabled, please contact support",
           });
         }
 
