@@ -115,6 +115,15 @@ const validateCompanyIdParams = validateRequest(
   "params"
 );
 
+// User ID params validation (platform user detail route)
+const userIdParamsValidation = Joi.object({
+  userId: helpers.objectIdValidation.required().messages({
+    "any.required": "User ID is required",
+  }),
+});
+
+const validateUserIdParams = validateRequest(userIdParamsValidation, "params");
+
 module.exports = {
   validateSuperAdminLogin: validateRequest(superAdminLoginValidation),
   validateCreateSuperAdmin: validateRequest(createSuperAdminValidation),
@@ -123,6 +132,7 @@ module.exports = {
     validateUpdateCompanyStatusBody,
   ],
   validateCompanyIdParams,
+  validateUserIdParams,
 
   // Export schemas for testing or custom usage
   schemas: {
@@ -131,5 +141,6 @@ module.exports = {
     updateCompanyStatusParamsValidation,
     updateCompanyStatusBodyValidation,
     companyIdParamsValidation,
+    userIdParamsValidation,
   },
 };

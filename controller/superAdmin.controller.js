@@ -28,6 +28,8 @@ const {
 const {
   getAllCompaniesQuery,
   getCompanyDetailQuery,
+  getAllPlatformUsersQuery,
+  getPlatformUserDetailQuery,
 } = require("./queries/superAdminQueries");
 const { getCompanyUsersAdminQuery } = require("./queries/adminQueries");
 const { getAllUsers } = require("../models/userModel");
@@ -276,6 +278,65 @@ exports.getCompanyUsers = async (req, res, next) => {
     return generateResponse(
       result,
       "Company users fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+// GET /super-admin/users
+exports.getAllPlatformUsers = async (req, res, next) => {
+  try {
+    const { search, page, limit } = req.query;
+
+    const aggregationQuery = getAllPlatformUsersQuery(search);
+
+    const result = await getAllUsers({
+      query: aggregationQuery,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 10,
+      responseKey: "users",
+    });
+
+    return generateResponse(
+      result,
+      "Platform users fetched successfully",
+      res,
+      STATUS_CODES.SUCCESS
+    );
+  } catch (error) {
+    return next({
+      statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
+      message: error?.message,
+    });
+  }
+};
+
+// GET /super-admin/users/:userId
+exports.getPlatformUserDetail = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+
+    const UserModel = model("User");
+    const result = await UserModel.aggregate(
+      getPlatformUserDetailQuery(userId)
+    );
+
+    if (!result || result.length === 0) {
+      return next({
+        statusCode: STATUS_CODES.NOT_FOUND,
+        message: "User not found",
+      });
+    }
+
+    return generateResponse(
+      result[0],
+      "User details fetched successfully",
       res,
       STATUS_CODES.SUCCESS
     );

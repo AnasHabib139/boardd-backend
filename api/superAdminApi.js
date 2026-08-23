@@ -11,6 +11,8 @@ const {
   getAllCompanies,
   getCompanyDetail,
   getCompanyUsers,
+  getAllPlatformUsers,
+  getPlatformUserDetail,
 } = require("../controller/superAdmin.controller");
 const SuperAdminAuth = require("../middlewares/SuperAdminAuth");
 const {
@@ -18,6 +20,7 @@ const {
   validateCreateSuperAdmin,
   validateUpdateCompanyStatus,
   validateCompanyIdParams,
+  validateUserIdParams,
 } = require("../validation/superAdminValidation");
 
 class SuperAdminAPI {
@@ -78,6 +81,17 @@ class SuperAdminAPI {
       "/companies/:companyId/audit-log",
       SuperAdminAuth(),
       getCompanyAuditLogHandler
+    );
+
+    // List platform users (cross-company, no companyId filter)
+    router.get("/users", SuperAdminAuth(), getAllPlatformUsers);
+
+    // Get platform user detail
+    router.get(
+      "/users/:userId",
+      SuperAdminAuth(),
+      validateUserIdParams,
+      getPlatformUserDetail
     );
   }
 

@@ -141,3 +141,103 @@ exports.getCompanyDetailQuery = (companyId) => {
     },
   ];
 };
+
+/**
+ * Get all platform users query for super-admin dashboard (cross-company)
+ * No companyId filter — this is the whole point vs. getCompanyUsersAdminQuery.
+ * Includes optional search on name/email and a companyName lookup.
+ */
+exports.getAllPlatformUsersQuery = (search) => {
+  const matchStage = {};
+
+  if (search && search.trim() !== "") {
+    matchStage.$or = [
+      { name: { $regex: search.trim(), $options: "i" } },
+      { email: { $regex: search.trim(), $options: "i" } },
+    ];
+  }
+
+  return [
+    {
+      $match: matchStage,
+    },
+
+    {
+      $lookup: {
+        from: "companies",
+        localField: "companyId",
+        foreignField: "_id",
+        as: "companyLookup",
+        pipeline: [{ $project: { _id: 1, name: 1 } }],
+      },
+    },
+
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        email: 1,
+        role: 1,
+        isActive: 1,
+        lastLoginAt: 1,
+        createdAt: 1,
+        companyId: 1,
+        companyName: {
+          $arrayElemAt: ["$companyLookup.name", 0],
+        },
+      },
+    },
+  ];
+};
+
+/**
+ * Get single platform user detail query for super-admin dashboard
+ * No companyId filter — includes full company info (not just companyName)
+ */
+exports.getPlatformUserDetailQuery = (userId) => {
+  return [
+    {
+      $match: {
+        _id: Types.ObjectId.createFromHexString(userId),
+      },
+    },
+
+    {
+      $lookup: {
+        from: "companies",
+        localField: "companyId",
+        foreignField: "_id",
+        as: "companyLookup",
+        pipeline: [
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              domain: 1,
+              logo: 1,
+              isActive: 1,
+              createdAt: 1,
+              adminUser: 1,
+            },
+          },
+        ],
+      },
+    },
+
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        email: 1,
+        role: 1,
+        isActive: 1,
+        lastLoginAt: 1,
+        createdAt: 1,
+        companyId: 1,
+        company: {
+          $arrayElemAt: ["$companyLookup", 0],
+        },
+      },
+    },
+  ];
+};
