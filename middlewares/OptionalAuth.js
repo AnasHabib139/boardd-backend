@@ -57,13 +57,15 @@ module.exports = (roles = []) => {
       }
 
       // Check if the user's company has been disabled
-      const company = await findCompany({ _id: user.companyId })
-        .select("isActive")
-        .lean();
+      if (user.companyId) {
+        const company = await findCompany({ _id: user.companyId })
+          .select("isActive")
+          .lean();
 
-      if (!company || !company.isActive) {
-        req.user = null;
-        return next();
+        if (!company || !company.isActive) {
+          req.user = null;
+          return next();
+        }
       }
 
       // Set user in request
