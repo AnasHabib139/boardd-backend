@@ -94,6 +94,7 @@ const allowedOrigins = [
   "http://localhost:4000", // Alternative frontend port
   "https://boarddd-frontend-murex.vercel.app", // Production Vercel frontend
   "https://boarddd-frontend.vercel.app", // Production Vercel frontend
+  "https://boarddd-admin.vercel.app", // Production Vercel super admin panel
   "https://boarddd.ddns.net", // Production backend domain
   "https://www.boarddd.ddns.net", // Production with www
   // Add your actual frontend domain here
