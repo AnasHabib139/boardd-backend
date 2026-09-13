@@ -2,7 +2,6 @@
 
 const { Worker }          = require("bullmq");
 const { getBullRedis }    = require("../utils/redis");
-const { getIO }           = require("../utils/socket");
 const { updateImportJob } = require("../models/importJobModel");
 const { createProject, getNextProjectOrderIndex } = require("../models/projectModel");
 const { createManyTabTaskStatuses }          = require("../models/tabTaskStatusModel");
@@ -10,17 +9,11 @@ const { createTask, getNextOrderIndex }      = require("../models/taskModel");
 const { s3Uploadv3 }      = require("../utils/s3Upload");
 const github               = require("../services/githubService");
 const RateLimiter         = require("../utils/importRateLimiter");
+const { emitProgress } = require("./helpers/importWorkerShared");
 
 const BACKEND_URL = process.env.BACKEND_URL;
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
-
-const emitProgress = (userId, jobId, payload) => {
-  try {
-    const io = getIO();
-    if (io) io.to(`user:${userId}`).emit("import:progress", { jobId, ...payload });
-  } catch (_) {}
-};
 
 const slugifyOptionName = (name) =>
   name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
