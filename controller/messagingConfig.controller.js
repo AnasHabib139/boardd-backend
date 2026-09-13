@@ -23,6 +23,7 @@ const {
   whatsappTechProviderInitSchema,
   whatsappTechProviderRegisterSchema,
 } = require("../validation/messagingConfigValidation");
+const { findCompany } = require("../models/companyModel");
 
 // ==================== SMS ENDPOINTS ====================
 
@@ -468,10 +469,8 @@ exports.registerWhatsappSenderManual = async (req, res, next) => {
 exports.getWhatsappSenderStatus = async (req, res, next) => {
   try {
     const { companyId } = req;
-    const { model: mongooseModel } = require("mongoose");
-    const Company = mongooseModel("Company");
 
-    const company = await Company.findById(companyId).select("twilioConfig");
+    const company = await findCompany({ _id: companyId }).select("twilioConfig");
 
     if (!company) {
       return next({
@@ -950,10 +949,8 @@ exports.getInboundStatus = async (req, res, next) => {
 exports.getMessagingStatus = async (req, res, next) => {
   try {
     const { companyId } = req;
-    const { model: mongooseModel } = require("mongoose");
-    const Company = mongooseModel("Company");
 
-    const company = await Company.findById(companyId).select(
+    const company = await findCompany({ _id: companyId }).select(
       "twilioConfig emailConfig"
     );
 

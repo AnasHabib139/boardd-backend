@@ -3,7 +3,7 @@
 const { parseBody, generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
-const { getAllTasks, findTask, findManyTasks } = require("../models/taskModel");
+const { getAllTasks, findTask, findManyTasks, aggregateTasks } = require("../models/taskModel");
 const { bulkCreateTaskInboxEntries, findTaskInboxEntry, upsertTaskInboxEntry, findUserTaskInboxEntries, bulkMarkAllAsRead } = require("../models/taskInboxModel");
 const {
   getUserInboxTasksQuery,
@@ -127,12 +127,9 @@ exports.getInboxUnreadCount = async (req, res, next) => {
   try {
     const userId = req?.user?.id;
 
-    const { model } = require("mongoose");
-    const TaskModel = model("Task");
-
     const [importantResult, outboxResult] = await Promise.all([
-      TaskModel.aggregate(getImportantInboxUnreadCountQuery(userId)),
-      TaskModel.aggregate(getOutboxInboxUnreadCountQuery(userId)),
+      aggregateTasks(getImportantInboxUnreadCountQuery(userId)),
+      aggregateTasks(getOutboxInboxUnreadCountQuery(userId)),
     ]);
 
     const important = importantResult[0]?.count || 0;

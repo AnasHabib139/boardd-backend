@@ -261,3 +261,6 @@ exports.bulkMarkAllAsRead = async (userId, taskIds) => {
 };
 
 exports.TaskInbox = TaskInbox;
+
+exports.deleteManyTaskInboxEntriesByTask = (taskId) =>
+  TaskInbox.deleteMany({ taskId });

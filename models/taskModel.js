@@ -285,3 +285,5 @@ exports.moveTaskToChannel = async (
 
 // Aggregate tasks (for complex queries)
 exports.aggregateTasks = (pipeline) => TaskModel.aggregate(pipeline);
+
+exports.updateManyTasks = (query, update) => TaskModel.updateMany(query, update);

@@ -309,6 +309,12 @@ exports.findUser = (query) => UserModel.findOne(query);
 // find multiple users by query
 exports.findManyUsers = (query) => UserModel.find(query);
 
+exports.findManyUsersWithProjection = (query, projection) =>
+  UserModel.find(query, projection);
+
+exports.findManyUsersSorted = (query, projection, sort) =>
+  UserModel.find(query, projection).sort(sort);
+
 // update user
 exports.updateUser = (query, obj) =>
   UserModel.findOneAndUpdate(query, obj, { new: true });
@@ -327,6 +333,8 @@ exports.getAllUsers = async ({ query, page, limit, responseKey = "data" }) => {
 
 // aggregate users
 exports.aggregateUsers = (query) => UserModel.aggregate(query);
+
+exports.countUsers = (query = {}) => UserModel.countDocuments(query);
 
 // generate token with JTI for blacklisting
 exports.generateToken = (user) => {

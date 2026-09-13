@@ -5,8 +5,8 @@ const { STATUS_CODES } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const { getAllRecentlyViewed } = require("../models/formViewModel");
 const { findManyTasks } = require("../models/taskModel");
-const ChatConversation = require("mongoose").model("ChatConversation");
-const Channel = require("mongoose").model("Channel");
+const { countChatConversations } = require("../models/chatConversationModel");
+const { aggregateChannels } = require("../models/channelModel");
 const {
   buildRecentlyViewedCombinedQuery,
   getDashboardStatsQuery,
@@ -100,7 +100,7 @@ exports.getDashboardStats = async (req, res, next) => {
       }).then(tasks => tasks.length),
 
       // Count conversations (DM + Group DM only)
-      ChatConversation.countDocuments({
+      countChatConversations({
         companyId,
         type: { $in: ["dm", "group_dm"] },
         participantIds: userId,
@@ -114,7 +114,7 @@ exports.getDashboardStats = async (req, res, next) => {
 
     // Get channels with task stats (with pagination)
     const query = getDashboardStatsQuery(userId, companyId, search, pageNum, limitNum);
-    const result = await Channel.aggregate(query);
+    const result = await aggregateChannels(query);
 
     // Extract data from faceted result
     const data = result[0] || {

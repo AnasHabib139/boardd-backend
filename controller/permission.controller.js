@@ -8,8 +8,13 @@ const {
   bulkUpdatePermissions,
   getPermissionCategories,
   createPermissionPolicy,
+  deletePermissionPolicy,
 } = require("../models/companyPermissionPolicyModel");
-const { findUser } = require("../models/userModel");
+const {
+  findUser,
+  findManyUsersWithProjection,
+  findManyUsersSorted,
+} = require("../models/userModel");
 const { Types } = require("mongoose");
 
 /**
@@ -31,10 +36,7 @@ async function populateCustomUsers(policyObject) {
   // Fetch all users at once
   let userMap = {};
   if (allUserIds.size > 0) {
-    const { model } = require("mongoose");
-    const UserModel = model("User");
-
-    const users = await UserModel.find(
+    const users = await findManyUsersWithProjection(
       { _id: { $in: Array.from(allUserIds) } },
       {
         _id: 1,
@@ -319,10 +321,7 @@ exports.getCompanyUsers = async (req, res, next) => {
     const companyId = user.companyId;
 
     // Get all active users in the company
-    const { model } = require("mongoose");
-    const UserModel = model("User");
-
-    const users = await UserModel.find(
+    const users = await findManyUsersSorted(
       {
         companyId: new Types.ObjectId(companyId),
         isActive: true,
@@ -333,8 +332,9 @@ exports.getCompanyUsers = async (req, res, next) => {
         email: 1,
         image: 1,
         role: 1,
-      }
-    ).sort({ name: 1 });
+      },
+      { name: 1 }
+    );
 
     return generateResponse(
       { users },
@@ -392,10 +392,7 @@ exports.resetPermissions = async (req, res, next) => {
     const companyId = user.companyId;
 
     // Delete existing policy
-    const { model } = require("mongoose");
-    const CompanyPermissionPolicyModel = model("CompanyPermissionPolicy");
-
-    await CompanyPermissionPolicyModel.deleteOne({ companyId });
+    await deletePermissionPolicy(companyId);
 
     // Create new policy with defaults
     const newPolicy = await createPermissionPolicy(companyId);

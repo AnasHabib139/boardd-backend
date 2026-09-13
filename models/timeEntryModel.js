@@ -247,3 +247,5 @@ exports.deleteTimeEntryWithChildren = async (entryId) => {
 };
 
 exports.TimeEntry = TimeEntry;
+
+exports.aggregateTimeEntries = (pipeline) => TimeEntry.aggregate(pipeline);

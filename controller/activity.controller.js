@@ -8,6 +8,13 @@ const {
   getProjectActivities,
   getTaskActivities,
 } = require("../models/activityModel");
+const {
+  getPaginatedNotifications,
+  countNotifications,
+  updateOneNotification,
+  distinctNotificationField,
+  markManyAsRead,
+} = require("../models/notificationModel");
 const { emitUnreadCountsUpdate } = require("../utils/socket");
 
 /**
@@ -164,7 +171,6 @@ exports.formatActivityText = formatActivityText;
 
 const { Types } = require("mongoose");
 const { parseBody } = require("../utils");
-const { model } = require("mongoose");
 const {
   formatActivityItem,
   mapCategoryFilter,
@@ -274,11 +280,7 @@ exports.getActivities = async (req, res, next) => {
     ];
 
     // Get paginated results
-    const { getMongooseAggregatePaginatedData } = require("../utils");
-    const NotificationModel = model("Notification");
-
-    const { data, pagination } = await getMongooseAggregatePaginatedData({
-      model: NotificationModel,
+    const { data, pagination } = await getPaginatedNotifications({
       query: aggregationQuery,
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 20,
@@ -291,7 +293,7 @@ exports.getActivities = async (req, res, next) => {
     );
 
     // Calculate unread count (same types as the feed filter)
-    const unreadCount = await NotificationModel.countDocuments({
+    const unreadCount = await countNotifications({
       userId: new Types.ObjectId(userId),
       isRead: false,
       type: { $in: FEED_NOTIFICATION_TYPES },
@@ -331,8 +333,7 @@ exports.getUnreadCounts = async (req, res, next) => {
       });
     }
 
-    const NotificationModel = model("Notification");
-    const counts = await calculateUnreadCounts(NotificationModel, userId);
+    const counts = await calculateUnreadCounts(userId);
 
     return generateResponse(
       counts,
@@ -372,14 +373,12 @@ exports.markActivityAsRead = async (req, res, next) => {
       });
     }
 
-    const NotificationModel = model("Notification");
-    const notification = await NotificationModel.findOneAndUpdate(
+    const notification = await updateOneNotification(
       {
         _id: new Types.ObjectId(activityId),
         userId: new Types.ObjectId(userId),
       },
-      { isRead: true },
-      { new: true }
+      { isRead: true }
     ).populate("createdBy", "name email image");
 
     if (!notification) {
@@ -414,10 +413,7 @@ exports.markActivityAsRead = async (req, res, next) => {
       }
     }
 
-    const updatedCounts = await calculateUnreadCounts(
-      NotificationModel,
-      userId
-    );
+    const updatedCounts = await calculateUnreadCounts(userId);
 
     // Emit real-time unread count update
     await emitUnreadCountsUpdate(userId);
@@ -468,11 +464,9 @@ exports.markAllAsRead = async (req, res, next) => {
       }
     }
 
-    const NotificationModel = model("Notification");
-
     // ========== Sync: Find affected conversations before bulk update ==========
     // Get distinct conversationIds for CHAT_MESSAGE notifications that will be marked as read
-    const affectedConversationIds = await NotificationModel.distinct(
+    const affectedConversationIds = await distinctNotificationField(
       "conversationId",
       {
         ...query,
@@ -481,9 +475,7 @@ exports.markAllAsRead = async (req, res, next) => {
       }
     );
 
-    const result = await NotificationModel.updateMany(query, {
-      isRead: true,
-    });
+    const result = await markManyAsRead(query);
 
     // ========== Sync: Mark affected conversations as read ==========
     if (affectedConversationIds.length > 0) {
@@ -516,10 +508,7 @@ exports.markAllAsRead = async (req, res, next) => {
       }
     }
 
-    const updatedCounts = await calculateUnreadCounts(
-      NotificationModel,
-      userId
-    );
+    const updatedCounts = await calculateUnreadCounts(userId);
 
     // Emit real-time unread count update
     await emitUnreadCountsUpdate(userId);

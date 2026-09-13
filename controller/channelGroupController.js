@@ -9,6 +9,7 @@ const {
   updateChannelGroup,
   getAllChannelGroups,
   deleteChannelGroup: removeChannelGroup,
+  pullChannelsFromGroups,
 } = require("../models/channelGroupModel");
 const { findManyChannels } = require("../models/channelModel");
 const {
@@ -137,15 +138,12 @@ exports.assignChannelsToGroup = async (req, res, next) => {
       }
 
       // Remove these channels from all groups
-      const { ChannelGroupModel } = require("../models/channelGroupModel");
-      const result = await ChannelGroupModel.updateMany(
+      const result = await pullChannelsFromGroups(
         {
           companyId: user.companyId,
           channelIds: { $in: validatedChannelIds }
         },
-        {
-          $pull: { channelIds: { $in: validatedChannelIds } }
-        }
+        validatedChannelIds
       );
 
       return generateResponse(
@@ -161,16 +159,13 @@ exports.assignChannelsToGroup = async (req, res, next) => {
 
     // For regular groups, remove channels from other groups first
     if (validatedChannelIds.length > 0) {
-      const { ChannelGroupModel } = require("../models/channelGroupModel");
-      await ChannelGroupModel.updateMany(
+      await pullChannelsFromGroups(
         {
           companyId: user.companyId,
           channelIds: { $in: validatedChannelIds },
           _id: { $ne: channelGroupId } // Don't update the target group
         },
-        {
-          $pull: { channelIds: { $in: validatedChannelIds } }
-        }
+        validatedChannelIds
       );
     }
 

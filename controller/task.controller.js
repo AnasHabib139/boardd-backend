@@ -1657,7 +1657,7 @@ exports.deleteTaskPermanently = async (req, res, next) => {
     // Delete related records
     const { deleteManyActivities } = require("../models/activityModel");
     const { deleteManyNotifications } = require("../models/notificationModel");
-    const { TaskInbox } = require("../models/taskInboxModel");
+    const { deleteManyTaskInboxEntriesByTask } = require("../models/taskInboxModel");
     const { deleteTaskConnectionsByTaskId } = require("../models/taskConnectionModel");
     const { findManyTaskComments, deleteManyTaskComments } = require("../models/taskCommentModel");
     const { removeAllReactionsForComments } = require("../models/taskCommentReactionModel");
@@ -1670,7 +1670,7 @@ exports.deleteTaskPermanently = async (req, res, next) => {
       deleteManyActivities({ taskId }),
       deleteManyNotifications({ taskId }),
       deleteSubtask({ taskId }),
-      TaskInbox?.deleteMany({ taskId }) || Promise.resolve(),
+      deleteManyTaskInboxEntriesByTask(taskId),
       deleteTaskConnectionsByTaskId(taskId),
       deleteManyTaskComments({ taskId }),
       taskCommentIds.length

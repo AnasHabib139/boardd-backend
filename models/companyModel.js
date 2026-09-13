@@ -249,3 +249,9 @@ exports.findManyCompanies = (query) => CompanyModel.find(query);
 
 // delete company
 exports.deleteCompany = (query) => CompanyModel.findOneAndDelete(query);
+
+// aggregate companies
+exports.aggregateCompanies = (pipeline) => CompanyModel.aggregate(pipeline);
+
+// count companies
+exports.countCompanies = (query = {}) => CompanyModel.countDocuments(query);

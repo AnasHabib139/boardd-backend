@@ -36,6 +36,11 @@ exports.updateChannelGroup = (query, obj) =>
 
 exports.deleteChannelGroup = (query) => ChannelGroupModel.findOneAndDelete(query);
 
+exports.pullChannelsFromGroups = (query, channelIds) =>
+  ChannelGroupModel.updateMany(query, {
+    $pull: { channelIds: { $in: channelIds } },
+  });
+
 exports.getAllChannelGroups = async ({
   query,
   page,

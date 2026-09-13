@@ -12,6 +12,7 @@ const {
   updateParentEntryAggregates,
   hasChildren,
   deleteTimeEntryWithChildren,
+  aggregateTimeEntries,
 } = require("../models/timeEntryModel");
 const {
   handleStartTimeChange,
@@ -1062,8 +1063,6 @@ exports.downloadClockupReports = async (req, res, next) => {
       }
     }
 
-    const TimeEntry = require("../models/timeEntryModel");
-
     // Normalize selectedEntries to array (supports single string or array)
     const selectedIds = selectedEntries
       ? (Array.isArray(selectedEntries) ? selectedEntries : [selectedEntries])
@@ -1084,7 +1083,7 @@ exports.downloadClockupReports = async (req, res, next) => {
 
       // Build and run aggregation
       const query = getUserSelectedTimeEntriesForDownloadQuery(targetUserId, uniqueEntryIds);
-      const entries = await TimeEntry.TimeEntry.aggregate(query);
+      const entries = await aggregateTimeEntries(query);
 
       if (!entries || entries.length === 0) {
         return next({
@@ -1176,7 +1175,7 @@ exports.downloadClockupReports = async (req, res, next) => {
     const query = getUserTimeEntriesWithChildrenForDownloadQuery(targetUserId, startDate, endDate);
 
     // Execute query to get all entries (no pagination)
-    const entries = await TimeEntry.TimeEntry.aggregate(query);
+    const entries = await aggregateTimeEntries(query);
 
     if (!entries || entries.length === 0) {
       return next({
@@ -1267,8 +1266,7 @@ exports.downloadSingleClockupEntry = async (req, res, next) => {
     const query = getSingleTimeEntryWithChildrenForDownloadQuery(entryId);
 
     // Execute query to get single entry
-    const TimeEntry = require("../models/timeEntryModel");
-    const result = await TimeEntry.TimeEntry.aggregate(query);
+    const result = await aggregateTimeEntries(query);
 
     if (!result || result.length === 0) {
       return next({

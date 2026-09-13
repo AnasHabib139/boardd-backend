@@ -20,6 +20,8 @@ const {
   findCompany,
   updateCompany,
   getAllCompanies: getAllCompaniesModel,
+  aggregateCompanies,
+  countCompanies,
 } = require("../models/companyModel");
 const {
   createSuperAdminAuditLog,
@@ -32,8 +34,7 @@ const {
   getPlatformUserDetailQuery,
 } = require("./queries/superAdminQueries");
 const { getCompanyUsersAdminQuery } = require("./queries/adminQueries");
-const { getAllUsers } = require("../models/userModel");
-const { model } = require("mongoose");
+const { getAllUsers, aggregateUsers, countUsers } = require("../models/userModel");
 
 // POST /super-admin/login
 exports.loginSuperAdmin = async (req, res, next) => {
@@ -246,10 +247,7 @@ exports.getCompanyDetail = async (req, res, next) => {
   try {
     const { companyId } = req.params;
 
-    const CompanyModel = model("Company");
-    const result = await CompanyModel.aggregate(
-      getCompanyDetailQuery(companyId)
-    );
+    const result = await aggregateCompanies(getCompanyDetailQuery(companyId));
 
     if (!result || result.length === 0) {
       return next({
@@ -334,10 +332,7 @@ exports.getPlatformUserDetail = async (req, res, next) => {
   try {
     const { userId } = req.params;
 
-    const UserModel = model("User");
-    const result = await UserModel.aggregate(
-      getPlatformUserDetailQuery(userId)
-    );
+    const result = await aggregateUsers(getPlatformUserDetailQuery(userId));
 
     if (!result || result.length === 0) {
       return next({
@@ -363,15 +358,12 @@ exports.getPlatformUserDetail = async (req, res, next) => {
 // GET /super-admin/stats/overview
 exports.getStatsOverview = async (req, res, next) => {
   try {
-    const CompanyModel = model("Company");
-    const UserModel = model("User");
-
     const [totalCompanies, inactiveCompanies, totalUsers, inactiveUsers] =
       await Promise.all([
-        CompanyModel.countDocuments(),
-        CompanyModel.countDocuments({ isActive: false }),
-        UserModel.countDocuments(),
-        UserModel.countDocuments({ isActive: false }),
+        countCompanies(),
+        countCompanies({ isActive: false }),
+        countUsers(),
+        countUsers({ isActive: false }),
       ]);
 
     return generateResponse(
@@ -411,9 +403,6 @@ exports.getStatsGrowth = async (req, res, next) => {
       fromDate.setDate(fromDate.getDate() - 30);
     }
 
-    const CompanyModel = model("Company");
-    const UserModel = model("User");
-
     const growthPipeline = [
       { $match: { createdAt: { $gte: fromDate, $lte: toDate } } },
       {
@@ -427,8 +416,8 @@ exports.getStatsGrowth = async (req, res, next) => {
     ];
 
     const [companiesPerDay, usersPerDay] = await Promise.all([
-      CompanyModel.aggregate(growthPipeline),
-      UserModel.aggregate(growthPipeline),
+      aggregateCompanies(growthPipeline),
+      aggregateUsers(growthPipeline),
     ]);
 
     return generateResponse(

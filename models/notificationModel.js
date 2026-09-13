@@ -197,3 +197,33 @@ exports.markAsRead = (notificationId) =>
     { isRead: true },
     { new: true }
   );
+
+exports.aggregateNotifications = (pipeline) =>
+  NotificationModel.aggregate(pipeline);
+
+exports.getPaginatedNotifications = async ({
+  query,
+  page = 1,
+  limit = 20,
+  sort = { createdAt: -1 },
+}) => {
+  const { data, pagination } = await getMongooseAggregatePaginatedData({
+    model: NotificationModel,
+    query,
+    page,
+    limit,
+    sort,
+  });
+  return { data, pagination };
+};
+
+exports.countNotifications = (query) => NotificationModel.countDocuments(query);
+
+exports.updateOneNotification = (query, update) =>
+  NotificationModel.findOneAndUpdate(query, update, { new: true });
+
+exports.distinctNotificationField = (field, query) =>
+  NotificationModel.distinct(field, query);
+
+exports.markManyAsRead = (query) =>
+  NotificationModel.updateMany(query, { isRead: true });

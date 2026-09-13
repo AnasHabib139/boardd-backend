@@ -264,3 +264,6 @@ exports.getPermissionCategories = () => {
 };
 
 exports.CompanyPermissionPolicyModel = CompanyPermissionPolicyModel;
+
+exports.deletePermissionPolicy = (companyId) =>
+  CompanyPermissionPolicyModel.deleteOne({ companyId });

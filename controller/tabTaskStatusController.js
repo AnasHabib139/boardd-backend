@@ -3,7 +3,8 @@
 const { parseBody, generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
 const { findProject } = require("../models/projectModel");
-const { findManyTasks, updateTask } = require("../models/taskModel");
+const { findManyTasks, updateTask, updateManyTasks } = require("../models/taskModel");
+const { updateManySubtasks } = require("../models/subtaskModel");
 const {
   createTabTaskStatus,
   findTabTaskStatus,
@@ -234,14 +235,12 @@ exports.updateStatusClosingFlag = async (req, res, next) => {
     // Cascade: bring every existing Task/Subtask in this status in line with
     // the new flag. Bulk updateMany — Mongoose document hooks don't fire on
     // it, which is fine here since we already know the exact correct value.
-    const { TaskModel } = require("../models/taskModel");
-    const { SubtaskModel } = require("../models/subtaskModel");
     const [taskResult, subtaskResult] = await Promise.all([
-      TaskModel.updateMany(
+      updateManyTasks(
         { projectId, status: status.statusKey },
         { $set: { isClosingStatus: isCompletedStatus, updatedAt: new Date() } }
       ),
-      SubtaskModel.updateMany(
+      updateManySubtasks(
         { projectId, status: status.statusKey },
         { $set: { isCompleted: isCompletedStatus, updatedAt: new Date() } }
       ),

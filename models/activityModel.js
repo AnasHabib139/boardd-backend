@@ -58,6 +58,8 @@ const ActivityModel = model("Activity", activitySchema);
 // create new activity
 exports.createActivity = (obj) => ActivityModel.create(obj);
 
+exports.aggregateActivities = (pipeline) => ActivityModel.aggregate(pipeline);
+
 // Delete many activities (cascade: task delete)
 exports.deleteManyActivities = (query) => ActivityModel.deleteMany(query);
 

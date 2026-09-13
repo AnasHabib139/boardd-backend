@@ -7,12 +7,11 @@ const {
   TASK_STATUS,
 } = require("../utils/constants");
 const { findChannel } = require("../models/channelModel");
-const { getAllActivities, createActivity } = require("../models/activityModel");
+const { getAllActivities, createActivity, aggregateActivities } = require("../models/activityModel");
 const { findManyTasks, updateTask } = require("../models/taskModel");
 const { findManyProjects } = require("../models/projectModel");
 const { findUser } = require("../models/userModel");
 const { generateActivityMessage } = require("../utils");
-const ActivityModel = require("mongoose").model("Activity");
 const {
   getContributionsQuery,
   getActivitiesQuery,
@@ -269,7 +268,7 @@ exports.getContributions = async (req, res, next) => {
 
     // Get contributions data (use actualEndDate to exclude future dates)
     const query = getContributionsQuery(channelId, startDate, actualEndDate);
-    const contributions = await ActivityModel.aggregate(query);
+    const contributions = await aggregateActivities(query);
 
     // Generate complete date range with missing dates filled (but only up to today)
     const completeContributions = generateCompleteDateRange(

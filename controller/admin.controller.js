@@ -87,11 +87,8 @@ exports.exportCompanyUsers = async (req, res, next) => {
       return next({ statusCode: STATUS_CODES.UNAUTHORIZED, message: "Unauthorized" });
     }
 
-    const { model } = require("mongoose");
-    const UserModel = model("User");
-
     const pipeline = getCompanyUsersAdminQuery(admin.companyId, search || null);
-    const users = await UserModel.aggregate(pipeline);
+    const users = await aggregateUsers(pipeline);
 
     const roleDisplayName = { employee: "Member", admin: "Admin", guest: "Guest" };
 

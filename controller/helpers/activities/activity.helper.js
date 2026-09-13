@@ -217,8 +217,9 @@ exports.mapCategoryFilter = (categoryFilter) => {
  * @param {String} userId - User ID to query
  * @returns {Promise<Object>} Unread counts by category
  */
-exports.calculateUnreadCounts = async (NotificationModel, userId) => {
+exports.calculateUnreadCounts = async (userId) => {
   const { Types } = require("mongoose");
+  const { aggregateNotifications } = require("../../../models/notificationModel");
 
   const FEED_NOTIFICATION_TYPES = [
     'CHAT_MESSAGE',
@@ -232,7 +233,7 @@ exports.calculateUnreadCounts = async (NotificationModel, userId) => {
   ];
 
   // Aggregate unread counts by category
-  const counts = await NotificationModel.aggregate([
+  const counts = await aggregateNotifications([
     {
       $match: {
         userId: new Types.ObjectId(userId),

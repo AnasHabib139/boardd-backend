@@ -122,6 +122,9 @@ chatConversationSchema.plugin(aggregatePaginate);
 
 const ChatConversation = model("ChatConversation", chatConversationSchema);
 
+exports.countChatConversations = (query) =>
+  ChatConversation.countDocuments(query);
+
 // ==================== CRUD Helper Functions ====================
 
 // Create a new conversation

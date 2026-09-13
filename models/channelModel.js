@@ -91,3 +91,5 @@ exports.removeFileFromChannel = async (channelId, fileId) => {
     { new: true }
   );
 };
+
+exports.aggregateChannels = (pipeline) => Channel.aggregate(pipeline);
