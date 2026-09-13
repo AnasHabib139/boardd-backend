@@ -2,9 +2,7 @@
 
 const { Worker }          = require("bullmq");
 const { getBullRedis }    = require("../utils/redis");
-const { getIO }           = require("../utils/socket");
 const { updateImportJob } = require("../models/importJobModel");
-const { updateUserIntegration }              = require("../models/userIntegrationModel");
 const { createProject, getNextProjectOrderIndex } = require("../models/projectModel");
 const { createManyTabTaskStatuses }          = require("../models/tabTaskStatusModel");
 const { createTask, getNextOrderIndex }      = require("../models/taskModel");
@@ -12,22 +10,11 @@ const { s3Uploadv3 }      = require("../utils/s3Upload");
 const { findManyUsers }   = require("../models/userModel");
 const linear              = require("../services/linearService");
 const RateLimiter         = require("../utils/importRateLimiter");
+const { slugify, ensureUniqueSlug, emitProgress, refreshWorkerToken } = require("./helpers/importWorkerShared");
 
 const BACKEND_URL = process.env.BACKEND_URL;
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
-
-const slugify = (name) =>
-  name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-
-const ensureUniqueSlug = (slug, seen) => {
-  if (!seen.has(slug)) { seen.add(slug); return slug; }
-  let i = 2;
-  while (seen.has(`${slug}_${i}`)) i++;
-  const unique = `${slug}_${i}`;
-  seen.add(unique);
-  return unique;
-};
 
 // Map Linear WorkflowState.type → a sensible default color.
 // Actual state.color from Linear is used first; this is the fallback.
@@ -41,13 +28,6 @@ const STATE_TYPE_COLORS = {
 };
 const stateColor = (state) =>
   (state.color && state.color !== "#000000") ? state.color : (STATE_TYPE_COLORS[state.type] || "#6C63FF");
-
-const emitProgress = (userId, jobId, payload) => {
-  try {
-    const io = getIO();
-    if (io) io.to(`user:${userId}`).emit("import:progress", { jobId, ...payload });
-  } catch (_) {}
-};
 
 // Resolve an array of email strings to Boardd user _id arrays.
 const resolveAssignees = async (emails, companyId) => {
@@ -85,28 +65,6 @@ const uploadLinearFileToS3 = async (fileUrl, token, userId) => {
   } catch (_) { return null; }
 };
 
-// Refresh token in-place if within 5 minutes of expiry.
-const refreshWorkerToken = async (tokenState, userIdStr) => {
-  const fiveMinutes = 5 * 60 * 1000;
-  const isExpiring  = !tokenState.tokenExpiry ||
-    new Date(tokenState.tokenExpiry).getTime() - Date.now() < fiveMinutes;
-
-  if (!isExpiring) return tokenState.token;
-
-  const refreshed = await linear.refreshAccessToken(tokenState.refreshToken);
-  const expiry    = new Date(Date.now() + refreshed.expires_in * 1000);
-
-  await updateUserIntegration(
-    { userId: userIdStr, platform: "linear" },
-    { accessToken: refreshed.access_token, refreshToken: refreshed.refresh_token, tokenExpiry: expiry }
-  );
-
-  tokenState.token        = refreshed.access_token;
-  tokenState.refreshToken = refreshed.refresh_token;
-  tokenState.tokenExpiry  = expiry;
-
-  return refreshed.access_token;
-};
 
 // ─── Import one Linear team as one Boardd Project ────────────────────────────
 
@@ -170,7 +128,7 @@ const importSingleTeam = async ({
 
     // Refresh token every 100 issues to handle long imports
     if (itemCount > 0 && itemCount % 100 === 0) {
-      await refreshWorkerToken(tokenState, userIdStr);
+      await refreshWorkerToken(tokenState, userIdStr, "linear", (rt) => linear.refreshAccessToken(rt));
     }
 
     const result = await linear.getTeamIssues(tokenState.token, teamId, cursor);
@@ -278,7 +236,7 @@ const startLinearImportWorker = () => {
       });
       console.log(`[Linear Import] Job ${jobId} started — teams: ${teamIds.join(", ")}`);
 
-      await refreshWorkerToken(tokenState, userIdStr);
+      await refreshWorkerToken(tokenState, userIdStr, "linear", (rt) => linear.refreshAccessToken(rt));
 
       const results = [];
       for (const teamId of teamIds) {

@@ -1,17 +1,16 @@
 "use strict";
 
-const { createChannel, updateChannel, findChannel }                         = require("../models/channelModel");
-const { createChannelTab, findChannelTab }                                  = require("../models/channelTabsModel");
-const { createChatConversation }                                            = require("../models/chatConversationModel");
-const { findUserIntegration, updateUserIntegration, deleteUserIntegration } = require("../models/userIntegrationModel");
+const { findUserIntegration, updateUserIntegration }                       = require("../models/userIntegrationModel");
 const { findUser }                                                          = require("../models/userModel");
 const linear                                                                = require("../services/linearService");
 const { generateResponse }                                                  = require("../utils");
 const { STATUS_CODES }                                                      = require("../utils/constants");
-const { generateJoinToken }                                                 = require("./helpers/users/signup.helper");
 const { getLinearImportQueue }                                              = require("../jobs/linearImportQueue");
-const { createImportJob, findImportJob }                                    = require("../models/importJobModel");
 const { getValidToken: getValidTokenGeneric }                               = require("./helpers/imports/tokenRefresh.helper");
+const { resolveImportChannel } = require("./helpers/imports/channelResolution.helper");
+const { createAndEnqueueImportJob } = require("./helpers/imports/importJob.helper");
+const { makeGetAuthUrlHandler } = require("./helpers/imports/authUrl.helper");
+const { makeDisconnectHandler } = require("./helpers/imports/disconnectIntegration.helper");
 
 // ─── Token refresh helper ────────────────────────────────────────────────────
 
@@ -20,13 +19,7 @@ const getValidToken = (integration) =>
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
-exports.getAuthUrl = async (req, res, next) => {
-  try {
-    return generateResponse({ authUrl: linear.getAuthUrl() }, "Linear auth URL", res);
-  } catch (error) {
-    return next(error);
-  }
-};
+exports.getAuthUrl = makeGetAuthUrlHandler(linear, "Linear");
 
 exports.connectLinear = async (req, res, next) => {
   try {
@@ -98,61 +91,34 @@ exports.importLinearTeams = async (req, res, next) => {
     const teamNameMap = {};
     for (const t of allTeams) { teamNameMap[t.id] = t.name; }
 
-    // Resolve channel + tab (same pattern as Jira/Notion)
-    let channel, tab;
-    if (channelId) {
-      channel = await findChannel({ _id: channelId, companyId: user.companyId });
-      if (!channel) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Channel not found" });
-      tab = await findChannelTab({ channelId: channel._id, tabName: "task management" });
-      if (!tab) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Task management tab not found in this channel" });
-    } else {
-      const resolvedName = channelName || "Linear Import";
-      channel = await createChannel({
-        channelName:        resolvedName,
-        channelDescription: "Imported from Linear",
-        companyId:          user.companyId,
-        isPrivate:          false,
-        createdBy:          userId,
-        channelToken:       generateJoinToken(),
-        members:            [userId],
-      });
-      await createChatConversation({
-        companyId:      user.companyId,
-        type:           "channel",
-        channelId:      channel._id,
-        participantIds: [],
-        participants:   [{ userId, lastReadAt: null }],
-        createdBy:      userId,
-      });
-      tab = await createChannelTab({
-        channelId: channel._id,
-        tabName:   "task management",
-        isDefault: true,
-        members:   [userId],
-        createdBy: userId,
-        companyId: user.companyId,
-        isPrivate: false,
-      });
-      await updateChannel({ _id: channel._id }, { $push: { tabs: tab._id } });
-    }
+    const { channel, tab, isNewChannel } = await resolveImportChannel({
+      channelId,
+      channelName,
+      userId,
+      companyId: user.companyId,
+      platform: "Linear",
+      defaultName: "Linear Import",
+    });
 
-    const job = await createImportJob({ userId, platform: "linear", status: "pending" });
-    await getLinearImportQueue().add("import", {
-      jobId:        job._id.toString(),
-      userId:       userId.toString(),
-      companyId:    user.companyId.toString(),
-      token,
-      refreshToken: integration.refreshToken,
-      tokenExpiry:  integration.tokenExpiry,
-      teamIds,
-      teamNameMap,
-      channel:      { _id: channel._id.toString() },
-      tab:          { _id: tab._id.toString() },
-      channelId:    channelId || null,
+    const { jobId } = await createAndEnqueueImportJob({
+      platform: "linear",
+      queue: getLinearImportQueue(),
+      userId,
+      companyId: user.companyId,
+      payload: {
+        token,
+        refreshToken: integration.refreshToken,
+        tokenExpiry: integration.tokenExpiry,
+        teamIds,
+        teamNameMap,
+        channel: { _id: channel._id.toString() },
+        tab: { _id: tab._id.toString() },
+        channelId: channelId || null,
+      },
     });
 
     return generateResponse(
-      { jobId: job._id, channelId: channel._id, tabId: tab._id, isNewChannel: !channelId },
+      { jobId, channelId: channel._id, tabId: tab._id, isNewChannel },
       "Import started",
       res
     );
@@ -161,22 +127,6 @@ exports.importLinearTeams = async (req, res, next) => {
   }
 };
 
-exports.getImportStatus = async (req, res, next) => {
-  try {
-    const { jobId } = req.params;
-    const job = await findImportJob({ _id: jobId, userId: req.user.id });
-    if (!job) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Import job not found" });
-    return generateResponse(job, "Import status", res);
-  } catch (error) {
-    return next(error);
-  }
-};
+exports.getImportStatus = require("./helpers/imports/importStatus.helper").getImportStatus;
 
-exports.disconnectLinear = async (req, res, next) => {
-  try {
-    await deleteUserIntegration({ userId: req.user.id, platform: "linear" });
-    return generateResponse({}, "Linear disconnected", res);
-  } catch (error) {
-    return next(error);
-  }
-};
+exports.disconnectLinear = makeDisconnectHandler("linear", "Linear");
