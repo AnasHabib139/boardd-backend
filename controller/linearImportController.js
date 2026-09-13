@@ -11,24 +11,12 @@ const { STATUS_CODES }                                                      = re
 const { generateJoinToken }                                                 = require("./helpers/users/signup.helper");
 const { getLinearImportQueue }                                              = require("../jobs/linearImportQueue");
 const { createImportJob, findImportJob }                                    = require("../models/importJobModel");
+const { getValidToken: getValidTokenGeneric }                               = require("./helpers/imports/tokenRefresh.helper");
 
 // ─── Token refresh helper ────────────────────────────────────────────────────
 
-const getValidToken = async (integration) => {
-  const fiveMinutes = 5 * 60 * 1000;
-  const isExpiring  = !integration.tokenExpiry ||
-    new Date(integration.tokenExpiry).getTime() - Date.now() < fiveMinutes;
-
-  if (!isExpiring) return integration.accessToken;
-
-  const refreshed = await linear.refreshAccessToken(integration.refreshToken);
-  const expiry    = new Date(Date.now() + refreshed.expires_in * 1000);
-  await updateUserIntegration(
-    { _id: integration._id },
-    { accessToken: refreshed.access_token, refreshToken: refreshed.refresh_token, tokenExpiry: expiry }
-  );
-  return refreshed.access_token;
-};
+const getValidToken = (integration) =>
+  getValidTokenGeneric(integration, (refreshToken) => linear.refreshAccessToken(refreshToken));
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 

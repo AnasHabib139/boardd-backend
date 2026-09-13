@@ -11,25 +11,12 @@ const { STATUS_CODES }                                                      = re
 const { generateJoinToken }                                                 = require("./helpers/users/signup.helper");
 const { getNotionImportQueue }                                              = require("../jobs/notionImportQueue");
 const { createImportJob, findImportJob }                                    = require("../models/importJobModel");
+const { getValidToken: getValidTokenGeneric }                               = require("./helpers/imports/tokenRefresh.helper");
 
 // ─── Token refresh helper ────────────────────────────────────────────────────
 
-const getValidToken = async (integration) => {
-  const fiveMinutes = 5 * 60 * 1000;
-  const isExpiring  = !integration.tokenExpiry ||
-    new Date(integration.tokenExpiry).getTime() - Date.now() < fiveMinutes;
-
-  if (!isExpiring) return integration.accessToken;
-
-  const refreshed      = await notion.refreshAccessToken(integration.refreshToken);
-  const expiresInMs    = (refreshed.expires_in ?? 60 * 24 * 60 * 60) * 1000;
-  const expiry         = new Date(Date.now() + expiresInMs);
-  await updateUserIntegration(
-    { _id: integration._id },
-    { accessToken: refreshed.access_token, refreshToken: refreshed.refresh_token, tokenExpiry: expiry }
-  );
-  return refreshed.access_token;
-};
+const getValidToken = (integration) =>
+  getValidTokenGeneric(integration, (refreshToken) => notion.refreshAccessToken(refreshToken));
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 

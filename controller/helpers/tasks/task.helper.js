@@ -649,3 +649,19 @@ exports.handleChecklistActivity = async ({
 
   return createActivity(activityData);
 };
+
+exports.normalizeAttachments = (attachments, userId) =>
+  (attachments || []).map((attachment) => ({
+    ...attachment,
+    uploadedBy: attachment.uploadedBy || userId,
+    uploadedAt: attachment.uploadedAt || new Date(),
+  }));
+
+exports.diffAssigneeIds = (previousAssignedTo, currentAssignedTo) => {
+  const previous = (previousAssignedTo || []).map((id) => id.toString());
+  const current = (currentAssignedTo || []).map((id) => id.toString());
+  return {
+    added: current.filter((id) => !previous.includes(id)),
+    removed: previous.filter((id) => !current.includes(id)),
+  };
+};

@@ -33,6 +33,8 @@ const {
   handleAttachmentsActivity,
   handleLinksActivity,
   handleColumnValuesActivity,
+  normalizeAttachments,
+  diffAssigneeIds,
 } = require("./helpers/tasks/task.helper");
 const {
   processTaskColumnValues,
@@ -56,25 +58,7 @@ const { deleteTaskConnectionsByTaskId } = require("../models/taskConnectionModel
 const { findManyTaskComments, deleteManyTaskComments } = require("../models/taskCommentModel");
 const { removeAllReactionsForComments } = require("../models/taskCommentReactionModel");
 
-// Helper function to parse date strings
-const parseDate = (dateString) => {
-  if (!dateString) return undefined;
-
-  // If it's already a Date object, return it
-  if (dateString instanceof Date) return dateString;
-
-  // Handle DD-MM-YYYY format
-  if (
-    typeof dateString === "string" &&
-    dateString.match(/^\d{2}-\d{2}-\d{4}$/)
-  ) {
-    const [day, month, year] = dateString.split("-");
-    return new Date(year, month - 1, day); // month is 0-indexed
-  }
-
-  // Handle other formats (YYYY-MM-DD, ISO, etc.)
-  return new Date(dateString);
-};
+const { parseDate } = require("../utils/dateHelper");
 
 /**
  * Create a new task
@@ -251,11 +235,7 @@ exports.createTask = async (req, res, next) => {
     };
 
     // Process attachments to add uploadedBy and uploadedAt if missing
-    const processedAttachments = (attachments || []).map(attachment => ({
-      ...attachment,
-      uploadedBy: attachment.uploadedBy || userId,
-      uploadedAt: attachment.uploadedAt || new Date(),
-    }));
+    const processedAttachments = normalizeAttachments(attachments, userId);
 
     // Create task with simplified fields, using defaults for removed ones
     const task = await createTask({
@@ -675,11 +655,7 @@ exports.batchUpdateTask = async (req, res, next) => {
 
     // Process attachments to add uploadedBy and uploadedAt if missing
     if (updates.attachments) {
-      updates.attachments = updates.attachments.map(attachment => ({
-        ...attachment,
-        uploadedBy: attachment.uploadedBy || userId,
-        uploadedAt: attachment.uploadedAt || new Date(),
-      }));
+      updates.attachments = normalizeAttachments(updates.attachments, userId);
     }
 
     // Update task with all changes
@@ -726,11 +702,10 @@ exports.batchUpdateTask = async (req, res, next) => {
 
     // Handle assignment updates (if provided)
     if (updates.assignedTo !== undefined) {
-      const previousAssignedTo = (previousValues.assignedTo || []).map((id) => id.toString());
-      const currentAssignedTo = (updates.assignedTo || []).map((id) => id.toString());
-
-      const newAssignees = currentAssignedTo.filter((id) => !previousAssignedTo.includes(id));
-      const removedAssignees = previousAssignedTo.filter((id) => !currentAssignedTo.includes(id));
+      const { added: newAssignees, removed: removedAssignees } = diffAssigneeIds(
+        previousValues.assignedTo,
+        updates.assignedTo
+      );
 
       if (newAssignees.length > 0) {
         const assignmentResult = await handleAssignmentActivitiesAndNotifications({

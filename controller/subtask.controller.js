@@ -19,6 +19,7 @@ const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
 const { createNotification } = require("../models/notificationModel");
 const { emitUserNotification } = require("../utils/socket");
+const { normalizeAttachments, diffAssigneeIds } = require("./helpers/tasks/task.helper");
 
 /**
  * Get subtask by ID
@@ -128,11 +129,7 @@ exports.createSubtask = async (req, res, next) => {
     }
 
     // Auto-fill attachment metadata
-    const processedAttachments = (attachments || []).map((att) => ({
-      ...att,
-      uploadedBy: att.uploadedBy || userId,
-      uploadedAt: att.uploadedAt || new Date(),
-    }));
+    const processedAttachments = normalizeAttachments(attachments, userId);
 
     // Create subtask object
     const subtaskData = {
@@ -393,11 +390,10 @@ exports.updateSubtask = async (req, res, next) => {
 
     // Handle assignedTo changes with specific add/remove messages
     if ("assignedTo" in previousValues) {
-      const previousAssignedTo = (previousValues.assignedTo || []).map((id) => id.toString());
-      const currentAssignedTo = (updateFields.assignedTo || []).map((id) => id.toString());
-
-      const addedAssignees = currentAssignedTo.filter((id) => !previousAssignedTo.includes(id));
-      const removedAssignees = previousAssignedTo.filter((id) => !currentAssignedTo.includes(id));
+      const { added: addedAssignees, removed: removedAssignees } = diffAssigneeIds(
+        previousValues.assignedTo,
+        updateFields.assignedTo
+      );
 
       if (addedAssignees.length > 0) {
         const addedUsers = await findManyUsers({ _id: { $in: addedAssignees } });
