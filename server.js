@@ -43,6 +43,8 @@ const initializeApp = async () => {
     startLinearImportWorker();
     const { startGithubImportWorker } = require("./jobs/githubImportWorker");
     startGithubImportWorker();
+    const { startTrelloImportWorker } = require("./jobs/trelloImportWorker");
+    startTrelloImportWorker();
 
     // Run pending migrations
     const migrationResult = await migrationRunner.runPendingMigrations();

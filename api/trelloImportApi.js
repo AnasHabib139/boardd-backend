@@ -10,6 +10,7 @@ const {
   getTrelloBoards,
   disconnectTrello,
   importTrelloBoard,
+  getImportStatus,
 } = require("../controller/trelloImportController");
 
 class TrelloImportApi {
@@ -23,6 +24,7 @@ class TrelloImportApi {
     this.router.post("/connect",    Auth([ROLES.ADMIN, ROLES.EMPLOYEE]), validateConnectTrello, connectTrello);
     this.router.get("/boards",      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]), getTrelloBoards);
     this.router.post("/import",     Auth([ROLES.ADMIN, ROLES.EMPLOYEE]), validateImportBoard, importTrelloBoard);
+    this.router.get("/import/status/:jobId", Auth([ROLES.ADMIN, ROLES.EMPLOYEE]), getImportStatus);
     this.router.delete("/disconnect", Auth([ROLES.ADMIN, ROLES.EMPLOYEE]), disconnectTrello);
   }
 
