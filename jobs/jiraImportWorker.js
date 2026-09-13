@@ -2,44 +2,18 @@
 
 const { Worker }          = require("bullmq");
 const { getBullRedis }    = require("../utils/redis");
-const { getIO }           = require("../utils/socket");
 const { updateImportJob } = require("../models/importJobModel");
-const { updateUserIntegration }                                    = require("../models/userIntegrationModel");
 const { createProject, getNextProjectOrderIndex }                  = require("../models/projectModel");
 const { createManyTabTaskStatuses }                                = require("../models/tabTaskStatusModel");
 const { createTask, getNextOrderIndex }                            = require("../models/taskModel");
 const { s3Uploadv3 }      = require("../utils/s3Upload");
 const jira                = require("../services/jiraService");
 const RateLimiter         = require("../utils/importRateLimiter");
+const { slugify, ensureUniqueSlug, assignColor, emitProgress, refreshWorkerToken } = require("./helpers/importWorkerShared");
 
 const BACKEND_URL = process.env.BACKEND_URL;
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
-
-const slugify = (name) =>
-  name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-
-const ensureUniqueSlug = (slug, seen) => {
-  if (!seen.has(slug)) { seen.add(slug); return slug; }
-  let i = 2;
-  while (seen.has(`${slug}_${i}`)) i++;
-  const unique = `${slug}_${i}`;
-  seen.add(unique);
-  return unique;
-};
-
-const STATUS_COLORS = [
-  "#6C63FF", "#F59E0B", "#10B981", "#EF4444",
-  "#3B82F6", "#8B5CF6", "#EC4899", "#14B8A6",
-];
-const assignColor = (index) => STATUS_COLORS[index % STATUS_COLORS.length];
-
-const emitProgress = (userId, jobId, payload) => {
-  try {
-    const io = getIO();
-    if (io) io.to(`user:${userId}`).emit("import:progress", { jobId, ...payload });
-  } catch (_) {}
-};
 
 // Jira attachment downloads require Bearer auth (unlike Monday public URLs)
 const uploadAttachmentToS3 = async (url, token, title, date, userId) => {
@@ -64,30 +38,6 @@ const uploadAttachmentToS3 = async (url, token, title, date, userId) => {
       source:     "local",
     };
   } catch (_) { return null; }
-};
-
-// Refresh access token and update DB. Returns new access token.
-const refreshWorkerToken = async (tokenState, userIdStr) => {
-  const fiveMinutes = 5 * 60 * 1000;
-  const isExpiring  = !tokenState.tokenExpiry ||
-    new Date(tokenState.tokenExpiry).getTime() - Date.now() < fiveMinutes;
-
-  if (!isExpiring) return tokenState.token;
-
-  const refreshed = await jira.refreshAccessToken(tokenState.refreshToken);
-  const expiry    = new Date(Date.now() + refreshed.expires_in * 1000);
-
-  await updateUserIntegration(
-    { userId: userIdStr, platform: "jira" },
-    { accessToken: refreshed.access_token, refreshToken: refreshed.refresh_token, tokenExpiry: expiry }
-  );
-
-  // Mutate tokenState so the worker loop uses the new values
-  tokenState.token        = refreshed.access_token;
-  tokenState.refreshToken = refreshed.refresh_token;
-  tokenState.tokenExpiry  = expiry;
-
-  return refreshed.access_token;
 };
 
 // ─── Import a single Jira project as one Boardd Project ──────────────────────
@@ -152,7 +102,7 @@ const importSingleProject = async ({
 
     // Refresh token every 50 issues to handle imports > 1 hour
     if (itemCount > 0 && itemCount % 50 === 0) {
-      await refreshWorkerToken(tokenState, userIdStr);
+      await refreshWorkerToken(tokenState, userIdStr, "jira", (rt) => jira.refreshAccessToken(rt));
     }
 
     const result = await jira.searchIssues(tokenState.token, cloudId, projectKey, nextPageToken);
@@ -265,7 +215,7 @@ const startJiraImportWorker = () => {
       console.log(`[Jira Import] Job ${jobId} started — projects: ${projectIds.join(", ")}`);
 
       // Refresh token upfront if close to expiry
-      await refreshWorkerToken(tokenState, userIdStr);
+      await refreshWorkerToken(tokenState, userIdStr, "jira", (rt) => jira.refreshAccessToken(rt));
 
       // Import each project
       const results = [];
