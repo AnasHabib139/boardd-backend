@@ -1,6 +1,7 @@
 "use strict";
 
 const { parseBody, generateResponse } = require("../utils");
+const { Types } = require("mongoose");
 const { STATUS_CODES, ACTION_TYPE } = require("../utils/constants");
 const { findUser } = require("../models/userModel");
 const { findTask } = require("../models/taskModel");
@@ -610,7 +611,7 @@ exports.getTaskComments = async (req, res, next) => {
     const query = [
       {
         $match: {
-          taskId: require("mongoose").Types.ObjectId.createFromHexString(taskId),
+          taskId: Types.ObjectId.createFromHexString(taskId),
           isActive: true,
           parentCommentId: null,
         },
@@ -691,7 +692,7 @@ exports.getCommentReplies = async (req, res, next) => {
     const query = [
       {
         $match: {
-          parentCommentId: require("mongoose").Types.ObjectId.createFromHexString(commentId),
+          parentCommentId: Types.ObjectId.createFromHexString(commentId),
           isActive: true,
         },
       },

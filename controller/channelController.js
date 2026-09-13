@@ -11,7 +11,7 @@ const {
   removeFileFromChannel,
   findManyChannels,
 } = require("../models/channelModel");
-const { createChatConversation, addChannelParticipant, findChatConversation, updateLastMessage } = require("../models/chatConversationModel");
+const { createChatConversation, addChannelParticipant, findChatConversation, updateLastMessage, removeChannelParticipant } = require("../models/chatConversationModel");
 const { createChatMessage } = require("../models/chatMessageModel");
 const { findTask, updateTask, aggregateTasks } = require("../models/taskModel");
 const mongoose = require("mongoose");
@@ -387,7 +387,7 @@ exports.addUserToChannel = async (req, res, next) => {
         const channelTabsQuery = [
           {
             $match: {
-              channelId: require("mongoose").Types.ObjectId.createFromHexString(
+              channelId: mongoose.Types.ObjectId.createFromHexString(
                 channel._id.toString()
               ),
             },
@@ -1000,7 +1000,6 @@ exports.joinChannelWithInvite = async (req, res, next) => {
     }
 
     // Add user to chat conversation participants
-    const { addChannelParticipant } = require("../models/chatConversationModel");
     await addChannelParticipant(channel._id, currentUserId);
 
     // Mark invite slot as used and set the channelId
@@ -1348,14 +1347,13 @@ exports.leaveChannel = async (req, res, next) => {
     }
 
     // Remove user from chat conversation participants
-    const { removeChannelParticipant } = require("../models/chatConversationModel");
     await removeChannelParticipant(channelId, userId);
 
     // Get all tabs for this channel and remove user from their members arrays
     const channelTabsQuery = [
       {
         $match: {
-          channelId: require("mongoose").Types.ObjectId.createFromHexString(channelId),
+          channelId: mongoose.Types.ObjectId.createFromHexString(channelId),
         },
       },
     ];
@@ -1717,14 +1715,13 @@ exports.removeUserFromChannel = async (req, res, next) => {
     }
 
     // 8. Remove from chat conversation participants
-    const { removeChannelParticipant } = require("../models/chatConversationModel");
     await removeChannelParticipant(channelId, targetUserId);
 
     // 9. Get all tabs for this channel and remove user from their members arrays
     const channelTabsQuery = [
       {
         $match: {
-          channelId: require("mongoose").Types.ObjectId.createFromHexString(channelId),
+          channelId: mongoose.Types.ObjectId.createFromHexString(channelId),
         },
       },
     ];

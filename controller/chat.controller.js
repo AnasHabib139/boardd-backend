@@ -2,11 +2,22 @@
 
 const { generateResponse } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
-const { findChatConversation, aggregateChatConversations } = require("../models/chatConversationModel");
+const {
+  findChatConversation,
+  aggregateChatConversations,
+  resolveConversation: resolveConversationRecord,
+  isPhoneNumberAvailableInCompany,
+  isEmailAvailable,
+  updateClientTwilioNumber,
+} = require("../models/chatConversationModel");
 const { Types } = require("mongoose");
 const { getAllChatMessages, aggregateChatMessages, findChatMessage, findManyChatMessages } = require("../models/chatMessageModel");
 const { getConversationMessagesQuery, getUserConversationsQuery, getConversationWithChatName, getClientContactInfoQuery, getMessageDatesQuery } = require("./queries/chatQueries");
 const { aggregateChannelTabs } = require("../models/channelTabsModel");
+const { findUser } = require("../models/userModel");
+const { findChannel } = require("../models/channelModel");
+const { findCompany } = require("../models/companyModel");
+const { getOnlineStatuses } = require("../utils/redis");
 
 /**
  * Get chat messages for a conversation
@@ -224,7 +235,6 @@ exports.resolveConversation = async (req, res, next) => {
     }
 
     // Get user's company ID
-    const { findUser } = require("../models/userModel");
     const user = await findUser({ _id: userId });
     if (!user) {
       return next({
@@ -246,8 +256,7 @@ exports.resolveConversation = async (req, res, next) => {
 
     // ==================== SELF TYPE ====================
     if (type === "self" || isSelfDmRequest) {
-      const { resolveConversation } = require("../models/chatConversationModel");
-      const result = await resolveConversation(
+      const result = await resolveConversationRecord(
         {
           companyId: user.companyId,
           type: "self",
@@ -281,7 +290,6 @@ exports.resolveConversation = async (req, res, next) => {
       }
 
       // Verify channel exists and user has access
-      const { findChannel } = require("../models/channelModel");
       const channel = await findChannel({ _id: channelId });
       if (!channel) {
         return next({
@@ -311,8 +319,7 @@ exports.resolveConversation = async (req, res, next) => {
 
       // CHECK-ONLY MODE: If no participantIds provided, check if conversation exists
       if (!participantIds || participantIds.length === 0) {
-        const { resolveConversation } = require("../models/chatConversationModel");
-        const result = await resolveConversation(
+        const result = await resolveConversationRecord(
           {
             companyId: user.companyId,
             type: "client",
@@ -366,12 +373,6 @@ exports.resolveConversation = async (req, res, next) => {
       // SMS routing relies on (twilioNumber, clientPhone) being unique — a phone
       // attached to two channels would silently land in the wrong inbox on reply.
       if (clientContact) {
-        const {
-          isPhoneNumberAvailableInCompany,
-          isEmailAvailable,
-        } = require("../models/chatConversationModel");
-        const { findChannel } = require("../models/channelModel");
-
         const buildPhoneConflictMessage = async (phone, existingConversation) => {
           const otherChannel = await findChannel({ _id: existingConversation.channelId });
           const channelName = otherChannel?.channelName || "another channel";
@@ -423,7 +424,6 @@ exports.resolveConversation = async (req, res, next) => {
       // If caller supplied one, it must be in company.twilioConfig.fromNumbers.
       // Otherwise default to fromNumbers[0] (preserves prior behavior).
       let resolvedTwilioNumber = null;
-      const { findCompany } = require("../models/companyModel");
       const company = await findCompany({ _id: user.companyId });
       const fromNumbers = company?.twilioConfig?.fromNumbers || [];
 
@@ -440,8 +440,7 @@ exports.resolveConversation = async (req, res, next) => {
       }
 
       // Resolve client conversation
-      const { resolveConversation } = require("../models/chatConversationModel");
-      const result = await resolveConversation(
+      const result = await resolveConversationRecord(
         {
           companyId: user.companyId,
           type: "client",
@@ -517,8 +516,7 @@ exports.resolveConversation = async (req, res, next) => {
     }
 
     // Resolve conversation (find or create)
-    const { resolveConversation } = require("../models/chatConversationModel");
-    const result = await resolveConversation(
+    const result = await resolveConversationRecord(
       {
         companyId: user.companyId,
         type,
@@ -569,7 +567,6 @@ exports.updateConversationTwilioNumber = async (req, res, next) => {
     const { twilioNumber } = req.body;
     const userId = req.user.id.toString();
 
-    const { findUser } = require("../models/userModel");
     const user = await findUser({ _id: userId });
     if (!user) {
       return next({
@@ -600,7 +597,6 @@ exports.updateConversationTwilioNumber = async (req, res, next) => {
       });
     }
 
-    const { findCompany } = require("../models/companyModel");
     const company = await findCompany({ _id: user.companyId });
     const fromNumbers = company?.twilioConfig?.fromNumbers || [];
     if (!fromNumbers.includes(twilioNumber)) {
@@ -610,7 +606,6 @@ exports.updateConversationTwilioNumber = async (req, res, next) => {
       });
     }
 
-    const { updateClientTwilioNumber } = require("../models/chatConversationModel");
     const updated = await updateClientTwilioNumber(
       conversationId,
       twilioNumber,
@@ -651,7 +646,6 @@ exports.getConversations = async (req, res, next) => {
     const userId = req.user.id.toString();
 
     // Get user's company ID
-    const { findUser } = require("../models/userModel");
     const user = await findUser({ _id: userId });
     if (!user) {
       return next({
@@ -681,11 +675,10 @@ exports.getConversations = async (req, res, next) => {
 
     // Inject self entry at the top (page 1 only)
     if (pageNum === 1) {
-      const { Types: MongoTypes } = require("mongoose");
       const selfConvo = await findChatConversation({
         companyId: user.companyId,
         type: "self",
-        "participants.userId": new MongoTypes.ObjectId(userId),
+        "participants.userId": new Types.ObjectId(userId),
       });
 
       const selfEntry = {
@@ -720,8 +713,6 @@ exports.getConversations = async (req, res, next) => {
 
     // Enrich participants with real-time online status from Redis
     try {
-      const { getOnlineStatuses } = require("../utils/redis");
-
       const participantIds = new Set();
       data.conversations.forEach((conv) => {
         conv.participants?.forEach((p) => {
@@ -816,7 +807,6 @@ exports.getMessageDates = async (req, res, next) => {
 async function verifyConversationAccess(conversation, userId) {
   // For channel conversations, check Channel.members dynamically
   if (conversation.type === "channel") {
-    const { findChannel } = require("../models/channelModel");
     const channel = await findChannel({ _id: conversation.channelId });
     if (!channel) return false;
 
@@ -825,7 +815,6 @@ async function verifyConversationAccess(conversation, userId) {
 
   // For client conversations, check Channel.members (client chat is channel-based)
   if (conversation.type === "client") {
-    const { findChannel } = require("../models/channelModel");
     const channel = await findChannel({ _id: conversation.channelId });
     if (!channel) return false;
 

@@ -15,6 +15,8 @@ const {
   getActiveRefreshTokens,
 } = require("../models/userModel");
 const { findCompany } = require("../models/companyModel");
+const { blacklistToken, blacklistUserTokens } = require("../services/tokenBlacklist");
+const { extractDeviceInfo } = require("../utils/deviceDetection");
 
 // POST /auth/refresh-token
 exports.refreshToken = async (req, res, next) => {
@@ -135,7 +137,6 @@ exports.logout = async (req, res, next) => {
     // Blacklist the current access token (immediate termination)
     const accessToken = req.header("accessToken") || req.session.accessToken;
     if (accessToken) {
-      const { blacklistToken } = require("../services/tokenBlacklist");
       await blacklistToken(accessToken, 600); // 10 min TTL
       console.log("🚫 Access token blacklisted on logout");
     }
@@ -177,7 +178,6 @@ exports.logoutAllDevices = async (req, res, next) => {
     const userId = req.user.id;
 
     // Blacklist user-level timestamp (all old tokens invalidated)
-    const { blacklistUserTokens } = require("../services/tokenBlacklist");
     await blacklistUserTokens(userId);
     console.log(`🚫 User-level blacklist set for ${userId}`);
 
@@ -221,7 +221,6 @@ exports.getActiveSessions = async (req, res, next) => {
     // Update current device's location AND lastUsedAt before fetching sessions
     if (currentRefreshToken) {
       try {
-        const { extractDeviceInfo } = require("../utils/deviceDetection");
         const currentDeviceInfo = await extractDeviceInfo(req);
 
         // Build update object
@@ -339,7 +338,6 @@ exports.revokeSession = async (req, res, next) => {
 
     // Blacklist the device's current access token JTI (immediate termination)
     if (tokenToRevoke.currentAccessTokenJti) {
-      const { blacklistToken } = require("../services/tokenBlacklist");
       await blacklistToken(tokenToRevoke.currentAccessTokenJti, 600); // 10 min TTL
       console.log(`🚫 Device JTI blacklisted: ${tokenToRevoke.currentAccessTokenJti}`);
     }

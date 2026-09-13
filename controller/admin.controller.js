@@ -1,6 +1,6 @@
 "use strict";
 
-const { STATUS_CODES } = require("../utils/constants");
+const { STATUS_CODES, ROLES } = require("../utils/constants");
 const { generateResponse, extractDomainFromEmail } = require("../utils");
 const {
   findUser,
@@ -634,7 +634,6 @@ exports.changeUserRole = async (req, res, next) => {
     }
 
     // Validate role is valid
-    const { ROLES } = require("../utils/constants");
     if (!Object.values(ROLES).includes(role)) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,

@@ -1,7 +1,7 @@
 const { findChannel } = require("../models/channelModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { createProject, getAllProjects, getAllProjectsWithoutPagination, findProject, updateProject, deleteProject, getNextProjectOrderIndex } = require("../models/projectModel");
-const { createTask, findManyTasks } = require("../models/taskModel");
+const { createTask, findManyTasks, getAllTasks } = require("../models/taskModel");
 const { findUser } = require("../models/userModel");
 const { findCompany } = require("../models/companyModel");
 const { parseBody, generateResponse, formatDate } = require("../utils");
@@ -245,7 +245,6 @@ exports.getProjectsOfTab = async (req, res, next) => {
     // For list view, also fetch open tasks (tasks without project)
     let openTasks = [];
     if (view !== "overview") {
-      const { getAllTasks } = require("../models/taskModel");
       const openTasksQuery = getOpenTasksQuery(channelId);
       
       try {
@@ -682,7 +681,6 @@ exports.getProjectsList = async (req, res, next) => {
     // Only fetch and include open tasks if not searching
     let openProject = null;
     if (!search || !search.trim()) {
-      const { getAllTasks } = require("../models/taskModel");
       const openTasksQuery = getOpenTasksQuery(channelId);
       
       try {
@@ -997,7 +995,6 @@ exports.getProjectBoard = async (req, res, next) => {
       }
 
       // Fetch open tasks
-      const { getAllTasks } = require("../models/taskModel");
       const openTasksQuery = getOpenTasksQuery(channelId);
       const openTasksResult = await getAllTasks({
         query: openTasksQuery,

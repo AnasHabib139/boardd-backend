@@ -15,7 +15,8 @@ const {
   distinctNotificationField,
   markManyAsRead,
 } = require("../models/notificationModel");
-const { emitUnreadCountsUpdate } = require("../utils/socket");
+const { emitUnreadCountsUpdate, getIO } = require("../utils/socket");
+const { markAsRead } = require("../models/chatConversationModel");
 
 /**
  * Get all activities for a project
@@ -392,9 +393,6 @@ exports.markActivityAsRead = async (req, res, next) => {
     // When user marks a CHAT_MESSAGE activity as read, also mark the conversation as read
     if (notification.type === "CHAT_MESSAGE" && notification.conversationId) {
       try {
-        const { markAsRead } = require("../models/chatConversationModel");
-        const { getIO } = require("../utils/socket");
-
         await markAsRead(
           notification.conversationId.toString(),
           userId,
@@ -480,8 +478,6 @@ exports.markAllAsRead = async (req, res, next) => {
     // ========== Sync: Mark affected conversations as read ==========
     if (affectedConversationIds.length > 0) {
       try {
-        const { markAsRead } = require("../models/chatConversationModel");
-        const { getIO } = require("../utils/socket");
         const io = getIO();
 
         // Mark each conversation as read

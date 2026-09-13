@@ -15,8 +15,8 @@ const {
   deleteTask,
   getNextOrderIndex,
 } = require("../models/taskModel");
-const { createActivity } = require("../models/activityModel");
-const { createNotification } = require("../models/notificationModel");
+const { createActivity, deleteManyActivities } = require("../models/activityModel");
+const { createNotification, deleteManyNotifications } = require("../models/notificationModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
 const { generateActivityMessage } = require("../utils");
@@ -50,7 +50,11 @@ const Mailer = require("../utils/mailer");
 const { generateTaskShareEmail } = require("../utils/emailTemplates");
 const { upsertTaskView, getTrendingTasks } = require("../models/taskViewModel");
 const { deleteSubtask } = require("../models/subtaskModel");
-const { getProjectStatusKeys } = require("../models/tabTaskStatusModel");
+const { getProjectStatusKeys, getStatusName } = require("../models/tabTaskStatusModel");
+const { deleteManyTaskInboxEntriesByTask } = require("../models/taskInboxModel");
+const { deleteTaskConnectionsByTaskId } = require("../models/taskConnectionModel");
+const { findManyTaskComments, deleteManyTaskComments } = require("../models/taskCommentModel");
+const { removeAllReactionsForComments } = require("../models/taskCommentReactionModel");
 
 // Helper function to parse date strings
 const parseDate = (dateString) => {
@@ -820,7 +824,6 @@ exports.batchUpdateTask = async (req, res, next) => {
       let messageNewValue = value;
       let messagePrevValue = previousValues[field];
       if (field === "status") {
-        const { getStatusName } = require("../models/tabTaskStatusModel");
         const projectId = task.projectId || null;
         messageNewValue = await getStatusName(projectId, value);
         messagePrevValue = await getStatusName(projectId, previousValues[field]);
@@ -1655,13 +1658,6 @@ exports.deleteTaskPermanently = async (req, res, next) => {
     }
 
     // Delete related records
-    const { deleteManyActivities } = require("../models/activityModel");
-    const { deleteManyNotifications } = require("../models/notificationModel");
-    const { deleteManyTaskInboxEntriesByTask } = require("../models/taskInboxModel");
-    const { deleteTaskConnectionsByTaskId } = require("../models/taskConnectionModel");
-    const { findManyTaskComments, deleteManyTaskComments } = require("../models/taskCommentModel");
-    const { removeAllReactionsForComments } = require("../models/taskCommentReactionModel");
-
     // Collect comment ids first so their reactions can be removed
     const taskComments = await findManyTaskComments({ taskId }).select("_id").lean();
     const taskCommentIds = taskComments.map((c) => c._id);

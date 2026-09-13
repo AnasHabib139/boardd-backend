@@ -24,6 +24,7 @@ const {
   whatsappTechProviderRegisterSchema,
 } = require("../validation/messagingConfigValidation");
 const { findCompany } = require("../models/companyModel");
+const whatsappTechProvider = require("../services/whatsappTechProvider");
 
 // ==================== SMS ENDPOINTS ====================
 
@@ -529,7 +530,6 @@ exports.getWhatsappSenderStatus = async (req, res, next) => {
 exports.initWhatsappTechProviderSignup = async (req, res, next) => {
   try {
     const { companyId } = req;
-    const whatsappTechProvider = require("../services/whatsappTechProvider");
 
     // Validate request body
     const { error, value } = whatsappTechProviderInitSchema.validate(req.body || {});
@@ -575,7 +575,6 @@ exports.initWhatsappTechProviderSignup = async (req, res, next) => {
  */
 exports.whatsappTechProviderCallback = async (req, res, next) => {
   try {
-    const whatsappTechProvider = require("../services/whatsappTechProvider");
     const { code, state, waba_id, business_id, error: oauthError, error_description } = req.query;
 
     // Handle OAuth errors
@@ -625,7 +624,6 @@ exports.whatsappTechProviderCallback = async (req, res, next) => {
 exports.registerWhatsappSenderTechProvider = async (req, res, next) => {
   try {
     const { companyId } = req;
-    const whatsappTechProvider = require("../services/whatsappTechProvider");
 
     // Validate request body
     const { error, value } = whatsappTechProviderRegisterSchema.validate(req.body || {});
@@ -667,7 +665,6 @@ exports.registerWhatsappSenderTechProvider = async (req, res, next) => {
 exports.getWhatsappTechProviderStatus = async (req, res, next) => {
   try {
     const { companyId } = req;
-    const whatsappTechProvider = require("../services/whatsappTechProvider");
 
     const status = await whatsappTechProvider.listWhatsappSenders(companyId);
 
@@ -693,7 +690,6 @@ exports.getWhatsappTechProviderSenderStatus = async (req, res, next) => {
   try {
     const { companyId } = req;
     const { phoneNumber } = req.params;
-    const whatsappTechProvider = require("../services/whatsappTechProvider");
 
     if (!phoneNumber) {
       return next({

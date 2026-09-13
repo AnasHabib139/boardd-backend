@@ -9,7 +9,7 @@ const {
 } = require("../models/channelTabsModel");
 const { generateResponse, parseBody } = require("../utils");
 const mongoose = require("mongoose");
-const { STATUS_CODES, EMBED_PROVIDERS } = require("../utils/constants");
+const { STATUS_CODES, EMBED_PROVIDERS, DEFAULT_TABS, TAB_ORDER } = require("../utils/constants");
 const {
   getAllTabsOfMemberInChannelQuery,
   getAllTabMembersQuery,
@@ -472,9 +472,7 @@ exports.createSelectedChannelTabs = async (req, res, next) => {
     }
 
     // Get valid tab names from constants
-    const validTabNames = Object.values(
-      require("../utils/constants").DEFAULT_TABS
-    );
+    const validTabNames = Object.values(DEFAULT_TABS);
 
     // Validate all tab names first
     const invalidTabNames = tabs
@@ -497,7 +495,7 @@ exports.createSelectedChannelTabs = async (req, res, next) => {
         {
           $match: {
             channelId: {
-              $eq: require("mongoose").Types.ObjectId.createFromHexString(
+              $eq: mongoose.Types.ObjectId.createFromHexString(
                 channelId
               ),
             },
@@ -710,9 +708,7 @@ exports.toggleChannelTab = async (req, res, next) => {
     }
 
     // Validate tab name
-    const validTabNames = Object.values(
-      require("../utils/constants").DEFAULT_TABS
-    );
+    const validTabNames = Object.values(DEFAULT_TABS);
     if (!validTabNames.includes(tabName)) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
@@ -857,7 +853,6 @@ exports.getDefaultChannelTabsWithPresence = async (req, res, next) => {
   try {
     const { channelId } = req.params;
     const userId = req.user.id;
-    const { DEFAULT_TABS, TAB_ORDER } = require("../utils/constants");
 
     // Validate channel exists and user has access
     const channel = await findChannel({ _id: channelId });

@@ -11,6 +11,12 @@ const { findChannelTab } = require("../models/channelTabsModel");
 const { findUser } = require("../models/userModel");
 const { createActivity } = require("../models/activityModel");
 const {
+  getRevenueStatsByTab,
+  getTotalRevenueByTab,
+  getRevenueStatsByClient,
+  getTotalRevenueByClient,
+} = require("../models/invoiceModel");
+const {
   createClientCreationActivity,
   createClientDetailsActivity,
   createProjectActivity,
@@ -522,13 +528,6 @@ exports.getRevenueStats = async (req, res, next) => {
 
     const resolved = await resolveClientAndAccess(paramId, userId, user, next);
     if (!resolved) return;
-
-    const {
-      getRevenueStatsByTab,
-      getTotalRevenueByTab,
-      getRevenueStatsByClient,
-      getTotalRevenueByClient,
-    } = require("../models/invoiceModel");
 
     const [monthlyData, total] = resolved.isTabScoped
       ? await Promise.all([getRevenueStatsByTab(paramId, year), getTotalRevenueByTab(paramId)])
