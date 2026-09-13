@@ -2,6 +2,7 @@
 
 const { Queue }        = require("bullmq");
 const { getBullRedis } = require("../utils/redis");
+const { STANDARD_QUEUE_JOB_OPTIONS } = require("./helpers/importWorkerShared");
 
 let _queue = null;
 
@@ -9,11 +10,7 @@ const getAsanaImportQueue = () => {
   if (!_queue) {
     _queue = new Queue("asana-import", {
       connection: getBullRedis(),
-      defaultJobOptions: {
-        attempts:         1,
-        removeOnComplete: { age: 3600 },
-        removeOnFail:     { age: 86400 },
-      },
+      defaultJobOptions: STANDARD_QUEUE_JOB_OPTIONS,
     });
   }
   return _queue;
