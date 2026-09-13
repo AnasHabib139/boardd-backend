@@ -2,6 +2,7 @@
 
 const { Queue } = require("bullmq");
 const { getBullRedis } = require("../utils/redis");
+const { STANDARD_QUEUE_JOB_OPTIONS } = require("./helpers/importWorkerShared");
 
 let _queue = null;
 
@@ -9,11 +10,7 @@ const getImportQueue = () => {
   if (!_queue) {
     _queue = new Queue("clickup-import", {
       connection: getBullRedis(),
-      defaultJobOptions: {
-        attempts: 1,        // don't retry failed imports automatically
-        removeOnComplete: { age: 3600 },  // keep completed jobs 1 hour
-        removeOnFail:     { age: 86400 }, // keep failed jobs 24 hours
-      },
+      defaultJobOptions: STANDARD_QUEUE_JOB_OPTIONS,
     });
   }
   return _queue;

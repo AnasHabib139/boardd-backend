@@ -2,7 +2,6 @@
 
 const { Worker } = require("bullmq");
 const { getBullRedis } = require("../utils/redis");
-const { getIO } = require("../utils/socket");
 const { updateImportJob } = require("../models/importJobModel");
 const { createProject, getNextProjectOrderIndex } = require("../models/projectModel");
 const { createManyTabTaskStatuses } = require("../models/tabTaskStatusModel");
@@ -11,28 +10,11 @@ const { findManyUsers } = require("../models/userModel");
 const { s3Uploadv3 } = require("../utils/s3Upload");
 const clickup = require("../services/clickupService");
 const RateLimiter = require("../utils/importRateLimiter");
+const { slugify, ensureUniqueSlug, assignColor, emitProgress } = require("./helpers/importWorkerShared");
 
 const BACKEND_URL = process.env.BACKEND_URL;
 
 // ─── Private helpers ────────────────────────────────────────────────────────
-
-const slugify = (name) =>
-  name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-
-const ensureUniqueSlug = (slug, seen) => {
-  if (!seen.has(slug)) { seen.add(slug); return slug; }
-  let i = 2;
-  while (seen.has(`${slug}_${i}`)) i++;
-  const unique = `${slug}_${i}`;
-  seen.add(unique);
-  return unique;
-};
-
-const STATUS_COLORS = [
-  "#6C63FF", "#F59E0B", "#10B981", "#EF4444",
-  "#3B82F6", "#8B5CF6", "#EC4899", "#14B8A6",
-];
-const assignColor = (index) => STATUS_COLORS[index % STATUS_COLORS.length];
 
 const flattenChecklists = (checklists = []) => {
   const items = [];
@@ -48,13 +30,6 @@ const flattenChecklists = (checklists = []) => {
 const mapPriority = (priority) => {
   if (!priority) return "medium";
   return { urgent: "urgent", high: "high", normal: "medium", low: "low" }[priority.priority] || "medium";
-};
-
-const emitProgress = (userId, jobId, payload) => {
-  try {
-    const io = getIO();
-    if (io) io.to(`user:${userId}`).emit("import:progress", { jobId, ...payload });
-  } catch (_) {}
 };
 
 // Download a file from a URL and upload to S3; returns Boardd attachment object or null
