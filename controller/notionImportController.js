@@ -1,17 +1,16 @@
 "use strict";
 
-const { createChannel, updateChannel, findChannel }                         = require("../models/channelModel");
-const { createChannelTab, findChannelTab }                                  = require("../models/channelTabsModel");
-const { createChatConversation }                                            = require("../models/chatConversationModel");
-const { findUserIntegration, updateUserIntegration, deleteUserIntegration } = require("../models/userIntegrationModel");
+const { findUserIntegration, updateUserIntegration }                       = require("../models/userIntegrationModel");
 const { findUser }                                                          = require("../models/userModel");
 const notion                                                                = require("../services/notionService");
 const { generateResponse }                                                  = require("../utils");
 const { STATUS_CODES }                                                      = require("../utils/constants");
-const { generateJoinToken }                                                 = require("./helpers/users/signup.helper");
 const { getNotionImportQueue }                                              = require("../jobs/notionImportQueue");
-const { createImportJob, findImportJob }                                    = require("../models/importJobModel");
 const { getValidToken: getValidTokenGeneric }                               = require("./helpers/imports/tokenRefresh.helper");
+const { resolveImportChannel } = require("./helpers/imports/channelResolution.helper");
+const { createAndEnqueueImportJob } = require("./helpers/imports/importJob.helper");
+const { makeGetAuthUrlHandler } = require("./helpers/imports/authUrl.helper");
+const { makeDisconnectHandler } = require("./helpers/imports/disconnectIntegration.helper");
 
 // ─── Token refresh helper ────────────────────────────────────────────────────
 
@@ -20,13 +19,7 @@ const getValidToken = (integration) =>
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
-exports.getAuthUrl = async (req, res, next) => {
-  try {
-    return generateResponse({ authUrl: notion.getAuthUrl() }, "Notion auth URL", res);
-  } catch (error) {
-    return next(error);
-  }
-};
+exports.getAuthUrl = makeGetAuthUrlHandler(notion, "Notion");
 
 exports.connectNotion = async (req, res, next) => {
   try {
@@ -101,43 +94,14 @@ exports.importNotion = async (req, res, next) => {
 
     const token = await getValidToken(integration);
 
-    // Resolve channel + tab
-    let channel, tab;
-    if (channelId) {
-      channel = await findChannel({ _id: channelId, companyId: user.companyId });
-      if (!channel) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Channel not found" });
-      tab = await findChannelTab({ channelId: channel._id, tabName: "task management" });
-      if (!tab) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Task management tab not found in this channel" });
-    } else {
-      const resolvedName = channelName || "Notion Import";
-      channel = await createChannel({
-        channelName:        resolvedName,
-        channelDescription: "Imported from Notion",
-        companyId:          user.companyId,
-        isPrivate:          false,
-        createdBy:          userId,
-        channelToken:       generateJoinToken(),
-        members:            [userId],
-      });
-      await createChatConversation({
-        companyId:      user.companyId,
-        type:           "channel",
-        channelId:      channel._id,
-        participantIds: [],
-        participants:   [{ userId, lastReadAt: null }],
-        createdBy:      userId,
-      });
-      tab = await createChannelTab({
-        channelId: channel._id,
-        tabName:   "task management",
-        isDefault: true,
-        members:   [userId],
-        createdBy: userId,
-        companyId: user.companyId,
-        isPrivate: false,
-      });
-      await updateChannel({ _id: channel._id }, { $push: { tabs: tab._id } });
-    }
+    const { channel, tab, isNewChannel } = await resolveImportChannel({
+      channelId,
+      channelName,
+      userId,
+      companyId: user.companyId,
+      platform: "Notion",
+      defaultName: "Notion Import",
+    });
 
     // Build name maps
     const [allDatabases, allPages] = await Promise.all([
@@ -160,27 +124,29 @@ exports.importNotion = async (req, res, next) => {
     }
 
     // Create job and enqueue
-    const job = await createImportJob({ userId, platform: "notion", status: "pending" });
-    await getNotionImportQueue().add("import", {
-      jobId:                   job._id.toString(),
-      userId:                  userId.toString(),
-      companyId:               user.companyId.toString(),
-      token,
-      refreshToken:            integration.refreshToken,
-      tokenExpiry:             integration.tokenExpiry,
-      workspaceId:             integration.cloudId,
-      databaseIds,
-      pageIds,
-      databaseNameMap,
-      pageNameMap,
-      notionPagesProjectName:  notionPagesName || "Notion Pages",
-      channel:                 { _id: channel._id.toString() },
-      tab:                     { _id: tab._id.toString() },
-      channelId:               channelId || null,
+    const { jobId } = await createAndEnqueueImportJob({
+      platform: "notion",
+      queue: getNotionImportQueue(),
+      userId,
+      companyId: user.companyId,
+      payload: {
+        token,
+        refreshToken: integration.refreshToken,
+        tokenExpiry: integration.tokenExpiry,
+        workspaceId: integration.cloudId,
+        databaseIds,
+        pageIds,
+        databaseNameMap,
+        pageNameMap,
+        notionPagesProjectName: notionPagesName || "Notion Pages",
+        channel: { _id: channel._id.toString() },
+        tab: { _id: tab._id.toString() },
+        channelId: channelId || null,
+      },
     });
 
     return generateResponse(
-      { jobId: job._id, channelId: channel._id, tabId: tab._id, isNewChannel: !channelId },
+      { jobId, channelId: channel._id, tabId: tab._id, isNewChannel },
       "Import started",
       res
     );
@@ -189,22 +155,6 @@ exports.importNotion = async (req, res, next) => {
   }
 };
 
-exports.getImportStatus = async (req, res, next) => {
-  try {
-    const { jobId } = req.params;
-    const job = await findImportJob({ _id: jobId, userId: req.user.id });
-    if (!job) return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Import job not found" });
-    return generateResponse(job, "Import status", res);
-  } catch (error) {
-    return next(error);
-  }
-};
+exports.getImportStatus = require("./helpers/imports/importStatus.helper").getImportStatus;
 
-exports.disconnectNotion = async (req, res, next) => {
-  try {
-    await deleteUserIntegration({ userId: req.user.id, platform: "notion" });
-    return generateResponse({}, "Notion disconnected", res);
-  } catch (error) {
-    return next(error);
-  }
-};
+exports.disconnectNotion = makeDisconnectHandler("notion", "Notion");
