@@ -316,6 +316,33 @@ const validateShareForm = (req, res, next) => {
 };
 
 // Share form to channel validation middleware
+const moveFormToChannelSchema = Joi.object({
+  tabId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "Invalid tab ID format",
+      "any.required": "Tab ID is required",
+    }),
+});
+
+const validateMoveFormToChannel = (req, res, next) => {
+  const { error, value } = moveFormToChannelSchema.validate(req.body);
+
+  if (error) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json({
+      message: "Validation error",
+      errors: error.details.map((detail) => ({
+        field: detail.path.join("."),
+        message: detail.message,
+      })),
+    });
+  }
+
+  req.body = value;
+  next();
+};
+
 const validateShareFormToChannel = (req, res, next) => {
   const { error, value } = shareFormToChannelSchema.validate(req.body);
 
@@ -368,5 +395,6 @@ module.exports = {
   validateTabId,
   validateShareForm,
   validateShareFormToChannel,
+  validateMoveFormToChannel,
   validateGetFolderFormsQuery,
 };

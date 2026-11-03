@@ -490,9 +490,25 @@ exports.deleteForm = async (req, res, next) => {
       });
     }
 
-    // Validate user has access (only creator or tab member can delete)
-    const tab = await findChannelTab({ _id: form.tabId });
-    if (!tab || !tab?.members?.includes(userId)) {
+    // Validate user has access based on form context (same rules as updateForm)
+    let hasAccess;
+    if (form.isFolder) {
+      // Folder forms have no tab — access is company-scoped (same company as form creator)
+      const [user, formCreator] = await Promise.all([
+        findUser({ _id: userId }),
+        findUser({ _id: form.createdBy }),
+      ]);
+      hasAccess =
+        !!user?.companyId &&
+        !!formCreator?.companyId &&
+        user.companyId.toString() === formCreator.companyId.toString();
+    } else {
+      // Channel forms: tab membership
+      const tab = await findChannelTab({ _id: form.tabId });
+      hasAccess = !!tab?.members?.includes(userId);
+    }
+
+    if (!hasAccess) {
       return next({
         statusCode: STATUS_CODES.FORBIDDEN,
         message: "You don't have permission to delete this form",
@@ -521,57 +537,40 @@ exports.deleteForm = async (req, res, next) => {
 };
 
 /**
- * Share form from folder to channel
+ * Move a folder form into a channel tab (one-way: form stops being a folder form)
+ * POST /api/forms/:formId/move-to-channel  body: { tabId }  — channelId is derived from the tab
  */
-exports.shareForm = async (req, res, next) => {
+exports.moveFormToChannel = async (req, res, next) => {
   try {
     const { formId } = req.params;
-    const { channelId, tabId } = parseBody(req.body);
+    const { tabId } = parseBody(req.body);
     const userId = req?.user?.id;
 
-    // Validate required fields
-    if (!channelId || !tabId) {
-      return next({
-        statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Both channelId and tabId are required",
-      });
-    }
-
-    // Find form
     const form = await findForm({ _id: formId, isActive: true });
     if (!form) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Form not found",
-      });
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Form not found" });
     }
 
-    // Check if form is in folder context (not already shared)
     if (!form.isFolder) {
       return next({
         statusCode: STATUS_CODES.BAD_REQUEST,
-        message: "Form must be in folder context to be shared",
+        message: "Only folder forms can be moved to a channel",
       });
     }
 
-    // Validate user is creator or has permission
+    // Moving is destructive (form leaves the folder) — creator only
     if (form.createdBy.toString() !== userId) {
       return next({
         statusCode: STATUS_CODES.FORBIDDEN,
-        message: "You don't have permission to share this form",
+        message: "Only the form creator can move this form to a channel",
       });
     }
 
-    // Validate tab exists and is form builder tab
     const tab = await findChannelTab({ _id: tabId });
     if (!tab) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Tab not found",
-      });
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Tab not found" });
     }
 
-    // Check if user is a member of the target tab
     if (!tab?.members?.includes(userId)) {
       return next({
         statusCode: STATUS_CODES.FORBIDDEN,
@@ -579,26 +578,16 @@ exports.shareForm = async (req, res, next) => {
       });
     }
 
-    // Validate channel exists
-    const channel = await findChannel({ _id: channelId });
+    const channel = await findChannel({ _id: tab.channelId });
     if (!channel) {
-      return next({
-        statusCode: STATUS_CODES.NOT_FOUND,
-        message: "Channel not found",
-      });
+      return next({ statusCode: STATUS_CODES.NOT_FOUND, message: "Channel not found" });
     }
 
-    // Share form to channel
-    const sharedForm = await shareFormToChannel(formId, channelId, tabId);
+    const movedForm = await shareFormToChannel(formId, channel._id, tab._id);
 
-    return generateResponse(
-      sharedForm,
-      "Form shared to channel successfully",
-      res,
-      STATUS_CODES.SUCCESS
-    );
+    return generateResponse(movedForm, "Form moved to channel successfully", res, STATUS_CODES.SUCCESS);
   } catch (error) {
-    console.error("Error in shareForm:", error);
+    console.error("Error in moveFormToChannel:", error);
     return next({
       statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR,
       message: error?.message,

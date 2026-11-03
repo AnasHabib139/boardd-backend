@@ -13,6 +13,7 @@ const {
   submitFormResponse,
   generateFormToken,
   shareFormToChannelChat,
+  moveFormToChannel,
 } = require("../controller/formController");
 const Auth = require("../middlewares/Auth");
 const OptionalAuth = require("../middlewares/OptionalAuth");
@@ -26,6 +27,7 @@ const {
   validateTabId,
   validateShareForm,
   validateShareFormToChannel,
+  validateMoveFormToChannel,
   validateGetFolderFormsQuery,
 } = require("../validation/formValidation");
 
@@ -70,15 +72,6 @@ class FormApi {
       Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
       validateGetFolderFormsQuery,
       require("../controller/formController").getFolderFavorites
-    );
-
-    // Share form from folder to channel
-    router.post(
-      "/:formId/share",
-      Auth([ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.GUEST]),
-      validateFormId,
-      validateShareForm,
-      shareForm
     );
 
     // Toggle favorite for a form (personalized)
@@ -139,6 +132,15 @@ class FormApi {
       validateFormId,
       validateShareForm,
       shareForm
+    );
+
+    // Move a folder form into a channel tab (form stops being a folder form)
+    router.post(
+      "/:formId/move-to-channel",
+      Auth([ROLES.ADMIN, ROLES.EMPLOYEE]),
+      validateFormId,
+      validateMoveFormToChannel,
+      moveFormToChannel
     );
 
     // Share form to channel chat or task
