@@ -29,3 +29,6 @@ BACKEND_URL=http://localhost:8000
 SUPER_ADMIN_BOOTSTRAP_EMAIL=
 SUPER_ADMIN_BOOTSTRAP_PASSWORD=
 SUPER_ADMIN_BOOTSTRAP_NAME=
+
+# Used by scripts/simulate-transactions.js
+STRIPE_SECRET_KEY=sk_test_your_key_here

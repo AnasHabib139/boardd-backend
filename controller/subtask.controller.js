@@ -19,7 +19,7 @@ const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
 const { createNotification } = require("../models/notificationModel");
 const { emitUserNotification } = require("../utils/socket");
-const { normalizeAttachments, diffAssigneeIds } = require("./helpers/tasks/task.helper");
+const { normalizeAttachments, diffAssigneeIds, deleteUnreferencedFiles } = require("./helpers/tasks/task.helper");
 
 /**
  * Get subtask by ID
@@ -558,8 +558,12 @@ exports.deleteSubtask = async (req, res, next) => {
       message: deleteActivityMessage,
     });
 
-    // Delete subtask
+    // Delete subtask, then its files unless another task/subtask/form response still uses them
     await deleteSubtask({ _id: subtaskId });
+    await deleteUnreferencedFiles(
+      (subtask.attachments || []).map((a) => a.url),
+      { subtaskIds: [subtask._id] }
+    );
 
     // Update parent task version to prevent conflicts with socket updates
     const updatedTask = await updateTask(

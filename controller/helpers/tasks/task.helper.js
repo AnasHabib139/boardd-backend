@@ -1,7 +1,15 @@
-const { createActivity } = require("../../../models/activityModel");
-const { createNotification } = require("../../../models/notificationModel");
+const { createActivity, deleteManyActivities } = require("../../../models/activityModel");
+const { createNotification, deleteManyNotifications } = require("../../../models/notificationModel");
+const { TaskModel } = require("../../../models/taskModel");
+const { SubtaskModel } = require("../../../models/subtaskModel");
+const { TaskInbox } = require("../../../models/taskInboxModel");
+const { TaskConnectionModel } = require("../../../models/taskConnectionModel");
+const { TaskCommentModel } = require("../../../models/taskCommentModel");
+const { removeAllReactionsForComments } = require("../../../models/taskCommentReactionModel");
+const { TaskViewModel } = require("../../../models/taskViewModel");
+const { FormResponseModel } = require("../../../models/formResponseModel");
 const { findManyUsers } = require("../../../models/userModel");
-const { generateActivityMessage } = require("../../../utils");
+const { generateActivityMessage, deleteFileFromDisk } = require("../../../utils");
 const { ACTION_TYPE } = require("../../../utils/constants");
 /**
  * Create task creation activity and notifications
@@ -664,4 +672,65 @@ exports.diffAssigneeIds = (previousAssignedTo, currentAssignedTo) => {
     added: current.filter((id) => !previous.includes(id)),
     removed: previous.filter((id) => !current.includes(id)),
   };
+};
+
+/**
+ * Delete attachment files from disk unless something outside the records being deleted still uses them.
+ * Files can be shared: duplicateProject copies attachment URLs, form-response tasks reuse the response's file URLs.
+ * @param {string[]} urls - attachment URLs of the records being deleted
+ * @param {{taskIds?: ObjectId[], subtaskIds?: ObjectId[]}} exclude - records being deleted (their refs don't count)
+ */
+const deleteUnreferencedFiles = async (urls, { taskIds = [], subtaskIds = [] } = {}) => {
+  urls = [...new Set(urls.filter(Boolean))];
+  if (!urls.length) return;
+
+  const inUrls = { "attachments.url": { $in: urls } };
+  const used = await Promise.all([
+    TaskModel.distinct("attachments.url", { _id: { $nin: taskIds }, ...inUrls }),
+    SubtaskModel.distinct("attachments.url", { _id: { $nin: subtaskIds }, ...inUrls }),
+    FormResponseModel.distinct("responses.value", { "responses.value": { $in: urls } }),
+  ]);
+  const stillUsed = new Set(used.flat());
+
+  for (const url of urls) {
+    if (stillUsed.has(url)) continue;
+    const result = deleteFileFromDisk(url);
+    if (!result.success) console.warn(`Failed to delete attachment file: ${result.error}`);
+  }
+};
+exports.deleteUnreferencedFiles = deleteUnreferencedFiles;
+
+/**
+ * Hard-delete tasks and everything hanging off them.
+ * Shared by single-task delete and project delete so the cascade can't drift.
+ * @param {Array<{_id, attachments}>} tasks - task docs (need _id + attachments)
+ */
+exports.purgeTasks = async (tasks) => {
+  if (!tasks?.length) return;
+
+  const taskIds = tasks.map((t) => t._id);
+  const byTask = { taskId: { $in: taskIds } };
+
+  const subtasks = await SubtaskModel.find(byTask, { _id: 1, attachments: 1 }).lean();
+  await deleteUnreferencedFiles(
+    [...tasks, ...subtasks].flatMap((d) => (d.attachments || []).map((a) => a.url)),
+    { taskIds, subtaskIds: subtasks.map((st) => st._id) }
+  );
+
+  const commentIds = (await TaskCommentModel.find(byTask, { _id: 1 }).lean()).map((c) => c._id);
+
+  await Promise.all([
+    deleteManyActivities(byTask),
+    deleteManyNotifications(byTask),
+    SubtaskModel.deleteMany(byTask),
+    TaskInbox.deleteMany(byTask),
+    TaskConnectionModel.deleteMany({
+      $or: [{ sourceTaskId: { $in: taskIds } }, { targetTaskId: { $in: taskIds } }],
+    }),
+    TaskCommentModel.deleteMany(byTask),
+    TaskViewModel.deleteMany(byTask),
+    commentIds.length ? removeAllReactionsForComments(commentIds) : null,
+  ]);
+
+  await TaskModel.deleteMany({ _id: { $in: taskIds } });
 };

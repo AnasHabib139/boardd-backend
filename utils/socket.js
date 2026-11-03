@@ -1502,7 +1502,8 @@ const processTaskMove = async (socket, data) => {
         taskId,
         newProjectId,
         newStatus,
-        calculatedOrderIndex
+        calculatedOrderIndex,
+        newProject.channelId
       );
     } else {
       // Moving to channel (Open)

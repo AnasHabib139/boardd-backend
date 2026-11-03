@@ -2,11 +2,15 @@ const { findChannel } = require("../models/channelModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { createProject, getAllProjects, getAllProjectsWithoutPagination, findProject, updateProject, deleteProject, getNextProjectOrderIndex } = require("../models/projectModel");
 const { createTask, findManyTasks, getAllTasks } = require("../models/taskModel");
+const { deleteManyActivities } = require("../models/activityModel");
+const { deleteManyNotifications } = require("../models/notificationModel");
+const { purgeTasks } = require("./helpers/tasks/task.helper");
 const { findUser } = require("../models/userModel");
 const { findCompany } = require("../models/companyModel");
 const { parseBody, generateResponse, formatDate } = require("../utils");
 const { STATUS_CODES } = require("../utils/constants");
-const { emitTaskEvent } = require("../utils/socket");
+const { emitTaskEvent, getIO } = require("../utils/socket");
+const { emitInboxUnreadUpdate } = require("../utils/inboxNotifications");
 const {
   getProjectsOverviewQuery,
   getProjectsListQuery,
@@ -15,7 +19,7 @@ const {
   getOpenTasksQuery,
   getSingleProjectListQuery,
 } = require("./queries/projectQueries");
-const { initializeSystemStatuses } = require("../models/tabTaskStatusModel");
+const { initializeSystemStatuses, TabTaskStatus } = require("../models/tabTaskStatusModel");
 
 const { parseDate } = require("../utils/dateHelper");
 
@@ -1412,8 +1416,27 @@ exports.deleteProjectById = async (req, res, next) => {
       });
     }
 
-    // Delete the project
+    // Hard-delete tasks (with their subtasks/comments/inbox/etc.) and project-scoped records, then the project last
+    // so a failure midway leaves a retryable project rather than orphaned tasks
+    const tasks = await findManyTasks({ projectId: project._id }).select("_id attachments createdBy assignedTo").lean();
+    await purgeTasks(tasks);
+    await Promise.all([
+      TabTaskStatus.deleteMany({ projectId: project._id }),
+      deleteManyActivities({ projectId: project._id }),
+      deleteManyNotifications({ projectId: project._id }),
+    ]);
     await deleteProject({ _id: projectId });
+
+    // Their inbox entries were removed — refresh unread badges (same as single-task delete)
+    try {
+      const socketIo = getIO();
+      const affectedUserIds = new Set(
+        tasks.flatMap((t) => [t.createdBy, ...(t.assignedTo || [])]).filter(Boolean).map(String)
+      );
+      for (const uid of affectedUserIds) await emitInboxUnreadUpdate(uid, socketIo);
+    } catch (socketError) {
+      console.error("Error emitting inbox updates after project delete:", socketError);
+    }
 
     return generateResponse(
       { 

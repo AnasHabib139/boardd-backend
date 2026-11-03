@@ -2105,10 +2105,25 @@ exports.getChannelTasksDropdown = async (req, res, next) => {
           isActive: true,
         },
       },
+      // Drop orphans (project hard-deleted, tasks left behind) and archived projects
+      {
+        $lookup: {
+          from: "projects",
+          localField: "projectId",
+          foreignField: "_id",
+          pipeline: [{ $match: { status: "active" } }, { $project: { name: 1 } }],
+          as: "project",
+        },
+      },
+      { $unwind: { path: "$project", preserveNullAndEmptyArrays: true } },
+      // Keep channel-level tasks (no projectId, e.g. form-response tasks); drop project tasks whose project is gone/archived
+      { $match: { $or: [{ projectId: null }, { "project._id": { $exists: true } }] } },
       {
         $project: {
           _id: 1,
           title: 1,
+          projectId: { $ifNull: ["$project._id", null] },
+          projectName: { $ifNull: ["$project.name", null] },
         },
       },
       {

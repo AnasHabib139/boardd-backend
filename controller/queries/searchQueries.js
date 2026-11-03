@@ -1596,6 +1596,7 @@ const buildSubtasksSearchPipeline = (filters) => {
       foreignField: "_id",
       as: "parentTask",
       pipeline: [
+        { $match: { isActive: true } },
         {
           $project: {
             _id: 1,
@@ -1612,7 +1613,7 @@ const buildSubtasksSearchPipeline = (filters) => {
   });
 
   pipeline.push({
-    $unwind: { path: "$parentTask", preserveNullAndEmptyArrays: true },
+    $unwind: { path: "$parentTask", preserveNullAndEmptyArrays: false }, // drop subtasks whose parent task is inactive/deleted
   });
 
   // Lookup project
@@ -1816,12 +1817,12 @@ const buildSubtasksCountPipeline = (filters) => {
       localField: "taskId",
       foreignField: "_id",
       as: "parentTask",
-      pipeline: [{ $project: { channelId: 1 } }],
+      pipeline: [{ $match: { isActive: true } }, { $project: { channelId: 1 } }],
     },
   });
 
   pipeline.push({
-    $unwind: { path: "$parentTask", preserveNullAndEmptyArrays: true },
+    $unwind: { path: "$parentTask", preserveNullAndEmptyArrays: false }, // drop subtasks whose parent task is inactive/deleted
   });
 
   pipeline.push({

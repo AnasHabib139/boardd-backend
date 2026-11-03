@@ -164,7 +164,16 @@ const TaskModel = model("Task", taskSchema);
 exports.TaskModel = TaskModel;
 
 // create new task
-exports.createTask = (obj) => TaskModel.create(obj);
+// Project tasks always carry their project's channelId — channel-scoped queries (dropdown, files, search) match on it.
+// Importers and other callers that only pass projectId get it filled here.
+exports.createTask = async (obj) => {
+  if (obj.projectId && !obj.channelId) {
+    const { findProject } = require("./projectModel");
+    const project = await findProject({ _id: obj.projectId }).select("channelId").lean();
+    obj = { ...obj, channelId: project?.channelId ?? null };
+  }
+  return TaskModel.create(obj);
+};
 
 // find task by query
 exports.findTask = (query) => TaskModel.findOne(query);
@@ -242,7 +251,8 @@ exports.moveTaskToProject = async (
   taskId,
   newProjectId,
   newStatus,
-  newOrderIndex
+  newOrderIndex,
+  newChannelId
 ) => {
   const updateField = `orderIndex.${newStatus}`;
   return TaskModel.findByIdAndUpdate(
@@ -250,7 +260,7 @@ exports.moveTaskToProject = async (
     {
       $set: {
         projectId: newProjectId,
-        channelId: null, // Remove channelId when moving to project
+        channelId: newChannelId, // Keep project's channelId (matches createTask) so channel-scoped queries find it
         status: newStatus,
         [updateField]: newOrderIndex,
         updatedAt: new Date(),

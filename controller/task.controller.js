@@ -1,6 +1,6 @@
 "use strict";
 
-const { parseBody, generateResponse, deleteFileFromDisk } = require("../utils");
+const { parseBody, generateResponse } = require("../utils");
 const {
   STATUS_CODES,
   ACTION_TYPE,
@@ -12,11 +12,10 @@ const {
   createTask,
   findTask,
   updateTask,
-  deleteTask,
   getNextOrderIndex,
 } = require("../models/taskModel");
-const { createActivity, deleteManyActivities } = require("../models/activityModel");
-const { createNotification, deleteManyNotifications } = require("../models/notificationModel");
+const { createActivity } = require("../models/activityModel");
+const { createNotification } = require("../models/notificationModel");
 const { findChannelTab } = require("../models/channelTabsModel");
 const { findChannel } = require("../models/channelModel");
 const { generateActivityMessage } = require("../utils");
@@ -35,6 +34,7 @@ const {
   handleColumnValuesActivity,
   normalizeAttachments,
   diffAssigneeIds,
+  purgeTasks,
 } = require("./helpers/tasks/task.helper");
 const {
   processTaskColumnValues,
@@ -51,12 +51,7 @@ const { getAllTasks } = require("../models/taskModel");
 const Mailer = require("../utils/mailer");
 const { generateTaskShareEmail } = require("../utils/emailTemplates");
 const { upsertTaskView, getTrendingTasks } = require("../models/taskViewModel");
-const { deleteSubtask } = require("../models/subtaskModel");
 const { getProjectStatusKeys, getStatusName } = require("../models/tabTaskStatusModel");
-const { deleteManyTaskInboxEntriesByTask } = require("../models/taskInboxModel");
-const { deleteTaskConnectionsByTaskId } = require("../models/taskConnectionModel");
-const { findManyTaskComments, deleteManyTaskComments } = require("../models/taskCommentModel");
-const { removeAllReactionsForComments } = require("../models/taskCommentReactionModel");
 
 const { parseDate } = require("../utils/dateHelper");
 
@@ -1622,35 +1617,8 @@ exports.deleteTaskPermanently = async (req, res, next) => {
       });
     }
 
-    // Delete attachments from disk
-    if (task.attachments && task.attachments.length > 0) {
-      for (const attachment of task.attachments) {
-        const deleteResult = deleteFileFromDisk(attachment.url);
-        if (!deleteResult.success) {
-          console.warn(`Failed to delete attachment file: ${deleteResult.error}`);
-        }
-      }
-    }
-
-    // Delete related records
-    // Collect comment ids first so their reactions can be removed
-    const taskComments = await findManyTaskComments({ taskId }).select("_id").lean();
-    const taskCommentIds = taskComments.map((c) => c._id);
-
-    await Promise.all([
-      deleteManyActivities({ taskId }),
-      deleteManyNotifications({ taskId }),
-      deleteSubtask({ taskId }),
-      deleteManyTaskInboxEntriesByTask(taskId),
-      deleteTaskConnectionsByTaskId(taskId),
-      deleteManyTaskComments({ taskId }),
-      taskCommentIds.length
-        ? removeAllReactionsForComments(taskCommentIds)
-        : Promise.resolve(),
-    ]);
-
-    // Delete the task
-    await deleteTask({ _id: taskId });
+    // Delete the task with its attachments, subtasks, comments, inbox entries, etc.
+    await purgeTasks([task]);
 
     // Emit socket event (so task is removed from all views)
     try {

@@ -55,10 +55,7 @@ exports.getTeamCardsWithMembersQuery = (companyId) => {
               $expr: {
                 $in: ["$$userId", "$assignedTo"]
               },
-              $or: [
-                { isDeleted: { $exists: false } },
-                { isDeleted: false }
-              ]
+              isActive: true
             }
           },
           {
@@ -255,10 +252,7 @@ exports.getMemberTasksQuery = (userId, filter = 'all') => {
     {
       $match: {
         assignedTo: new Types.ObjectId(userId),
-        $or: [
-          { isDeleted: { $exists: false } },
-          { isDeleted: false }
-        ],
+        isActive: true,
         ...statusMatch
       }
     },
