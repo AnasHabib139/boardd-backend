@@ -17,6 +17,10 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
+            # Fail the deploy on the first failing command (e.g. a git pull conflict)
+            # instead of restarting old code and reporting success
+            set -e
+
             # Navigate to your project directory
             cd /home/ubuntu/boardd-backend
 
