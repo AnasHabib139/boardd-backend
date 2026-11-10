@@ -29,3 +29,4 @@ portfolio/
 
 docs/
 *.md
+!/README.md
